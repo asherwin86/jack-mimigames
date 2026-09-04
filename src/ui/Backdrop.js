@@ -284,14 +284,21 @@ export function buildBackdrop(size, audio) {
     );
     pointing = true;
   };
-  const onLeave = () => { pointing = false; };
+  // Also stops a held jingle: if the pointer leaves the window mid-drag, the
+  // matching pointerup can land outside it and never reach this listener.
+  const onLeave = () => { pointing = false; meowLooping = false; };
   window.addEventListener('pointermove', onMove, { passive: true });
   window.addEventListener('pointerleave', onLeave);
-  // Click Nyan Cat and it plays its own little jingle — synthesized, not a
-  // recording, the same way every other sound in this game is.
-  let meowCool = 0;
+  // Press and hold Nyan Cat and its little jingle loops for as long as you
+  // hold — synthesized, not a recording, the same way every other sound in
+  // this game is. Length of Audio.meow()'s own note sequence, plus a hair of
+  // breathing room so repeats don't overlap.
+  const JINGLE_LEN = 0.7;
+  let ambientT = 0;   // fires immediately on the first frame, then every JINGLE_LEN
+  let meowLooping = false;
+  let meowT = 0;
   const onDown = (e) => {
-    if (!audio || meowCool > 0) return;
+    if (!audio) return;
     const nyan = flock.flyers.find((o) => o.userData.type === 'nyancat');
     if (!nyan) return;
     pointer.set(
@@ -302,14 +309,18 @@ export function buildBackdrop(size, audio) {
     nyan.updateMatrixWorld();
     if (raycaster.intersectObject(nyan, true).length) {
       audio.meow();
-      meowCool = 0.5;
+      meowLooping = true;
+      meowT = JINGLE_LEN;
     }
   };
+  const onUp = () => { meowLooping = false; };
   window.addEventListener('pointerdown', onDown);
+  window.addEventListener('pointerup', onUp);
   const dispose = () => {
     window.removeEventListener('pointermove', onMove);
     window.removeEventListener('pointerleave', onLeave);
     window.removeEventListener('pointerdown', onDown);
+    window.removeEventListener('pointerup', onUp);
   };
 
   /** Arms whichever creeper is under the pointer. Already-lit ones stay lit. */
@@ -407,6 +418,13 @@ export function buildBackdrop(size, audio) {
       scene.fog.color.setHSL(((shift + 180) % 360) / 360, 0.35, 0.16);
     }
 
+    // Nyan Cat's jingle loops softly as ambient menu music, independent of
+    // the props toggle — it's music, not one of the visible things in the sky.
+    if (audio) {
+      ambientT -= dt;
+      if (ambientT <= 0) { audio.meow(0.45); ambientT = JINGLE_LEN; }
+    }
+
     // With the props hidden there is nothing left to animate but the sky.
     if (!props.visible) { aimCamera(); return; }
 
@@ -423,7 +441,10 @@ export function buildBackdrop(size, audio) {
     shards.update(dt);
 
     flock.update(dt, t);
-    if (meowCool > 0) meowCool -= dt;
+    if (meowLooping) {
+      meowT -= dt;
+      if (meowT <= 0) { audio.meow(); meowT = JINGLE_LEN; }
+    }
 
     for (const m of marks) {
       const d = m.userData;

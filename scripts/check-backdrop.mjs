@@ -16,7 +16,7 @@ function check(label, ok, note = '') {
 }
 
 const meows = [];
-const mockAudio = { meow: () => meows.push(Date.now()) };
+const mockAudio = { meow: (vol = 1) => meows.push(vol) };
 const bd = buildBackdrop({ w: W, h: H }, mockAudio);
 // Every prop hangs off one group inside the scene, so search the whole tree.
 const all = [];
@@ -73,32 +73,67 @@ check('nine cats fly', flock.filter((o) => o.userData.type === 'cat').length ===
 check('the cats come in different coats', new Set(
   flock.filter((o) => o.userData.type === 'cat').map((o) => o.children[0].material.color.getHex()),
 ).size >= 7);
+// --- ambient menu music ------------------------------------------------
+// Nyan Cat's jingle loops on its own as background music, with no click
+// needed. A direct press plays at full volume (1); the ambient loop plays
+// softer (0.45) so the two are distinguishable even when they overlap.
+const ambientPlays = () => meows.filter((v) => v < 1).length;
+const heldPlays = () => meows.filter((v) => v === 1).length;
+
+bd.update(DT);
+check('the jingle starts playing on its own', ambientPlays() === 1, `${ambientPlays()} plays`);
+check('the ambient loop is softer than a direct press', meows[0] < 1, `vol=${meows[0]}`);
+// 35 frames is comfortably short of one jingle length (0.7s @ 60fps = 42
+// frames) — leaving a margin so float drift in the accumulator can't tip it
+// over early, the way exactly-42 occasionally did.
+for (let i = 0; i < 35; i++) bd.update(DT);
+check('it holds for one full jingle before repeating', ambientPlays() === 1, `${ambientPlays()} plays`);
+for (let i = 0; i < 15; i++) bd.update(DT);
+check('then it loops again', ambientPlays() === 2, `${ambientPlays()} plays`);
+bd.setProps(false);
+const ambientBefore = ambientPlays();
+for (let i = 0; i < 50; i++) bd.update(DT);
+check('the music keeps playing even with props hidden', ambientPlays() > ambientBefore,
+  `${ambientBefore} -> ${ambientPlays()}`);
+bd.setProps(true);
+
 check('nyan cat flies', FLYER_TYPES.includes('nyancat'));
 check('nyan cat has a rainbow trail plus sparkles',
   flock.find((o) => o.userData.type === 'nyancat').children.length >= 6 + 5 + 2 + 3);
-// --- nyan cat click-to-meow ------------------------------------------------
+// --- nyan cat hold-to-loop jingle -------------------------------------------
 const nyan = flock.find((o) => o.userData.type === 'nyancat');
 nyan.position.set(0, 0, 12);
-bd.camera.updateMatrixWorld(true);
-const nyanNdc = nyan.position.clone().project(bd.camera);
-const clickAt = (x, y) => window.__handlers.pointerdown?.({ clientX: x, clientY: y });
+const downAt = (x, y) => window.__handlers.pointerdown?.({ clientX: x, clientY: y });
+const upAt = () => window.__handlers.pointerup?.({});
+// Nyan Cat drifts on its own, so this re-aims at wherever it currently is
+// rather than trusting a position computed frames ago.
+const pressNyan = () => {
+  bd.camera.updateMatrixWorld(true);
+  const ndc = nyan.position.clone().project(bd.camera);
+  downAt((ndc.x + 1) / 2 * W, (1 - ndc.y) / 2 * H);
+};
 
-clickAt((nyanNdc.x + 1) / 2 * W, (1 - nyanNdc.y) / 2 * H);
-check('clicking nyan cat plays its jingle', meows.length === 1, `${meows.length} plays`);
+pressNyan();
+check('pressing nyan cat plays its jingle at full volume', heldPlays() === 1, `${heldPlays()} plays`);
 
-clickAt((nyanNdc.x + 1) / 2 * W, (1 - nyanNdc.y) / 2 * H);
-check('a cooldown stops it from spamming', meows.length === 1, `${meows.length} plays`);
+upAt();
+for (let i = 0; i < 90; i++) bd.update(DT);
+check('releasing stops it from looping', heldPlays() === 1, `${heldPlays()} plays`);
 
-clickAt(-5000, -5000);
-check('clicking empty sky does not play it', meows.length === 1, `${meows.length} plays`);
+downAt(-5000, -5000);
+check('pressing empty sky does not play it', heldPlays() === 1, `${heldPlays()} plays`);
 
-for (let i = 0; i < 40; i++) bd.update(DT);
-// Nyan Cat drifts on its own while those frames run, so re-aim at where it
-// actually ended up rather than the spot it started from.
-bd.camera.updateMatrixWorld(true);
-const nyanNdc2 = nyan.position.clone().project(bd.camera);
-clickAt((nyanNdc2.x + 1) / 2 * W, (1 - nyanNdc2.y) / 2 * H);
-check('it can meow again once the cooldown passes', meows.length === 2, `${meows.length} plays`);
+pressNyan();
+check('pressing again plays it once more', heldPlays() === 2, `${heldPlays()} plays`);
+for (let i = 0; i < 50; i++) bd.update(DT);   // > one jingle length, still held
+check('holding it down repeats the jingle', heldPlays() === 3, `${heldPlays()} plays`);
+for (let i = 0; i < 50; i++) bd.update(DT);
+check('it keeps looping for as long as it is held', heldPlays() === 4, `${heldPlays()} plays`);
+
+upAt();
+for (let i = 0; i < 50; i++) bd.update(DT);
+check('letting go stops the loop for good', heldPlays() === 4, `${heldPlays()} plays`);
+check('ambient music kept looping the whole time regardless', ambientPlays() > 2, `${ambientPlays()} plays`);
 
 check('nyan cat sparkles spin', flock.find((o) => o.userData.type === 'nyancat').userData.spin.length === 2);
 check('the game logo flies', FLYER_TYPES.includes('gamelogo'));
@@ -131,6 +166,25 @@ hold();
 
 // --- hover ---------------------------------------------------------------
 // Park one creeper right in front of the camera and aim the pointer at it.
+// Banish every other creeper first, miles away and with zero drift so
+// nothing carries them back — with 14 at random positions, one can
+// occasionally land on the same camera ray as the target by pure chance,
+// and a plain position offset isn't enough: the per-frame update recycles
+// anything that crosses z=16, which redraws its x/y at random and would
+// undo a simple move-it-aside within the test's own animation window. Also
+// clear fuse/respawn: bombs ran loose (unheld) through the several simulated
+// seconds of ambient-music and nyan-cat tests above, and a real blast could
+// legitimately have armed one of these creepers before this section even
+// starts — leftover state, not anything this check is meant to catch.
+for (const c of creepers.slice(1)) {
+  c.position.set(1e4, 1e4, -1e4);
+  c.userData.drift = 0;
+  c.userData.bob = 0;
+  c.userData.fuse = 0;
+  c.userData.respawn = 0;
+  c.visible = true;
+  c.scale.setScalar(1);
+}
 const target = creepers[0];
 target.position.set(0, 2, 10);
 bd.camera.updateMatrixWorld(true);
@@ -172,6 +226,14 @@ const armedBefore = creepers.filter((c) => c.userData.fuse > 0).length;
 bd.update(DT);
 hold();
 check('empty sky arms nothing', creepers.filter((c) => c.userData.fuse > 0).length === armedBefore);
+
+// Bring the creepers banished for the hover section back into the flight loop.
+const between = (a, b) => a + Math.random() * (b - a);
+for (const c of creepers.slice(1)) {
+  c.position.set(between(-34, 34), between(-14, 16), between(-70, 6));
+  c.userData.drift = between(2.2, 5.4);
+  c.userData.bob = between(0.5, 1.3);
+}
 
 // --- bombs ---------------------------------------------------------------
 // Release one bomb a whisker above the floor and watch it land.
