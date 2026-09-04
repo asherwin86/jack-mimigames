@@ -67,6 +67,13 @@ check('the joy-cons beat opposite ways', (() => {
   const [l, r] = flock.find((o) => o.userData.type === 'switch2').userData.flap;
   return Math.sign(l.userData.f.amp) !== Math.sign(r.userData.f.amp);
 })());
+check('nine cats fly', flock.filter((o) => o.userData.type === 'cat').length === 9);
+check('the cats come in different coats', new Set(
+  flock.filter((o) => o.userData.type === 'cat').map((o) => o.children[0].material.color.getHex()),
+).size >= 7);
+check('the game logo flies', FLYER_TYPES.includes('gamelogo'));
+check('the logo badge spins on its own axis',
+  flock.find((o) => o.userData.type === 'gamelogo').userData.spin.length === 1);
 check('three houses fly', flock.filter((o) => o.userData.type === 'house').length === 3);
 check('each house has a different wall colour', new Set(
   flock.filter((o) => o.userData.type === 'house').map((o) => o.children[0].material.color.getHex()),
@@ -127,8 +134,10 @@ check('creeper returns to the sky', target.visible === true && target.userData.r
 check('it comes back off in the distance', target.position.z < 16, `z=${target.position.z.toFixed(1)}`);
 check('shards are recycled', findShards(bd.scene) === 0);
 
-// A pointer on empty sky must not arm anything.
-window.__move({ clientX: 4, clientY: 4 });
+// A pointer on empty sky must not arm anything. Genuinely off-screen, not just
+// a screen corner: with 14 creepers wandering a wide volume over several
+// simulated seconds, a corner ray can occasionally graze one by chance.
+window.__move({ clientX: -5000, clientY: -5000 });
 const armedBefore = creepers.filter((c) => c.userData.fuse > 0).length;
 bd.update(DT);
 hold();
@@ -204,6 +213,10 @@ check('the flock stays in its lane',
   flock.every((o) => o.position.z <= 17 && o.position.z >= -71));
 check('marks keep cycling', marks.every((m) => m.position.y <= 36 && m.position.y > -23));
 // --- the props toggle -----------------------------------------------------
+// The 30 simulated seconds just above ran bombs loose, which can legitimately
+// arm a creeper's fuse from a nearby blast. Clear that leftover state first,
+// so this section starts clean and isn't testing yesterday's explosion.
+for (const c of creepers) { c.userData.fuse = 0; c.userData.respawn = 0; c.visible = true; }
 const frozen = { z: flock[0].position.z, y: bombs[0].position.y };
 bd.setProps(false);
 for (let i = 0; i < 60; i++) bd.update(DT);
@@ -248,7 +261,11 @@ function installShims() {
   const ctx2d = {
     createLinearGradient: () => ({ addColorStop() {} }),
     fillRect() {}, clearRect() {}, drawImage() {},
+    beginPath() {}, arc() {}, fill() {}, fillText() {},
     set fillStyle(_) {}, get fillStyle() { return '#000'; },
+    set font(_) {}, get font() { return ''; },
+    set textAlign(_) {}, get textAlign() { return ''; },
+    set textBaseline(_) {}, get textBaseline() { return ''; },
   };
   const el = () => ({ width: 0, height: 0, getContext: () => ctx2d, style: {} });
   globalThis.document = {

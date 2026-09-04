@@ -72,6 +72,25 @@ const stripeTex = () => pixels((g) => {
   }
 });
 
+const gameLogoTex = () => pixels((g) => {
+  // The app's own mark: 100 / Mimi / Games in the same red-blue-red as the
+  // menu heading, on a dark plate so it reads as a badge from any distance.
+  g.fillStyle = '#10131c';
+  g.fillRect(0, 0, 64, 64);
+  g.fillStyle = 'rgba(255,255,255,.08)';
+  g.beginPath(); g.arc(32, 32, 30, 0, TAU); g.fill();
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.font = '900 22px system-ui, sans-serif';
+  g.fillStyle = '#ff4554';
+  g.fillText('100', 32, 24);
+  g.font = '800 11px system-ui, sans-serif';
+  g.fillStyle = '#00c3e3';
+  g.fillText('MIMI', 32, 40);
+  g.fillStyle = '#ff4554';
+  g.fillText('GAMES', 32, 51);
+}, 64, 64);
+
 const screenTex = () => pixels((g) => {
   g.fillStyle = '#10243f';
   g.fillRect(0, 0, 16, 16);
@@ -396,14 +415,17 @@ const BUILDERS = {
     add(o, g.ball(0.055, 6), m(COLOR.black), [0.13, 0.16, 0.28]);
     add(o, g.ball(0.055, 6), m(COLOR.black), [-0.13, 0.16, 0.28]);
   },
-  cat: ({ g, m }, o, flap) => {
-    add(o, g.box(0.62, 0.34, 0.36), m(COLOR.grey));
-    add(o, g.box(0.34, 0.32, 0.3), m(COLOR.grey), [0.42, 0.2, 0]);
+  cat: ({ g, m }, o, flap, _spin, i) => {
+    // Nine strays, nine coats.
+    const fur = m([COLOR.grey, COLOR.orange, COLOR.black, COLOR.white, COLOR.tan,
+      0x8a6a4a, COLOR.cream, 0x4a4f57, COLOR.brown][i % 9]);
+    add(o, g.box(0.62, 0.34, 0.36), fur);
+    add(o, g.box(0.34, 0.32, 0.3), fur, [0.42, 0.2, 0]);
     add(o, g.cone(0.09, 0.16, 4), m(COLOR.pink), [0.42, 0.42, 0.09]);
     add(o, g.cone(0.09, 0.16, 4), m(COLOR.pink), [0.42, 0.42, -0.09]);
     add(o, g.ball(0.04, 6), m(COLOR.green), [0.58, 0.24, 0.1]);
     add(o, g.ball(0.04, 6), m(COLOR.green), [0.58, 0.24, -0.1]);
-    flap.push(beat(add(o, g.cyl(0.045, 0.03, 0.5, 6), m(COLOR.grey), [-0.4, 0.14, 0], [0, 0, 0.7]), 'x', 0, 0.5, 4));
+    flap.push(beat(add(o, g.cyl(0.045, 0.03, 0.5, 6), fur, [-0.4, 0.14, 0], [0, 0, 0.7]), 'x', 0, 0.5, 4));
   },
   key: ({ g, m }, o) => {
     add(o, g.torus(0.17, 0.05, 6, 12), m(COLOR.gold), [0, 0.34, 0]);
@@ -596,6 +618,11 @@ const BUILDERS = {
     add(o, g.box(0.26, 0.44, 0.03), m(COLOR.brown), [0, -0.28, 0.51]);      // door
     for (const x of [-0.32, 0.32]) add(o, g.box(0.2, 0.2, 0.03), lit(0xffe9a0), [x, 0, 0.51]);
   },
+  gamelogo: ({ g, map }, o, _flap, spin) => {
+    const disc = add(o, g.cyl(0.7, 0.7, 0.08, 24), map('gamelogo', gameLogoTex));
+    disc.rotation.x = Math.PI / 2;
+    spin.push(turn(disc, 'y', 1.1));
+  },
   anvil: ({ g, m }, o) => {
     add(o, g.box(0.8, 0.24, 0.4), m(COLOR.dark), [0, 0.22, 0]);
     add(o, g.box(0.4, 0.24, 0.3), m(COLOR.dark), [0, 0, 0]);
@@ -607,7 +634,7 @@ const BUILDERS = {
 const TYPES = Object.keys(BUILDERS);
 
 // Most props fly solo; a few earn a small fleet.
-const COUNTS = { lambo: 3, tv: 3, sedan: 3, suv: 3, hatchback: 3, house: 3 };
+const COUNTS = { lambo: 3, tv: 3, sedan: 3, suv: 3, hatchback: 3, house: 3, cat: 9 };
 const TOTAL = TYPES.reduce((n, t) => n + (COUNTS[t] ?? 1), 0);
 
 /**
