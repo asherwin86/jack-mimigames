@@ -178,7 +178,7 @@ function makeBomb(bodyMat, fuseMat, sparkMat, scale) {
 }
 
 /** Creepers flying over slowly tumbling cubes and a cycling rainbow sky. */
-export function buildBackdrop(size) {
+export function buildBackdrop(size, audio) {
   const scene = new THREE.Scene();
 
   const canvas = document.createElement('canvas');
@@ -287,9 +287,29 @@ export function buildBackdrop(size) {
   const onLeave = () => { pointing = false; };
   window.addEventListener('pointermove', onMove, { passive: true });
   window.addEventListener('pointerleave', onLeave);
+  // Click Nyan Cat and it plays its own little jingle — synthesized, not a
+  // recording, the same way every other sound in this game is.
+  let meowCool = 0;
+  const onDown = (e) => {
+    if (!audio || meowCool > 0) return;
+    const nyan = flock.flyers.find((o) => o.userData.type === 'nyancat');
+    if (!nyan) return;
+    pointer.set(
+      (e.clientX / window.innerWidth) * 2 - 1,
+      -(e.clientY / window.innerHeight) * 2 + 1,
+    );
+    raycaster.setFromCamera(pointer, camera);
+    nyan.updateMatrixWorld();
+    if (raycaster.intersectObject(nyan, true).length) {
+      audio.meow();
+      meowCool = 0.5;
+    }
+  };
+  window.addEventListener('pointerdown', onDown);
   const dispose = () => {
     window.removeEventListener('pointermove', onMove);
     window.removeEventListener('pointerleave', onLeave);
+    window.removeEventListener('pointerdown', onDown);
   };
 
   /** Arms whichever creeper is under the pointer. Already-lit ones stay lit. */
@@ -403,6 +423,7 @@ export function buildBackdrop(size) {
     shards.update(dt);
 
     flock.update(dt, t);
+    if (meowCool > 0) meowCool -= dt;
 
     for (const m of marks) {
       const d = m.userData;

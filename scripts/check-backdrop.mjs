@@ -15,7 +15,9 @@ function check(label, ok, note = '') {
   if (!ok) failures++;
 }
 
-const bd = buildBackdrop({ w: W, h: H });
+const meows = [];
+const mockAudio = { meow: () => meows.push(Date.now()) };
+const bd = buildBackdrop({ w: W, h: H }, mockAudio);
 // Every prop hangs off one group inside the scene, so search the whole tree.
 const all = [];
 bd.scene.traverse((o) => all.push(o));
@@ -74,6 +76,30 @@ check('the cats come in different coats', new Set(
 check('nyan cat flies', FLYER_TYPES.includes('nyancat'));
 check('nyan cat has a rainbow trail plus sparkles',
   flock.find((o) => o.userData.type === 'nyancat').children.length >= 6 + 5 + 2 + 3);
+// --- nyan cat click-to-meow ------------------------------------------------
+const nyan = flock.find((o) => o.userData.type === 'nyancat');
+nyan.position.set(0, 0, 12);
+bd.camera.updateMatrixWorld(true);
+const nyanNdc = nyan.position.clone().project(bd.camera);
+const clickAt = (x, y) => window.__handlers.pointerdown?.({ clientX: x, clientY: y });
+
+clickAt((nyanNdc.x + 1) / 2 * W, (1 - nyanNdc.y) / 2 * H);
+check('clicking nyan cat plays its jingle', meows.length === 1, `${meows.length} plays`);
+
+clickAt((nyanNdc.x + 1) / 2 * W, (1 - nyanNdc.y) / 2 * H);
+check('a cooldown stops it from spamming', meows.length === 1, `${meows.length} plays`);
+
+clickAt(-5000, -5000);
+check('clicking empty sky does not play it', meows.length === 1, `${meows.length} plays`);
+
+for (let i = 0; i < 40; i++) bd.update(DT);
+// Nyan Cat drifts on its own while those frames run, so re-aim at where it
+// actually ended up rather than the spot it started from.
+bd.camera.updateMatrixWorld(true);
+const nyanNdc2 = nyan.position.clone().project(bd.camera);
+clickAt((nyanNdc2.x + 1) / 2 * W, (1 - nyanNdc2.y) / 2 * H);
+check('it can meow again once the cooldown passes', meows.length === 2, `${meows.length} plays`);
+
 check('nyan cat sparkles spin', flock.find((o) => o.userData.type === 'nyancat').userData.spin.length === 2);
 check('the game logo flies', FLYER_TYPES.includes('gamelogo'));
 check('the logo badge spins on its own axis',
@@ -282,7 +308,7 @@ function installShims() {
     __handlers: handlers,
     __move: (e) => handlers.pointermove?.(e),
     addEventListener: (k, fn) => { handlers[k] = fn; },
-    removeEventListener: (k) => { delete handlers[k]; },
+    removeEventListener: (k, fn) => { if (handlers[k] === fn) delete handlers[k]; },
   };
   globalThis.addEventListener = () => {};
   globalThis.removeEventListener = () => {};

@@ -71,4 +71,11 @@ export class Audio {
   boom() { this.noise(0.42, { gain: 0.24, cutoff: 900, sweep: 0.08 }); }
   win() { [0, 4, 7, 12].forEach((s, i) => this.tone(523.25 * Math.pow(2, s / 12), 0.18, { type: 'triangle', delay: i * 0.1, gain: 0.15 })); }
   lose() { [0, -3, -7].forEach((s, i) => this.tone(392 * Math.pow(2, s / 12), 0.26, { type: 'sawtooth', delay: i * 0.13, gain: 0.13 })); }
+
+  /** An original chiptune jingle, not any particular song — for Nyan Cat. */
+  meow() {
+    [0, 2, 4, 7, 4, 9, 7, 12].forEach((s, i) => this.tone(
+      523.25 * Math.pow(2, s / 12), 0.1, { type: 'square', delay: i * 0.075, gain: 0.11 },
+    ));
+  }
 }

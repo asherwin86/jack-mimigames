@@ -76,7 +76,7 @@ export class Engine {
   /** Show an ambient scene while no game is mounted (the menu backdrop). */
   setIdle(builder) {
     this.unmount();
-    this.idleScene = builder(this.size);
+    this.idleScene = builder(this.size, this.audio);
     this.scene = this.idleScene.scene;
     this.camera = this.idleScene.camera;
     this._applyAspect(this.camera);
