@@ -32,6 +32,28 @@ html, body {
    except the back button — games raycast through this whole area. */
 #hud .hud-back { pointer-events: auto; }
 
+/* ---------- FPS ---------- */
+
+/* Fixed, not absolute: it sits outside the menu/HUD churn so it survives every
+   screen. Never clickable — games raycast through this corner. */
+#fps {
+  position: fixed;
+  right: 10px;
+  bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+  z-index: 50;
+  pointer-events: none;
+  font: 700 11px/1 ui-monospace, Menlo, Consolas, monospace;
+  letter-spacing: .5px;
+  padding: 5px 8px;
+  border-radius: 7px;
+  color: #b7f7c8;
+  background: rgba(8, 12, 20, .55);
+  border: 1px solid rgba(255, 255, 255, .14);
+  backdrop-filter: blur(3px);
+}
+#fps[data-rate="ok"] { color: #ffd98a; }
+#fps[data-rate="low"] { color: #ff9a9a; }
+
 /* ---------- HUD ---------- */
 .hud-bar {
   position: absolute; top: 0; left: 0; right: 0;
@@ -96,6 +118,14 @@ html, body {
 .menu-head h1 {
   margin: 0; font-size: clamp(34px, 6vw, 58px); letter-spacing: -1.5px;
   font-weight: 800;
+  /* inline-block so the box hugs the text and turns about its own centre
+     instead of sweeping through the full page width. */
+  display: inline-block;
+  animation: title-spin 6s linear infinite;
+}
+@keyframes title-spin {
+  from { transform: perspective(900px) rotateY(0deg); }
+  to   { transform: perspective(900px) rotateY(360deg); }
 }
 .menu-head h1 .red { color: var(--nin-red); }
 .menu-head h1 .blue { color: var(--nin-blue); }
@@ -107,6 +137,28 @@ html, body {
 }
 .menu-tools input::placeholder { color: var(--muted); }
 .menu-tools input:focus { outline: none; border-color: var(--accent); }
+
+/* Strips the sky back to the rainbow when the props get too busy. */
+.menu-tools .toggle {
+  display: inline-flex; align-items: center; gap: 8px; cursor: pointer;
+  background: rgba(255,255,255,.05); border: 1px solid var(--line); color: var(--muted);
+  border-radius: 999px; padding: 9px 16px; font: 600 13px var(--font);
+  transition: color .15s ease, border-color .15s ease;
+}
+.menu-tools .toggle .dot {
+  width: 9px; height: 9px; border-radius: 50%;
+  background: var(--muted); box-shadow: none;
+  transition: background .15s ease, box-shadow .15s ease;
+}
+.menu-tools .toggle[aria-pressed="true"] { color: var(--text); border-color: var(--accent); }
+.menu-tools .toggle[aria-pressed="true"] .dot {
+  background: var(--accent); box-shadow: 0 0 9px var(--accent);
+}
+.menu-tools .toggle kbd {
+  font: 700 10px/1 ui-monospace, Menlo, Consolas, monospace;
+  color: var(--muted); border: 1px solid var(--line); border-radius: 5px;
+  padding: 3px 5px; background: rgba(255,255,255,.05);
+}
 
 .chips { display: flex; gap: 7px; justify-content: center; flex-wrap: wrap; margin-top: 12px; }
 .chip {
@@ -122,18 +174,34 @@ html, body {
 }
 .tile {
   position: relative; text-align: left; cursor: pointer; color: var(--text);
-  background: var(--panel); border: 1px solid var(--line); border-radius: 16px;
-  padding: 18px; transition: transform .12s ease, border-color .15s ease;
+  background: linear-gradient(160deg, #1a5fa8, #0b2c52);
+  border: 1px solid rgba(110, 231, 255, .28); border-radius: 16px;
+  padding: 18px; transition: border-color .15s ease, box-shadow .15s ease;
   display: flex; flex-direction: column; gap: 7px; min-height: 128px;
+  animation: tile-spin 4s linear infinite;
 }
-.tile:hover { transform: translateY(-3px); border-color: var(--accent); }
-.tile .num { font: 700 11px ui-monospace, Menlo, monospace; color: var(--muted); letter-spacing: 1px; }
+.tile:hover {
+  border-color: var(--accent);
+  box-shadow: 0 10px 30px rgba(0, 120, 200, .35);
+}
+/* Always turning. Each tile gets a negative animation-delay from the markup so
+   the grid doesn't rotate in lockstep. */
+@keyframes tile-spin {
+  from { transform: perspective(1200px) rotateY(0deg); }
+  to   { transform: perspective(1200px) rotateY(360deg); }
+}
+.tile .num { font: 700 11px ui-monospace, Menlo, monospace; color: #8fc4ea; letter-spacing: 1px; }
+}
 .tile .name { font-size: 17px; font-weight: 700; letter-spacing: -.2px; }
-.tile .blurb { font-size: 12.5px; color: var(--muted); line-height: 1.45; flex: 1; }
-.tile .foot { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--muted); }
-.tile .tag { border: 1px solid var(--line); border-radius: 6px; padding: 2px 7px; }
+.tile .blurb { font-size: 12.5px; color: #b3d2ee; line-height: 1.45; flex: 1; }
+.tile .foot { display: flex; align-items: center; gap: 8px; font-size: 11px; color: #b3d2ee; }
+.tile .tag { border: 1px solid rgba(255, 255, 255, .28); border-radius: 6px; padding: 2px 7px; }
 .tile .pb { margin-left: auto; color: var(--good); font-weight: 700; }
-.tile.soon { opacity: .45; cursor: not-allowed; }
-.tile.soon:hover { transform: none; border-color: var(--line); }
+.tile.soon { opacity: .45; cursor: not-allowed; background: linear-gradient(160deg, #3a4258, #232a3d); }
+.tile.soon:hover { border-color: var(--line); box-shadow: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .tile, .menu-head h1 { animation: none; }
+}
 
 .empty { text-align: center; color: var(--muted); padding: 60px 20px; font-size: 14px; }

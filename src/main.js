@@ -3,6 +3,7 @@ import { Menu } from './ui/Menu.js';
 import { showResults, showError } from './ui/Results.js';
 import { loadGame } from './games/index.js';
 import { buildBackdrop } from './ui/Backdrop.js';
+import { Settings } from './engine/Settings.js';
 
 const canvas = document.getElementById('stage');
 const hudRoot = document.getElementById('hud');
@@ -10,6 +11,8 @@ const uiRoot = document.getElementById('ui');
 
 const engine = new Engine(canvas, hudRoot);
 const menu = new Menu(uiRoot, (id) => { location.hash = `#/${id}`; });
+// The toggle only ever applies to the menu backdrop, which is the idle scene.
+menu.onProps = (on) => engine.idleScene?.setProps?.(on);
 
 let current = null;
 
@@ -52,5 +55,15 @@ function route() {
 addEventListener('hashchange', route);
 addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && location.hash) location.hash = '';
+
+  // Shift strips the sky back to the rainbow and leaves the game tiles alone.
+  // Only on the menu: in a game Shift belongs to the game, and while the search
+  // box has focus it belongs to whoever is typing capitals.
+  if (e.key !== 'Shift' || e.repeat) return;
+  if (!engine.idleScene?.setProps) return;
+  if (e.target instanceof HTMLInputElement) return;
+  const on = Settings.toggle('bgProps');
+  engine.idleScene.setProps(on);
+  menu.syncProps(on);
 });
 route();

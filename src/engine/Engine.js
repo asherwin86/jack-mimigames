@@ -33,12 +33,20 @@ export class Engine {
     this.onExit = null;     // back-to-menu button
     this.hud.onExit = () => this.onExit?.();
 
+    // The FPS readout lives outside #hud and #ui so it survives every screen
+    // change; it is measured off the wall clock, not the clamped frame delta.
+    this._fpsEl = document.getElementById('fps');
+    this._fpsAt = performance.now();
+    this._frames = 0;
+
     this._clock = new THREE.Clock();
     this._loop = this._loop.bind(this);
     addEventListener('resize', () => this.resize());
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) this.paused = true;
-      else { this.paused = false; this._clock.getDelta(); }
+      // Reset the FPS window too, or the first sample after a hidden tab is
+      // measured over the whole time away.
+      else { this.paused = false; this._clock.getDelta(); this._fpsAt = performance.now(); this._frames = 0; }
     });
     this.resize();
     requestAnimationFrame(this._loop);
@@ -109,6 +117,8 @@ export class Engine {
 
   unmount() {
     this.running = false;
+    // The idle scene may hold window listeners (the backdrop tracks the pointer).
+    try { this.idleScene?.dispose?.(); } catch (e) { console.error(e); }
     this.idleScene = null;
     if (this.game) {
       try { this.game.dispose(); } catch (e) { console.error(e); }
@@ -128,10 +138,25 @@ export class Engine {
   /** Freeze updates but keep rendering (used while the results card is up). */
   freeze() { this.running = false; }
 
+  /** Refreshes the corner readout four times a second. */
+  _countFrame() {
+    this._frames++;
+    const now = performance.now();
+    const span = now - this._fpsAt;
+    if (span < 250) return;
+    const fps = Math.round((this._frames * 1000) / span);
+    this._frames = 0;
+    this._fpsAt = now;
+    if (!this._fpsEl) return;
+    this._fpsEl.textContent = `${fps} FPS`;
+    this._fpsEl.dataset.rate = fps >= 50 ? 'good' : fps >= 30 ? 'ok' : 'low';
+  }
+
   _loop() {
     requestAnimationFrame(this._loop);
     const dt = Math.min(this._clock.getDelta(), 1 / 20);
     if (this.paused) return;
+    this._countFrame();
 
     if (this.running && this.game) {
       this.game.time += dt;

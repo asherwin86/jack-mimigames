@@ -1,6 +1,7 @@
 import { CATALOG, ALL_TAGS, TARGET } from '../games/catalog.js';
 import { isImplemented } from '../games/index.js';
 import { Scores } from '../engine/Storage.js';
+import { Settings } from '../engine/Settings.js';
 
 export class Menu {
   constructor(root, onPlay) {
@@ -8,6 +9,7 @@ export class Menu {
     this.onPlay = onPlay;
     this.query = '';
     this.tag = null;
+    this.onProps = null;   // (on) => void, so the backdrop can follow the toggle
   }
 
   show() {
@@ -18,6 +20,9 @@ export class Menu {
           <p>${CATALOG.length} of ${TARGET} built &middot; every one rendered in 3D</p>
           <div class="menu-tools">
             <input type="search" placeholder="Search games…" autocomplete="off" />
+            <button class="toggle" aria-pressed="${Settings.get('bgProps', true)}">
+              <span class="dot"></span>Background props <kbd>Shift</kbd>
+            </button>
           </div>
           <div class="chips"></div>
         </div>
@@ -42,12 +47,23 @@ export class Menu {
 
     $search.oninput = () => { this.query = $search.value.trim().toLowerCase(); this.render(); };
 
+    this.root.querySelector('.toggle').onclick = () => {
+      const on = Settings.toggle('bgProps');
+      this.syncProps(on);
+      this.onProps?.(on);
+    };
+
     this.$grid.onclick = (e) => {
       const t = e.target.closest('.tile');
       if (t && !t.classList.contains('soon')) this.onPlay(t.dataset.id);
     };
 
     this.render();
+  }
+
+  /** Reflects the props setting on the button, for when Shift flips it. */
+  syncProps(on) {
+    this.root.querySelector('.toggle')?.setAttribute('aria-pressed', String(on));
   }
 
   render() {
@@ -63,11 +79,13 @@ export class Menu {
       return;
     }
 
-    this.$grid.innerHTML = list.map((e) => {
+    this.$grid.innerHTML = list.map((e, i) => {
       const best = Scores.best(e.id);
       const ready = isImplemented(e.id);
+      // Negative delay starts each tile part-way through its turn.
+      const delay = `animation-delay:-${(i * 0.37).toFixed(2)}s`;
       return `
-        <button class="tile${ready ? '' : ' soon'}" data-id="${e.id}" ${ready ? '' : 'disabled'}>
+        <button class="tile${ready ? '' : ' soon'}" data-id="${e.id}" style="${delay}" ${ready ? '' : 'disabled'}>
           <span class="num">#${String(e.n).padStart(3, '0')}</span>
           <span class="name">${e.name}</span>
           <span class="blurb">${e.blurb}</span>

@@ -114,8 +114,16 @@ npm run smoke -- 60
 ```
 
 `npm run check:voxels` runs extra assertions specific to Blockcraft — terrain
-composition, that all 36 chunks mesh, that the player lands on solid ground,
-and that mining a buried pocket exposes the cavity walls.
+composition, that every seed gets a sea, that caves are carved without breaching
+the surface, that ore is layered by depth, that all 36 chunks mesh, that the
+player lands on solid ground, that mining a buried pocket exposes the cavity
+walls, and that holding to dig respects each block's hardness.
+
+`npm run check:backdrop` covers the menu backdrop: that hovering a flying
+creeper lights its fuse, that the fuse detonates it and it respawns, and that
+bombs and Claude marks fall from the sky while the flock flies past. The flock
+itself lives in `src/ui/flyers.js`: one builder per prop, each returning parts
+that beat or turn, all sharing a geometry and material cache.
 
 It does not exercise rendering — that is stock Three.js. Check visuals with
 `npm run dev`.

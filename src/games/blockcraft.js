@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { Game } from '../engine/Game.js';
-import { sky, clamp, damp, seeded, lerp } from '../engine/utils.js';
+import { sky, clamp, damp, seeded, lerp, invLerp, Burst } from '../engine/utils.js';
 
 /* ------------------------------------------------------------------ world */
 
@@ -28,10 +28,26 @@ const BLOCKS = [
   { name: 'Gold Ore', tiles: [13, 13, 13] },
   { name: 'Snow',     tiles: [14, 14, 14] },
   { name: 'Obsidian', tiles: [15, 15, 15] },
+  { name: 'Coal Ore', tiles: [16, 16, 16] },
+  { name: 'Iron Ore', tiles: [17, 17, 17] },
 ];
 const AIR = 0;
 const WATER = 7;
 const HOTBAR = [1, 3, 10, 8, 9, 5, 6, 4, 11];
+
+// Seconds of holding to break each block. Anything unlisted takes 0.6s.
+const HARDNESS = {
+  1: 0.45, 2: 0.4, 3: 1.1, 4: 0.35, 5: 0.8, 6: 0.12, 8: 0.7,
+  9: 1.0, 10: 1.2, 11: 0.35, 12: 1.7, 13: 0.2, 14: 3.4, 15: 1.5, 16: 1.9,
+};
+const hardnessOf = (id) => HARDNESS[id] ?? 0.6;
+
+// Average colour of each block, for the debris thrown when one breaks.
+const DEBRIS = {
+  1: 0x5fa63b, 2: 0x8a5f3c, 3: 0x7e7e86, 4: 0xded2a4, 5: 0x6b4a2c, 6: 0x3f7d32,
+  7: 0x3f7fd8, 8: 0xa97c4c, 9: 0xa04a3c, 10: 0x8b8b93, 11: 0xbfe4f2,
+  12: 0xf0c14b, 13: 0xeef4ff, 14: 0x241f36, 15: 0x2b2b31, 16: 0xd8b48c,
+};
 
 const isSolid = (id) => id !== AIR && BLOCKS[id].solid !== false;
 const isAlpha = (id) => id !== AIR && BLOCKS[id].alpha === true;
@@ -78,6 +94,17 @@ export default class Blockcraft extends Game {
     this.highlight.visible = false;
     this.add(this.highlight);
 
+    // Darkens over the block being mined, so a long dig shows its progress.
+    this.crack = new THREE.Mesh(
+      new THREE.BoxGeometry(1.02, 1.02, 1.02),
+      new THREE.MeshBasicMaterial({ color: 0x08080a, transparent: true, opacity: 0, depthWrite: false }),
+    );
+    this.crack.visible = false;
+    this.add(this.crack);
+    this.debris = new Burst(this.scene, 90, 0.13);
+    this.clouds = buildClouds();
+    this.add(this.clouds);
+
     // Spawn on the surface at the middle of the world.
     const sx = W / 2;
     const sz = W / 2;
@@ -95,6 +122,12 @@ export default class Blockcraft extends Game {
     this.placed = 0;
     this.cool = 0;
     this.lastJump = -1;
+    this.mineKey = null;    // which block the current dig is against
+    this.mineT = 0;         // seconds spent digging it
+    this.chip = 0;          // next chipping sound
+    this.stepT = 0;         // distance left before the next footstep
+    this.wasWet = false;
+    this.sprinting = false;
 
     this.camera.fov = 75;
     this.camera.near = 0.1;
@@ -103,7 +136,7 @@ export default class Blockcraft extends Game {
 
     this.hud.panel(hotbarHtml());
     this.refreshHotbar();
-    this.hud.hint('Click to capture the mouse · WASD + Space · left click mines, right click places · 1-9 or scroll to pick a block · F to fly');
+    this.hud.hint('Click to capture the mouse · WASD + Space · hold left click to mine, right click places · middle click copies a block · 1-9 or scroll · F to fly');
   }
 
   /* ----------------------------------------------------------- voxel access */
@@ -209,8 +242,18 @@ export default class Blockcraft extends Game {
     this.move(dt);
     this.interact(dt);
 
+    this.debris.update(dt);
+    this.driftClouds(dt);
+
     this.camera.position.set(this.pos.x, this.pos.y + 1.62, this.pos.z);
     this.camera.rotation.set(this.pitch, this.yaw, 0, 'YXZ');
+
+    // A little FOV kick while sprinting; the speed reads better than the number.
+    const wantFov = this.sprinting ? 82 : 75;
+    if (Math.abs(this.camera.fov - wantFov) > 0.05) {
+      this.camera.fov = damp(this.camera.fov, wantFov, 8, dt);
+      this.camera.updateProjectionMatrix();
+    }
 
     const head = this.get(this.pos.x, this.pos.y + 1.6, this.pos.z);
     this.scene.fog.color.setHex(head === WATER ? 0x2a5f9e : 0xa8cdf5);
@@ -250,6 +293,7 @@ export default class Blockcraft extends Game {
     const cos = Math.cos(this.yaw);
     const sprint = this.input.key('ShiftLeft') && !this.flying ? 1.6 : 1;
     const speed = (this.flying ? 16 : 5.2) * sprint;
+    this.sprinting = sprint > 1 && (fwd !== 0 || strafe !== 0);
 
     const wishX = (-sin * fwd + cos * strafe) * speed;
     const wishZ = (-cos * fwd - sin * strafe) * speed;
@@ -274,10 +318,27 @@ export default class Blockcraft extends Game {
     }
 
     // Axis-separated sweep against the voxel grid.
+    const falling = this.vel.y;
     this.grounded = false;
     this.sweep('x', this.vel.x * dt);
     this.sweep('z', this.vel.z * dt);
     this.sweep('y', this.vel.y * dt);
+
+    if (this.grounded && falling < -7) this.audio.noise(0.09, { gain: 0.1, cutoff: 300 });
+    if (inWater !== this.wasWet) {
+      this.audio.noise(0.3, { gain: 0.12, cutoff: 900, sweep: 0.6 });
+      this.wasWet = inWater;
+    }
+    // Footsteps are paced by distance covered, not by time, so they keep step
+    // with the walk whether you are sprinting or crawling along.
+    const pace = Math.hypot(this.vel.x, this.vel.z) * dt;
+    if (this.grounded && !this.flying && pace > 0.001) {
+      this.stepT -= pace;
+      if (this.stepT <= 0) {
+        this.stepT = 1.9;
+        this.audio.noise(0.05, { gain: 0.05, cutoff: 520 });
+      }
+    }
 
     if (this.pos.y < -20) {           // fell out of the world
       this.pos.set(W / 2 + 0.5, H - 1, W / 2 + 0.5);
@@ -356,14 +417,17 @@ export default class Blockcraft extends Game {
     const hit = this.raycast();
     this.highlight.visible = !!hit;
     if (hit) this.highlight.position.set(hit.x + 0.5, hit.y + 0.5, hit.z + 0.5);
-    if (!hit || this.cool > 0) return;
 
-    if (this.input.button(0) && this.input.locked) {
-      this.set(hit.x, hit.y, hit.z, AIR);
-      this.mined++;
-      this.cool = 0.18;
-      this.audio.noise(0.12, { gain: 0.14, cutoff: 1200, sweep: 0.4 });
-    } else if (this.input.button(2) && hit.prev) {
+    // Middle click copies the block you are looking at, if it is on the bar.
+    if (hit && this.input.clickedButton(1)) {
+      const slot = HOTBAR.indexOf(hit.id);
+      if (slot >= 0) { this.slot = slot; this.refreshHotbar(); this.audio.blip?.(); }
+    }
+
+    this.mine(dt, hit);
+
+    if (!hit || this.cool > 0) return;
+    if (this.input.button(2) && hit.prev) {
       const { x, y, z } = hit.prev;
       if (this.get(x, y, z) === AIR && !this.intersectsPlayer(x, y, z)) {
         this.set(x, y, z, HOTBAR[this.slot]);
@@ -371,6 +435,57 @@ export default class Blockcraft extends Game {
         this.cool = 0.18;
         this.audio.tone(280, 0.06, { type: 'square', gain: 0.09 });
       }
+    }
+  }
+
+  /**
+   * Digging takes time now: every block has a hardness, and holding the button
+   * works through it. Looking away resets the dig, so you cannot chip at four
+   * blocks at once.
+   */
+  mine(dt, hit) {
+    const digging = hit && this.input.button(0) && this.input.locked;
+    const key = digging ? `${hit.x},${hit.y},${hit.z}` : null;
+    if (key !== this.mineKey) {
+      this.mineKey = key;
+      this.mineT = 0;
+      this.chip = 0;
+    }
+    if (!digging) {
+      this.crack.visible = false;
+      return;
+    }
+
+    const need = hardnessOf(hit.id);
+    this.mineT += dt;
+    const progress = clamp(this.mineT / need, 0, 1);
+
+    this.crack.visible = true;
+    this.crack.position.set(hit.x + 0.5, hit.y + 0.5, hit.z + 0.5);
+    this.crack.material.opacity = progress * 0.55;
+
+    this.chip -= dt;
+    if (this.chip <= 0) {
+      this.chip = 0.16;
+      this.audio.noise(0.05, { gain: 0.07, cutoff: 900 + progress * 900 });
+    }
+
+    if (progress < 1) return;
+
+    const centre = new THREE.Vector3(hit.x + 0.5, hit.y + 0.5, hit.z + 0.5);
+    this.debris.burst(centre, DEBRIS[hit.id] ?? 0x9a9aa2, 10, 4.5);
+    this.set(hit.x, hit.y, hit.z, AIR);
+    this.mined++;
+    this.mineKey = null;
+    this.mineT = 0;
+    this.crack.visible = false;
+    this.audio.noise(0.13, { gain: 0.15, cutoff: 1200, sweep: 0.4 });
+  }
+
+  driftClouds(dt) {
+    for (const c of this.clouds.children) {
+      c.position.x += c.userData.speed * dt;
+      if (c.position.x > W * 1.6) c.position.x = -W * 0.6;
     }
   }
 
@@ -394,14 +509,35 @@ export default class Blockcraft extends Game {
   dispose() { this.input.exitLock(); }
 }
 
+/** A handful of flat slabs drifting overhead, well above the build height. */
+function buildClouds() {
+  const group = new THREE.Group();
+  const mat = new THREE.MeshBasicMaterial({
+    color: 0xffffff, transparent: true, opacity: 0.72, depthWrite: false,
+  });
+  const rng = seeded(4242);
+  for (let i = 0; i < 16; i++) {
+    const w = 10 + rng() * 22;
+    const d = 8 + rng() * 16;
+    const cloud = new THREE.Mesh(new THREE.BoxGeometry(w, 2 + rng() * 2, d), mat);
+    cloud.position.set(rng() * W * 2 - W / 2, H + 14 + rng() * 10, rng() * W * 2 - W / 2);
+    cloud.userData.speed = 0.7 + rng() * 1.1;
+    group.add(cloud);
+  }
+  return group;
+}
+
 /* ------------------------------------------------------------- generation */
 
 function generate(voxels, seed) {
   const idx = (x, y, z) => (y * W + z) * W + x;
+  const heights = new Uint8Array(W * W);   // surface height, kept for cave carving
 
+  // Elevation first, as a raw field. Layered value noise makes rolling hills
+  // with the odd peak, but its mean wanders from seed to seed.
+  const field = new Float32Array(W * W);
   for (let z = 0; z < W; z++) {
     for (let x = 0; x < W; x++) {
-      // Layered value noise makes rolling hills with the odd peak.
       let e = 0;
       let amp = 1;
       let freq = 0.012;
@@ -412,11 +548,26 @@ function generate(voxels, seed) {
         amp *= 0.5;
         freq *= 2.1;
       }
-      e /= sum;
-      // Centred so roughly a quarter of the map falls below sea level, which
-      // is what makes coastlines and lakes instead of one continuous plateau.
-      const h = clamp(Math.floor(-8 + e * 47), 1, H - 8);
+      field[z * W + x] = e / sum;
+    }
+  }
+
+  // Fit the curve to this world's own spread rather than to fixed constants.
+  // A flat mapping left some seeds with no sea at all and others half drowned;
+  // pinning the 30th percentile to the waterline gives every world a coast.
+  const sorted = Float32Array.from(field).sort();
+  const low = sorted[0];
+  const shore = sorted[Math.floor(sorted.length * 0.3)];
+  const peak = sorted[Math.floor(sorted.length * 0.995)];
+  const heightAt = (e) => (e <= shore
+    ? Math.round(lerp(2, SEA, invLerp(low, shore, e)))
+    : Math.round(lerp(SEA, H - 6, clamp(invLerp(shore, peak, e), 0, 1) ** 1.15)));
+
+  for (let z = 0; z < W; z++) {
+    for (let x = 0; x < W; x++) {
+      const h = clamp(heightAt(field[z * W + x]), 1, H - 6);
       const beach = h <= SEA + 1;
+      heights[z * W + x] = h;
 
       for (let y = 0; y <= Math.max(h, SEA); y++) {
         let id = AIR;
@@ -424,8 +575,6 @@ function generate(voxels, seed) {
           if (y === h) id = beach ? 4 : 1;
           else if (y > h - 4) id = beach ? 4 : 2;
           else id = 3;
-          // Sprinkle ore below the surface.
-          if (id === 3 && y < 14 && noise2(x * 0.9, z * 0.9 + y * 3.1, seed + 991) > 0.93) id = 12;
         } else if (y <= SEA) {
           id = WATER;
         }
@@ -434,6 +583,42 @@ function generate(voxels, seed) {
 
       // Snow caps
       if (h > 26) voxels[idx(x, h, z)] = 13;
+    }
+  }
+
+  // Caves. Carved from 3D noise, but never within three blocks of the surface:
+  // that crust is what stops the sea draining into them and the hills going hollow.
+  for (let y = 2; y < H - 6; y++) {
+    for (let z = 0; z < W; z++) {
+      for (let x = 0; x < W; x++) {
+        const i = idx(x, y, z);
+        const id = voxels[i];
+        if (id !== 3 && id !== 2) continue;
+        if (y > heights[z * W + x] - 3) continue;
+        if (noise3(x * 0.085, y * 0.13, z * 0.085, seed + 313) > 0.655) voxels[i] = AIR;
+      }
+    }
+  }
+
+  // Ore veins: coal near the surface, iron below it, gold only in the deep.
+  const VEINS = [
+    { id: 15, top: 26, freq: 0.34, cut: 0.845 },
+    { id: 16, top: 17, freq: 0.4, cut: 0.86 },
+    { id: 12, top: 10, freq: 0.46, cut: 0.885 },
+  ];
+  for (let y = 1; y < 27; y++) {
+    for (let z = 0; z < W; z++) {
+      for (let x = 0; x < W; x++) {
+        const i = idx(x, y, z);
+        if (voxels[i] !== 3) continue;
+        for (const v of VEINS) {
+          if (y > v.top) continue;
+          if (noise3(x * v.freq, y * v.freq, z * v.freq, seed + v.id * 77) > v.cut) {
+            voxels[i] = v.id;
+            break;
+          }
+        }
+      }
     }
   }
 
@@ -475,6 +660,30 @@ function hash2(x, z, seed) {
   return (n & 0x7fffffff) / 0x7fffffff;
 }
 
+function hash3(x, y, z, seed) {
+  let n = (Math.imul(x | 0, 1619) + Math.imul(y | 0, 6971)
+    + Math.imul(z | 0, 31337) + Math.imul(seed | 0, 1013)) | 0;
+  n = (n << 13) ^ n;
+  const m = (Math.imul(Math.imul(n, n), 15731) + 789221) | 0;
+  n = (Math.imul(n, m) + 1376312589) | 0;
+  return (n & 0x7fffffff) / 0x7fffffff;
+}
+
+/** Trilinear value noise — the cave and vein shapes come out of this. */
+function noise3(x, y, z, seed) {
+  const xi = Math.floor(x); const yi = Math.floor(y); const zi = Math.floor(z);
+  const xf = x - xi; const yf = y - yi; const zf = z - zi;
+  const u = xf * xf * (3 - 2 * xf);
+  const v = yf * yf * (3 - 2 * yf);
+  const w = zf * zf * (3 - 2 * zf);
+  const c = (dx, dy, dz) => hash3(xi + dx, yi + dy, zi + dz, seed);
+  const x00 = lerp(c(0, 0, 0), c(1, 0, 0), u);
+  const x10 = lerp(c(0, 1, 0), c(1, 1, 0), u);
+  const x01 = lerp(c(0, 0, 1), c(1, 0, 1), u);
+  const x11 = lerp(c(0, 1, 1), c(1, 1, 1), u);
+  return lerp(lerp(x00, x10, v), lerp(x01, x11, v), w);
+}
+
 function noise2(x, z, seed) {
   const xi = Math.floor(x);
   const zi = Math.floor(z);
@@ -496,7 +705,7 @@ const keyDist = (key, mid) => {
 
 /* ------------------------------------------------------------------ atlas */
 
-const ATLAS_N = 4;      // 4 x 4 tiles
+const ATLAS_N = 5;      // 5 x 5 tiles
 const TILE = 16;        // pixels per tile
 
 function tileUV(tile, u, v) {
@@ -582,6 +791,18 @@ function buildAtlas() {
   for (let i = 0; i < 16; i++) px(13, (rng() * TILE) | 0, (rng() * TILE) | 0, '#f0c14b');
   speckle(14, '#eef4ff', ['#ffffff', '#dfe8f7']);                           // snow
   speckle(15, '#241f36', ['#312a49', '#1a1628']);                           // obsidian
+  speckle(16, '#7e7e86', ['#8b8b93', '#71717a']);                           // coal ore
+  for (let i = 0; i < 22; i++) {
+    const x = (rng() * (TILE - 2)) | 0;
+    const y = (rng() * (TILE - 2)) | 0;
+    px(16, x, y, '#26262c'); px(16, x + 1, y, '#1b1b20'); px(16, x, y + 1, '#31313a');
+  }
+  speckle(17, '#7e7e86', ['#8b8b93', '#71717a']);                           // iron ore
+  for (let i = 0; i < 20; i++) {
+    const x = (rng() * (TILE - 2)) | 0;
+    const y = (rng() * (TILE - 2)) | 0;
+    px(17, x, y, '#d8b48c'); px(17, x + 1, y, '#c39a72'); px(17, x, y + 1, '#e8c9a8');
+  }
 
   const tex = new THREE.CanvasTexture(c);
   tex.magFilter = THREE.NearestFilter;

@@ -8,7 +8,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "smoke": "node scripts/smoke.mjs",
-    "check:voxels": "node scripts/check-blockcraft.mjs"
+    "check:voxels": "node scripts/check-blockcraft.mjs",
+    "check:backdrop": "node scripts/check-backdrop.mjs"
   },
   "dependencies": {
     "three": "^0.180.0"

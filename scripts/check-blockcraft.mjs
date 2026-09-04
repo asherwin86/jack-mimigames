@@ -18,8 +18,10 @@ const scene = new THREE.Scene();
 const input = {
   pointer: new THREE.Vector2(), delta: new THREE.Vector2(), down: false, clicked: false,
   wheel: 0, locked: false, keys: new Set(),
+  held: null,          // which mouse button the test is holding down
   key: () => false, hit: () => false, axisX: () => 0, axisY: () => 0,
-  button: () => false, clickedButton: () => false,
+  button(n) { return this.held === n; },
+  clickedButton: () => false,
   requestLock() {}, exitLock() {}, pick: () => null,
 };
 const game = new Blockcraft({
@@ -30,6 +32,15 @@ const game = new Blockcraft({
 });
 
 const checks = [];
+/** Shallowest y at which a block id appears, for the ore-layering check. */
+const deepest = (id) => {
+  for (let y = 39; y >= 0; y--) {
+    for (let z = 0; z < 96; z++) {
+      for (let x = 0; x < 96; x++) if (game.voxels[(y * 96 + z) * 96 + x] === id) return y;
+    }
+  }
+  return -1;
+};
 const check = (name, cond, detail = '') => checks.push({ name, ok: !!cond, detail });
 
 game.start();
@@ -43,10 +54,33 @@ check('terrain is not empty', (counts[0] || 0) < total * 0.95,
   `${(100 - (counts[0] / total) * 100).toFixed(1)}% filled`);
 check('has grass', counts[1] > 1000, `${counts[1] || 0} grass`);
 check('has stone', counts[3] > 10000, `${counts[3] || 0} stone`);
-check('has water', counts[7] > 500, `${counts[7] || 0} water`);
+// Banded, not just non-zero: the height curve is fitted to each world's own
+// spread so that every seed gets a coastline, and this is what proves it.
+check('has a sea on every seed', counts[7] > 4000 && counts[7] < 40000, `${counts[7] || 0} water`);
 check('has trees (logs + leaves)', counts[5] > 20 && counts[6] > 100,
   `${counts[5] || 0} logs, ${counts[6] || 0} leaves`);
-check('has ore', (counts[12] || 0) > 0, `${counts[12] || 0} gold ore`);
+check('has gold ore', (counts[12] || 0) > 0, `${counts[12] || 0} gold`);
+check('has coal ore', (counts[15] || 0) > 200, `${counts[15] || 0} coal`);
+check('has iron ore', (counts[16] || 0) > 100, `${counts[16] || 0} iron`);
+check('ore is layered by depth', deepest(15) >= deepest(16) && deepest(16) >= deepest(12),
+  `coal to y${deepest(15)}, iron to y${deepest(16)}, gold to y${deepest(12)}`);
+
+// Caves: air with rock directly overhead, which open sky can never produce.
+let roofed = 0;
+for (let y = 2; y < 30; y++) {
+  for (let z = 0; z < 96; z++) {
+    for (let x = 0; x < 96; x++) {
+      if (game.get(x, y, z) !== 0) continue;
+      const above = game.get(x, y + 1, z);
+      if (above === 3 || above === 2 || above === 12 || above === 15 || above === 16) roofed++;
+    }
+  }
+}
+check('the world has caves', roofed > 500, `${roofed} roofed air cells`);
+check('caves do not breach the surface', roofed < 40000, `${roofed} roofed air cells`);
+
+check('clouds overhead', game.clouds.children.length > 0, `${game.clouds.children.length} clouds`);
+const cloudX = game.clouds.children[0].position.x;
 
 // --- meshing ---
 for (let i = 0; i < 40; i++) game.update(1 / 60);
@@ -57,6 +91,8 @@ for (const meshes of game.chunks.values()) {
 }
 check('geometry generated', tris > 20000, `${tris.toLocaleString()} triangles`);
 check('interior faces culled', tris < 400000, `${tris.toLocaleString()} triangles`);
+
+check('clouds drift', game.clouds.children[0].position.x !== cloudX);
 
 // --- physics ---
 const spawnY = game.pos.y;
@@ -109,6 +145,45 @@ if (buried) {
   check('chunk mesh is rebuilt', game.chunks.get(key) !== meshesBefore);
   check('cavity walls become visible', count() > facesBefore,
     `${facesBefore} -> ${count()} indices`);
+}
+
+// --- hold to mine ---
+game.pitch = -1.2;
+input.locked = true;
+input.held = 0;
+const dig = game.raycast();
+check('something to dig at', !!dig);
+if (dig) {
+  const at = { x: dig.x, y: dig.y, z: dig.z };
+  const timeToBreak = (id) => {
+    game.set(at.x, at.y, at.z, id);
+    game.mineKey = null;
+    input.held = 0;
+    let f = 0;
+    while (game.get(at.x, at.y, at.z) === id && f < 900) { game.update(1 / 60); f++; }
+    return f / 60;
+  };
+
+  game.set(at.x, at.y, at.z, 3);
+  game.mineKey = null;
+  game.update(1 / 60);
+  check('one frame of clicking does not break a block', game.get(at.x, at.y, at.z) === 3);
+  check('digging shows progress', game.crack.visible && game.crack.material.opacity > 0,
+    `opacity ${game.crack.material.opacity.toFixed(2)}`);
+
+  input.held = null;
+  game.update(1 / 60);
+  check('letting go resets the dig', game.mineT === 0 && !game.crack.visible);
+
+  const leaves = timeToBreak(6);
+  const stone = timeToBreak(3);
+  const obsidian = timeToBreak(14);
+  check('holding breaks the block', stone > 0 && stone < 3, `stone took ${stone.toFixed(2)}s`);
+  check('hardness is respected', obsidian > stone && stone > leaves,
+    `leaves ${leaves.toFixed(2)}s < stone ${stone.toFixed(2)}s < obsidian ${obsidian.toFixed(2)}s`);
+  check('breaking throws debris', game.debris.live.length > 0, `${game.debris.live.length} pieces`);
+  input.held = null;
+  input.locked = false;
 }
 
 // --- can't place a block inside yourself ---
