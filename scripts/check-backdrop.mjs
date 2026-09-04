@@ -16,7 +16,7 @@ function check(label, ok, note = '') {
 }
 
 const meows = [];
-const mockAudio = { meow: (vol = 1) => meows.push(vol) };
+const mockAudio = { meow: (vol = 1) => meows.push(vol), unlock() {} };
 const bd = buildBackdrop({ w: W, h: H }, mockAudio);
 // Every prop hangs off one group inside the scene, so search the whole tree.
 const all = [];
@@ -74,14 +74,21 @@ check('the cats come in different coats', new Set(
   flock.filter((o) => o.userData.type === 'cat').map((o) => o.children[0].material.color.getHex()),
 ).size >= 7);
 // --- ambient menu music ------------------------------------------------
-// Nyan Cat's jingle loops on its own as background music, with no click
-// needed. A direct press plays at full volume (1); the ambient loop plays
-// softer (0.45) so the two are distinguishable even when they overlap.
+// Nyan Cat's jingle loops as background music once unlocked. A direct press
+// plays at full volume (1); the ambient loop plays softer (0.45) so the two
+// are distinguishable even when they overlap.
 const ambientPlays = () => meows.filter((v) => v < 1).length;
 const heldPlays = () => meows.filter((v) => v === 1).length;
 
+for (let i = 0; i < 40; i++) bd.update(DT);
+check('nothing plays before any click has landed on the page', meows.length === 0,
+  `${meows.length} plays`);
+
+// Browsers refuse to start audio without a real gesture — any click anywhere
+// unlocks it, not just one that lands on Nyan Cat.
+window.__handlers.pointerdown?.({ clientX: -5000, clientY: -5000 });
 bd.update(DT);
-check('the jingle starts playing on its own', ambientPlays() === 1, `${ambientPlays()} plays`);
+check('the jingle starts playing once something is clicked', ambientPlays() === 1, `${ambientPlays()} plays`);
 check('the ambient loop is softer than a direct press', meows[0] < 1, `vol=${meows[0]}`);
 // 35 frames is comfortably short of one jingle length (0.7s @ 60fps = 42
 // frames) — leaving a margin so float drift in the accumulator can't tip it

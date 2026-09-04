@@ -294,11 +294,16 @@ export function buildBackdrop(size, audio) {
   // this game is. Length of Audio.meow()'s own note sequence, plus a hair of
   // breathing room so repeats don't overlap.
   const JINGLE_LEN = 0.7;
-  let ambientT = 0;   // fires immediately on the first frame, then every JINGLE_LEN
+  let ambientT = 0;   // fires immediately once unlocked, then every JINGLE_LEN
+  let unlocked = false;
   let meowLooping = false;
   let meowT = 0;
   const onDown = (e) => {
     if (!audio) return;
+    // Browsers refuse to start any audio until a real click/tap has landed
+    // somewhere on the page — this must run synchronously inside that
+    // handler (not next frame) to count as the gesture that unlocks it.
+    if (!unlocked) { unlocked = true; audio.unlock(); }
     const nyan = flock.flyers.find((o) => o.userData.type === 'nyancat');
     if (!nyan) return;
     pointer.set(
@@ -420,7 +425,9 @@ export function buildBackdrop(size, audio) {
 
     // Nyan Cat's jingle loops softly as ambient menu music, independent of
     // the props toggle — it's music, not one of the visible things in the sky.
-    if (audio) {
+    // Gated on `unlocked`: attempting to play before any click just wastes
+    // the call, since the browser won't let audio start without a gesture.
+    if (audio && unlocked) {
       ambientT -= dt;
       if (ambientT <= 0) { audio.meow(0.45); ambientT = JINGLE_LEN; }
     }

@@ -15,6 +15,14 @@ export class Audio {
     return this.ctx;
   }
 
+  /**
+   * Creates/resumes the AudioContext. Browsers refuse to start one until a
+   * real user gesture (click, tap, keypress) — call this from directly
+   * inside such a handler, not from a timer or animation frame, or the
+   * unlock silently does nothing.
+   */
+  unlock() { this._ensure(); }
+
   setMuted(m) {
     this.muted = m;
     localStorage.setItem('mg.muted', m ? '1' : '0');
