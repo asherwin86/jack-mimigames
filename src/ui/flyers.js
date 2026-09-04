@@ -72,6 +72,18 @@ const stripeTex = () => pixels((g) => {
   }
 });
 
+const nyanFaceTex = () => pixels((g) => {
+  // 8x8, deliberately as chunky as the original 8-bit gif.
+  g.fillStyle = '#c9c9d1';
+  g.fillRect(0, 0, 8, 8);
+  g.fillStyle = '#ff9ecf';
+  g.fillRect(0, 3, 2, 2);
+  g.fillRect(6, 3, 2, 2);
+  g.fillStyle = '#1c1e24';
+  g.fillRect(2, 2, 4, 1);
+  g.fillRect(3, 5, 2, 1);
+}, 8, 8);
+
 const gameLogoTex = () => pixels((g) => {
   // The app's own mark: 100 / Mimi / Games in the same red-blue-red as the
   // menu heading, on a dark plate so it reads as a badge from any distance.
@@ -622,6 +634,29 @@ const BUILDERS = {
     const disc = add(o, g.cyl(0.7, 0.7, 0.08, 24), map('gamelogo', gameLogoTex));
     disc.rotation.x = Math.PI / 2;
     spin.push(turn(disc, 'y', 1.1));
+  },
+  nyancat: ({ g, m, lit, map }, o, _flap, spin) => {
+    // Pop-tart body, nose-to-tail along z so the rainbow trails behind it as
+    // it rides the same +z wind as everything else.
+    add(o, g.box(0.5, 0.5, 0.9), m(COLOR.tan));
+    add(o, g.box(0.52, 0.22, 0.9), m(0xff8fc0), [0, 0.32, 0]);
+    const sprinkle = [0xf25022, 0x7fba00, 0x00a4ef, 0xffb900];
+    for (let i = 0; i < 5; i++) {
+      add(o, g.box(0.05, 0.05, 0.05), lit(sprinkle[i % 4]), [rand(-0.18, 0.18), 0.42, -0.35 + i * 0.18]);
+    }
+    add(o, g.box(0.4, 0.4, 0.4), m(COLOR.grey), [0, 0.14, 0.65]);
+    add(o, g.cone(0.09, 0.16, 4), m(COLOR.grey), [-0.13, 0.38, 0.55]);
+    add(o, g.cone(0.09, 0.16, 4), m(COLOR.grey), [0.13, 0.38, 0.55]);
+    add(o, g.plane(0.36, 0.36), map('nyanface', nyanFaceTex), [0, 0.14, 0.86]);
+    // The rainbow, in the classic red-to-purple order, trailing off the back.
+    const RAINBOW = [0xff0040, 0xff8a00, 0xffe600, 0x3fd12e, 0x2e8fff, 0x9b3fff];
+    RAINBOW.forEach((col, i) => {
+      add(o, g.box(0.42 - i * 0.02, 0.07, 1.5), lit(col), [0, 0.2 - i * 0.08, -1.15]);
+    });
+    // A couple of twinkling sparkles riding alongside.
+    for (const [x, y] of [[0.35, 0.5], [-0.4, 0.1]]) {
+      spin.push(turn(add(o, g.octa(0.06), lit(COLOR.white), [x, y, -0.2]), 'y', 6));
+    }
   },
   anvil: ({ g, m }, o) => {
     add(o, g.box(0.8, 0.24, 0.4), m(COLOR.dark), [0, 0.22, 0]);

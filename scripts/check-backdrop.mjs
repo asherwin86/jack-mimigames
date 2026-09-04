@@ -71,6 +71,10 @@ check('nine cats fly', flock.filter((o) => o.userData.type === 'cat').length ===
 check('the cats come in different coats', new Set(
   flock.filter((o) => o.userData.type === 'cat').map((o) => o.children[0].material.color.getHex()),
 ).size >= 7);
+check('nyan cat flies', FLYER_TYPES.includes('nyancat'));
+check('nyan cat has a rainbow trail plus sparkles',
+  flock.find((o) => o.userData.type === 'nyancat').children.length >= 6 + 5 + 2 + 3);
+check('nyan cat sparkles spin', flock.find((o) => o.userData.type === 'nyancat').userData.spin.length === 2);
 check('the game logo flies', FLYER_TYPES.includes('gamelogo'));
 check('the logo badge spins on its own axis',
   flock.find((o) => o.userData.type === 'gamelogo').userData.spin.length === 1);
