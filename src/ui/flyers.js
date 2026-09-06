@@ -658,6 +658,24 @@ const BUILDERS = {
       spin.push(turn(add(o, g.octa(0.06), lit(COLOR.white), [x, y, -0.2]), 'y', 6));
     }
   },
+  aircon: ({ g, m, lit, glass }, o, flap, spin, i) => {
+    // A wall-split unit, blowing straight back — the case, a louvred grille,
+    // a fan glimpsed spinning behind it, and a flap that swings as it "breathes".
+    const shell = m([COLOR.white, COLOR.cream, COLOR.silver][i % 3]);
+    add(o, g.box(1.1, 0.42, 0.34), shell);
+    add(o, g.box(1.02, 0.06, 0.02), m(COLOR.grey), [0, 0.12, 0.17]);   // display strip
+    add(o, g.ball(0.025, 6), lit(COLOR.cyan), [0.46, 0.12, 0.18]);     // status LED
+    spin.push(turn(add(o, g.box(0.7, 0.02, 0.02), m(COLOR.dark), [0, -0.05, 0.14]), 'z', 8));
+    const flapDoor = new THREE.Group();
+    flapDoor.position.set(0, -0.19, 0.16);
+    add(flapDoor, g.box(1.0, 0.05, 0.22), shell, [0, 0, 0.09]);
+    o.add(flapDoor);
+    flap.push(beat(flapDoor, 'x', 0.35, 0.3, 4));
+    // A trail of cool blue air puffs it's blowing behind itself.
+    for (let k = 0; k < 3; k++) {
+      add(o, g.ball(0.05 + k * 0.02, 6), glass(COLOR.cyan), [0, -0.24 - k * 0.02, 0.4 + k * 0.22]);
+    }
+  },
   anvil: ({ g, m }, o) => {
     add(o, g.box(0.8, 0.24, 0.4), m(COLOR.dark), [0, 0.22, 0]);
     add(o, g.box(0.4, 0.24, 0.3), m(COLOR.dark), [0, 0, 0]);
@@ -669,7 +687,7 @@ const BUILDERS = {
 const TYPES = Object.keys(BUILDERS);
 
 // Most props fly solo; a few earn a small fleet.
-const COUNTS = { lambo: 3, tv: 3, sedan: 3, suv: 3, hatchback: 3, house: 3, cat: 9 };
+const COUNTS = { lambo: 3, tv: 3, sedan: 3, suv: 3, hatchback: 3, house: 3, cat: 9, aircon: 3 };
 const TOTAL = TYPES.reduce((n, t) => n + (COUNTS[t] ?? 1), 0);
 
 /**
