@@ -13,6 +13,7 @@ const COLOR = {
   green: 0x5fbb62, leaf: 0x3f8f4a, blue: 0x3f8fd6, navy: 0x2a4f7d,
   purple: 0x8a63d2, pink: 0xef8fb5, brown: 0x8b5a3c, tan: 0xd9b382,
   beige: 0xd9d2bd, cyan: 0x63d4ff, silver: 0xc9d2da,
+  skin: 0xcf9a6b, denim: 0x3a4a7a, teal: 0x1a9e8f,
 };
 
 /** Caches geometry by shape and materials by colour for the whole flock. */
@@ -82,6 +83,20 @@ const nyanFaceTex = () => pixels((g) => {
   g.fillStyle = '#1c1e24';
   g.fillRect(2, 2, 4, 1);
   g.fillRect(3, 5, 2, 1);
+}, 8, 8);
+
+const steveFaceTex = () => pixels((g) => {
+  // 8x8, in the spirit of the classic blocky skin: brown hair fringe,
+  // tan skin, a stubbly beard shadow across the jaw.
+  g.fillStyle = '#cf9a6b';
+  g.fillRect(0, 0, 8, 8);
+  g.fillStyle = '#4a3222';
+  g.fillRect(0, 0, 8, 2);
+  g.fillStyle = '#3f3f3f';
+  g.fillRect(0, 5, 8, 2);
+  g.fillStyle = '#1c1e24';
+  g.fillRect(1, 2, 2, 1);
+  g.fillRect(5, 2, 2, 1);
 }, 8, 8);
 
 const gameLogoTex = () => pixels((g) => {
@@ -656,6 +671,28 @@ const BUILDERS = {
     // A couple of twinkling sparkles riding alongside.
     for (const [x, y] of [[0.35, 0.5], [-0.4, 0.1]]) {
       spin.push(turn(add(o, g.octa(0.06), lit(COLOR.white), [x, y, -0.2]), 'y', 6));
+    }
+  },
+  steve: ({ g, m, map }, o, flap) => {
+    // A blocky pixel-game hero, floating upright with his arms and legs
+    // swinging as if he's paddling through the sky.
+    add(o, g.box(0.5, 0.6, 0.28), m(COLOR.teal), [0, 0, 0]);            // torso
+    add(o, g.box(0.5, 0.5, 0.5), m(COLOR.skin), [0, 0.55, 0]);          // head
+    add(o, g.box(0.52, 0.16, 0.52), m(COLOR.brown), [0, 0.72, -0.06]);  // hair
+    add(o, g.plane(0.4, 0.4), map('steveface', steveFaceTex), [0, 0.55, 0.26]);
+    for (const side of [-1, 1]) {
+      // Arms and legs each hinge at the shoulder/hip so the whole limb swings.
+      const arm = new THREE.Group();
+      arm.position.set(side * 0.33, 0.26, 0);
+      add(arm, g.box(0.16, 0.56, 0.16), m(COLOR.skin), [0, -0.28, 0]);
+      o.add(arm);
+      flap.push(beat(arm, 'x', 0, side * 0.7, 5));
+
+      const leg = new THREE.Group();
+      leg.position.set(side * 0.13, -0.3, 0);
+      add(leg, g.box(0.18, 0.5, 0.18), m(COLOR.denim), [0, -0.25, 0]);
+      o.add(leg);
+      flap.push(beat(leg, 'x', 0, side * -0.6, 5));
     }
   },
   aircon: ({ g, m, lit, glass }, o, flap, spin, i) => {
