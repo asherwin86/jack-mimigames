@@ -3,18 +3,48 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
+  "main": "electron/main.js",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
     "smoke": "node scripts/smoke.mjs",
     "check:voxels": "node scripts/check-blockcraft.mjs",
-    "check:backdrop": "node scripts/check-backdrop.mjs"
+    "check:backdrop": "node scripts/check-backdrop.mjs",
+    "electron": "npm run build && electron .",
+    "dist:win": "npm run build && electron-builder --win --publish=never",
+    "release:win": "npm run build && electron-builder --win --publish=always"
   },
   "dependencies": {
+    "electron-updater": "^6.3.9",
     "three": "^0.180.0"
   },
   "devDependencies": {
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8",
     "vite": "^7.1.0"
+  },
+  "build": {
+    "appId": "au.com.feesynergy.mimigames",
+    "productName": "100 Mimi Games",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**",
+      "electron/**"
+    ],
+    "win": {
+      "target": "nsis"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "asherwin86",
+      "repo": "jack-mimigames"
+    }
   }
 }
