@@ -23,6 +23,7 @@ const input = {
   button(n) { return this.held === n; },
   clickedButton: () => false,
   requestLock() {}, exitLock() {}, pick: () => null,
+  gpAxis: () => 0, gpButton: () => false, gpHit: () => false,
 };
 const game = new Blockcraft({
   scene, camera: new THREE.PerspectiveCamera(), renderer: null, input,

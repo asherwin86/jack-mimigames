@@ -115,6 +115,7 @@ function makeInput(scene) {
     clickedButton: (n) => clickedButtons.has(n),
     requestLock() { api.locked = true; },
     exitLock() { api.locked = false; },
+    gpAxis: () => 0, gpButton: () => false, gpHit: () => false,
 
     // Pretend the pointer sometimes lands on something clickable, so click
     // handlers (whack-a-cube, simon-cubes) actually get exercised.

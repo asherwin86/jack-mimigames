@@ -134,9 +134,61 @@ export default class Blockcraft extends Game {
     this.camera.far = 400;
     this.camera.updateProjectionMatrix();
 
-    this.hud.panel(hotbarHtml());
+    this.hud.panel(hotbarHtml() + touchHtml());
     this.refreshHotbar();
-    this.hud.hint('Click to capture the mouse · WASD + Space · hold left click to mine, right click places · middle click copies a block · 1-9 or scroll · F to fly');
+    this.touch = { move: { x: 0, y: 0 }, look: { x: 0, y: 0 }, mine: false, place: false, up: false };
+    this.bindTouch();
+
+    const touchDevice = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+    this.hud.hint(touchDevice
+      ? 'Left stick to move · drag the right side to look · MINE / PLACE / UP · tap FLY to toggle flying'
+      : 'Click to capture the mouse · WASD + Space · hold left click to mine, right click places · middle click copies a block · 1-9 or scroll · F to fly · or plug in a controller');
+  }
+
+  /** Wires the on-screen joystick, look pad and buttons that appear on touch
+   *  devices (see touchHtml's @media (pointer: coarse) guard), plus tap-to-
+   *  select on the hotbar for every device. Reads `this.hud.$panel` directly,
+   *  the same way refreshHotbar does, rather than trusting panel()'s return
+   *  value — the test harness's Hud mock always returns null from panel(). */
+  bindTouch() {
+    const panel = this.hud.$panel;
+    if (!panel) return;
+
+    panel.querySelectorAll('.bc-slot').forEach((el, i) => {
+      el.addEventListener('click', () => { this.slot = i; this.refreshHotbar(); });
+    });
+
+    const stickBase = panel.querySelector('.bc-stick-base');
+    const stickKnob = panel.querySelector('.bc-stick-knob');
+    if (stickBase && stickKnob) {
+      bindStick(stickBase, stickKnob, (x, y) => { this.touch.move.x = x; this.touch.move.y = y; });
+    }
+
+    const look = panel.querySelector('.bc-look');
+    if (look) bindLook(look, this.touch.look);
+
+    const hold = (selector, key) => {
+      const el = panel.querySelector(selector);
+      if (!el) return;
+      el.addEventListener('pointerdown', (e) => {
+        e.stopPropagation();
+        el.setPointerCapture(e.pointerId);
+        this.touch[key] = true;
+      });
+      el.addEventListener('pointerup', (e) => { e.stopPropagation(); this.touch[key] = false; });
+      el.addEventListener('pointercancel', (e) => { e.stopPropagation(); this.touch[key] = false; });
+    };
+    hold('.bc-btn-mine', 'mine');
+    hold('.bc-btn-place', 'place');
+    hold('.bc-btn-jump', 'up');
+
+    const flyBtn = panel.querySelector('.bc-btn-fly');
+    flyBtn?.addEventListener('pointerdown', (e) => {
+      e.stopPropagation();
+      this.flying = !this.flying;
+      this.vel.y = 0;
+      this.hud.toast(this.flying ? 'FLYING' : 'WALKING', 700);
+    });
   }
 
   /* ----------------------------------------------------------- voxel access */
@@ -278,20 +330,42 @@ export default class Blockcraft extends Game {
     }
     if (this.input.key('KeyQ')) this.yaw += 2 * dt;
     if (this.input.key('KeyE')) this.yaw -= 2 * dt;
+
+    // A gamepad's right stick turns at a steady rate rather than by delta.
+    const gx = this.input.gpAxis(2);
+    const gy = this.input.gpAxis(3);
+    if (gx || gy) {
+      this.yaw -= gx * 2.4 * dt;
+      this.pitch = clamp(this.pitch - gy * 2.4 * dt, -1.55, 1.55);
+    }
+
+    // The touch look pad reports accumulated finger movement since last read,
+    // the same shape as a locked mouse's delta — consume and clear it.
+    if (this.touch.look.x || this.touch.look.y) {
+      this.yaw -= this.touch.look.x * 0.0026;
+      this.pitch = clamp(this.pitch - this.touch.look.y * 0.0026, -1.55, 1.55);
+      this.touch.look.x = 0;
+      this.touch.look.y = 0;
+    }
   }
 
   move(dt) {
-    if (this.input.hit('KeyF')) {
+    if (this.input.hit('KeyF') || this.input.gpHit(3)) {
       this.flying = !this.flying;
       this.vel.y = 0;
       this.hud.toast(this.flying ? 'FLYING' : 'WALKING', 700);
     }
 
-    const fwd = this.input.axisY();
-    const strafe = this.input.axisX();
+    // Space/A/the jump button all mean "up"; shift/B all mean "down" — each
+    // pair does the same double duty (jump vs. fly-up, sprint vs. fly-down).
+    const jumpHeld = this.input.key('Space') || this.input.gpButton(0) || this.touch.up;
+    const downHeld = this.input.key('ShiftLeft') || this.input.gpButton(1);
+
+    const fwd = this.input.axisY() || this.touch.move.y;
+    const strafe = this.input.axisX() || this.touch.move.x;
     const sin = Math.sin(this.yaw);
     const cos = Math.cos(this.yaw);
-    const sprint = this.input.key('ShiftLeft') && !this.flying ? 1.6 : 1;
+    const sprint = downHeld && !this.flying ? 1.6 : 1;
     const speed = (this.flying ? 16 : 5.2) * sprint;
     this.sprinting = sprint > 1 && (fwd !== 0 || strafe !== 0);
 
@@ -304,13 +378,13 @@ export default class Blockcraft extends Game {
     const inWater = this.get(this.pos.x, this.pos.y + 0.4, this.pos.z) === WATER;
 
     if (this.flying) {
-      const up = (this.input.key('Space') ? 1 : 0) - (this.input.key('ShiftLeft') ? 1 : 0);
+      const up = (jumpHeld ? 1 : 0) - (downHeld ? 1 : 0);
       this.vel.y = damp(this.vel.y, up * 12, 14, dt);
     } else if (inWater) {
-      this.vel.y = damp(this.vel.y, this.input.key('Space') ? 4 : -2.4, 6, dt);
+      this.vel.y = damp(this.vel.y, jumpHeld ? 4 : -2.4, 6, dt);
     } else {
       this.vel.y -= 28 * dt;
-      if (this.input.key('Space') && this.grounded) {
+      if (jumpHeld && this.grounded) {
         this.vel.y = 9;
         this.grounded = false;
       }
@@ -413,6 +487,8 @@ export default class Blockcraft extends Game {
       this.slot = (this.slot + (this.input.wheel > 0 ? 1 : -1) + 9) % 9;
       this.refreshHotbar();
     }
+    if (this.input.gpHit(4)) { this.slot = (this.slot + 8) % 9; this.refreshHotbar(); }
+    if (this.input.gpHit(5)) { this.slot = (this.slot + 1) % 9; this.refreshHotbar(); }
 
     const hit = this.raycast();
     this.highlight.visible = !!hit;
@@ -427,7 +503,8 @@ export default class Blockcraft extends Game {
     this.mine(dt, hit);
 
     if (!hit || this.cool > 0) return;
-    if (this.input.button(2) && hit.prev) {
+    const placing = this.input.button(2) || this.input.gpButton(6) || this.touch.place;
+    if (placing && hit.prev) {
       const { x, y, z } = hit.prev;
       if (this.get(x, y, z) === AIR && !this.intersectsPlayer(x, y, z)) {
         this.set(x, y, z, HOTBAR[this.slot]);
@@ -444,7 +521,11 @@ export default class Blockcraft extends Game {
    * blocks at once.
    */
   mine(dt, hit) {
-    const digging = hit && this.input.button(0) && this.input.locked;
+    // A mouse click only counts once the pointer is actually locked — the
+    // very click that requests lock must not also register as a mine. The
+    // gamepad trigger and the touch mine button have no such lock to wait on.
+    const digging = hit && ((this.input.button(0) && this.input.locked)
+      || this.input.gpButton(7) || this.touch.mine);
     const key = digging ? `${hit.x},${hit.y},${hit.z}` : null;
     if (key !== this.mineKey) {
       this.mineKey = key;
@@ -832,7 +913,8 @@ function hotbarHtml() {
         display:flex; gap:4px; padding:4px; background:rgba(10,14,24,.55);
         border:1px solid rgba(255,255,255,.15); border-radius:8px; }
       .bc-slot { position:relative; width:44px; height:44px; border-radius:5px;
-        border:2px solid rgba(255,255,255,.12); display:grid; place-items:center; }
+        border:2px solid rgba(255,255,255,.12); display:grid; place-items:center;
+        pointer-events:auto; cursor:pointer; }
       .bc-slot.on { border-color:#fff; background:rgba(255,255,255,.12); }
       .bc-key { position:absolute; top:1px; left:4px; font:700 9px system-ui; color:rgba(255,255,255,.6); }
       .bc-swatch { width:26px; height:26px; border-radius:3px; box-shadow:inset 0 -8px 10px rgba(0,0,0,.35); }
@@ -842,6 +924,105 @@ function hotbarHtml() {
     <div class="bc-cross"></div>
     <div class="bc-name">Grass</div>
     <div class="bc-hotbar">${slots}</div>`;
+}
+
+/** Joystick, look pad and action buttons — hidden by default, shown only when
+ *  the device's primary pointer is touch (a mouse-and-touchscreen laptop
+ *  keeps the desktop controls). bindTouch() wires the elements this returns. */
+function touchHtml() {
+  return `
+    <style>
+      .bc-touch { display:none; }
+      @media (pointer: coarse) {
+        .bc-touch { display:block; }
+      }
+      .bc-look { position:absolute; right:0; top:0; bottom:0; width:58%;
+        pointer-events:auto; touch-action:none; }
+      .bc-stick-base { position:absolute; z-index:2; left:22px;
+        bottom:calc(22px + env(safe-area-inset-bottom,0px)); width:108px; height:108px;
+        border-radius:50%; background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.25);
+        pointer-events:auto; touch-action:none; }
+      .bc-stick-knob { position:absolute; left:50%; top:50%; width:48px; height:48px;
+        margin:-24px 0 0 -24px; border-radius:50%;
+        background:rgba(255,255,255,.28); border:1px solid rgba(255,255,255,.5); }
+      .bc-btn { position:absolute; z-index:2; width:62px; height:62px; border-radius:50%;
+        display:grid; place-items:center; font:800 11px system-ui; color:#fff;
+        background:rgba(255,255,255,.12); border:1px solid rgba(255,255,255,.3);
+        pointer-events:auto; touch-action:none; user-select:none; }
+      .bc-btn:active { background:rgba(255,255,255,.3); }
+      .bc-btn-mine { right:22px; bottom:calc(96px + env(safe-area-inset-bottom,0px));
+        background:rgba(255,90,80,.25); }
+      .bc-btn-place { right:92px; bottom:calc(150px + env(safe-area-inset-bottom,0px)); }
+      .bc-btn-jump { right:22px; bottom:calc(174px + env(safe-area-inset-bottom,0px)); }
+      .bc-btn-fly { right:92px; bottom:calc(228px + env(safe-area-inset-bottom,0px));
+        width:50px; height:50px; font-size:9px; }
+    </style>
+    <div class="bc-touch">
+      <div class="bc-look"></div>
+      <div class="bc-stick-base"><div class="bc-stick-knob"></div></div>
+      <div class="bc-btn bc-btn-mine">MINE</div>
+      <div class="bc-btn bc-btn-place">PLACE</div>
+      <div class="bc-btn bc-btn-jump">UP</div>
+      <div class="bc-btn bc-btn-fly">FLY</div>
+    </div>`;
+}
+
+/** A drag-to-move virtual joystick: the knob follows the finger, clamped to
+ *  a fixed radius, reporting -1..1 on each axis (+y is "forward", matching
+ *  Input's axisY convention) via `onChange`. */
+function bindStick(base, knob, onChange) {
+  let id = null;
+  const R = 34;
+  const move = (e) => {
+    const r = base.getBoundingClientRect();
+    let dx = e.clientX - (r.left + r.width / 2);
+    let dy = e.clientY - (r.top + r.height / 2);
+    const d = Math.hypot(dx, dy) || 1;
+    if (d > R) { dx = (dx / d) * R; dy = (dy / d) * R; }
+    knob.style.transform = `translate(${dx}px, ${dy}px)`;
+    onChange(dx / R, -dy / R);
+  };
+  const end = () => { id = null; knob.style.transform = ''; onChange(0, 0); };
+  base.addEventListener('pointerdown', (e) => {
+    e.stopPropagation();
+    if (id !== null) return;   // a second finger landing here while one is tracked is ignored, not passed through
+    id = e.pointerId;
+    base.setPointerCapture(id);
+    move(e);
+  });
+  base.addEventListener('pointermove', (e) => {
+    if (e.pointerId !== id) return;
+    e.stopPropagation();
+    move(e);
+  });
+  base.addEventListener('pointerup', (e) => { if (e.pointerId === id) { e.stopPropagation(); end(); } });
+  base.addEventListener('pointercancel', (e) => { if (e.pointerId === id) { e.stopPropagation(); end(); } });
+}
+
+/** A drag-anywhere look pad: accumulates the finger's frame-to-frame movement
+ *  into `look.x`/`look.y`, the same shape as a locked mouse's delta — the
+ *  game consumes and zeroes it each frame in look(). */
+function bindLook(zone, look) {
+  let id = null;
+  let lx = 0;
+  let ly = 0;
+  zone.addEventListener('pointerdown', (e) => {
+    e.stopPropagation();
+    if (id !== null) return;   // a second finger landing here while one is tracked is ignored, not passed through
+    id = e.pointerId;
+    lx = e.clientX; ly = e.clientY;
+    zone.setPointerCapture(id);
+  });
+  zone.addEventListener('pointermove', (e) => {
+    if (e.pointerId !== id) return;
+    look.x += e.clientX - lx;
+    look.y += e.clientY - ly;
+    lx = e.clientX; ly = e.clientY;
+    e.stopPropagation();
+  });
+  const end = (e) => { if (e.pointerId === id) { id = null; e.stopPropagation(); } };
+  zone.addEventListener('pointerup', end);
+  zone.addEventListener('pointercancel', end);
 }
 
 const SWATCH = {

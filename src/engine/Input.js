@@ -22,6 +22,9 @@ export class Input {
     this.wheel = 0;
     this.locked = false;
 
+    this.gamepadIndex = null;
+    this._gpPrevButtons = new Set();
+
     this._raycaster = new THREE.Raycaster();
     this._bind();
   }
@@ -73,6 +76,8 @@ export class Input {
     this._onWheel = (e) => { this.wheel += e.deltaY; };
     this._onBlur = () => { this.keys.clear(); this.down = false; };
     this._onLock = () => { this.locked = document.pointerLockElement === this.canvas; };
+    this._onGpConnect = (e) => { this.gamepadIndex = e.gamepad.index; };
+    this._onGpDisconnect = (e) => { if (this.gamepadIndex === e.gamepad.index) this.gamepadIndex = null; };
 
     addEventListener('keydown', this._onKeyDown);
     addEventListener('keyup', this._onKeyUp);
@@ -82,6 +87,8 @@ export class Input {
     addEventListener('pointerup', this._onUp);
     addEventListener('wheel', this._onWheel, { passive: true });
     addEventListener('contextmenu', this._onContext);
+    addEventListener('gamepadconnected', this._onGpConnect);
+    addEventListener('gamepaddisconnected', this._onGpDisconnect);
     document.addEventListener('pointerlockchange', this._onLock);
   }
 
@@ -92,13 +99,33 @@ export class Input {
   hit(...codes) { return codes.some((c) => this.pressed.has(c)); }
   let_go(...codes) { return codes.some((c) => this.released.has(c)); }
 
-  /** -1 / 0 / +1 horizontal from arrows or WASD. */
-  axisX() {
-    return (this.key('ArrowRight', 'KeyD') ? 1 : 0) - (this.key('ArrowLeft', 'KeyA') ? 1 : 0);
+  /** The connected gamepad, re-read live: some browsers hand back a stale
+   *  snapshot if you hold onto the object across frames. */
+  _pad() { return navigator.getGamepads?.()?.[this.gamepadIndex] ?? null; }
+
+  /** Raw stick/trigger axis, dead-zoned. Standard mapping: 0/1 are the left
+   *  stick's x/y, 2/3 the right stick's. */
+  gpAxis(i, deadzone = 0.15) {
+    const v = this._pad()?.axes[i] ?? 0;
+    return Math.abs(v) < deadzone ? 0 : v;
   }
-  /** -1 / 0 / +1 vertical; +1 is "forward" (up arrow / W). */
+
+  /** Held state of a gamepad button (standard mapping: 0=A 1=B 2=X 3=Y,
+   *  4/5=bumpers, 6/7=triggers, 10/11=stick clicks). */
+  gpButton(i) { return !!this._pad()?.buttons[i]?.pressed; }
+
+  /** True only on the frame a gamepad button goes down. */
+  gpHit(i) { return this.gpButton(i) && !this._gpPrevButtons.has(i); }
+
+  /** -1 / 0 / +1 horizontal from arrows, WASD, or a gamepad's left stick. */
+  axisX() {
+    const kb = (this.key('ArrowRight', 'KeyD') ? 1 : 0) - (this.key('ArrowLeft', 'KeyA') ? 1 : 0);
+    return kb || this.gpAxis(0);
+  }
+  /** -1 / 0 / +1 vertical; +1 is "forward" (up arrow / W / stick pushed up). */
   axisY() {
-    return (this.key('ArrowUp', 'KeyW') ? 1 : 0) - (this.key('ArrowDown', 'KeyS') ? 1 : 0);
+    const kb = (this.key('ArrowUp', 'KeyW') ? 1 : 0) - (this.key('ArrowDown', 'KeyS') ? 1 : 0);
+    return kb || -this.gpAxis(1);
   }
 
   /** Raycast the pointer against objects; returns the first intersection or null. */
@@ -127,6 +154,12 @@ export class Input {
     this.releasedClick = false;
     this.wheel = 0;
     this.delta.set(0, 0);
+
+    // Gamepad buttons are polled, not event-driven, so gpHit's "just pressed"
+    // edge is computed by diffing against this snapshot from last frame.
+    this._gpPrevButtons.clear();
+    const pad = this._pad();
+    if (pad) pad.buttons.forEach((b, i) => { if (b.pressed) this._gpPrevButtons.add(i); });
   }
 
   reset() {
@@ -145,6 +178,8 @@ export class Input {
     removeEventListener('pointerup', this._onUp);
     removeEventListener('wheel', this._onWheel);
     removeEventListener('contextmenu', this._onContext);
+    removeEventListener('gamepadconnected', this._onGpConnect);
+    removeEventListener('gamepaddisconnected', this._onGpDisconnect);
     document.removeEventListener('pointerlockchange', this._onLock);
   }
 }
