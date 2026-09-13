@@ -291,9 +291,10 @@ export function buildBackdrop(size, audio) {
   window.addEventListener('pointerleave', onLeave);
   // Press and hold Nyan Cat and its little jingle loops for as long as you
   // hold — synthesized, not a recording, the same way every other sound in
-  // this game is. Length of Audio.meow()'s own note sequence, plus a hair of
-  // breathing room so repeats don't overlap.
-  const JINGLE_LEN = 0.7;
+  // this game is. Length of Audio.meow()'s own note+beat sequence (8 steps
+  // of 0.1s, plus each note's own decay tail), with a hair of breathing room
+  // so repeats don't overlap.
+  const JINGLE_LEN = 0.85;
   let ambientT = 0;   // fires immediately once unlocked, then every JINGLE_LEN
   let unlocked = false;
   let meowLooping = false;

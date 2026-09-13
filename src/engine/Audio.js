@@ -49,11 +49,11 @@ export class Audio {
   }
 
   /** Filtered noise burst — impacts, explosions, whooshes. */
-  noise(dur = 0.18, { gain = 0.16, cutoff = 1400, sweep = 0.3 } = {}) {
+  noise(dur = 0.18, { gain = 0.16, cutoff = 1400, sweep = 0.3, delay = 0 } = {}) {
     if (this.muted) return;
     const ctx = this._ensure();
     if (!ctx) return;
-    const t0 = ctx.currentTime;
+    const t0 = ctx.currentTime + delay;
     const frames = Math.max(1, Math.floor(ctx.sampleRate * dur));
     const buf = ctx.createBuffer(1, frames, ctx.sampleRate);
     const data = buf.getChannelData(0);
@@ -80,10 +80,19 @@ export class Audio {
   win() { [0, 4, 7, 12].forEach((s, i) => this.tone(523.25 * Math.pow(2, s / 12), 0.18, { type: 'triangle', delay: i * 0.1, gain: 0.15 })); }
   lose() { [0, -3, -7].forEach((s, i) => this.tone(392 * Math.pow(2, s / 12), 0.26, { type: 'sawtooth', delay: i * 0.13, gain: 0.13 })); }
 
-  /** An original chiptune jingle, not any particular song — for Nyan Cat. */
+  /**
+   * An original chiptune jingle, not any particular song — for Nyan Cat.
+   * The melody is our own arpeggio, but it rides a generic four-on-the-floor
+   * dance-pop pulse (kick + hat) for the same driving, upbeat energy the real
+   * song has — a beat shape common to a whole genre, not lifted from it.
+   */
   meow(vol = 1) {
-    [0, 2, 4, 7, 4, 9, 7, 12].forEach((s, i) => this.tone(
-      523.25 * Math.pow(2, s / 12), 0.1, { type: 'square', delay: i * 0.075, gain: 0.11 * vol },
-    ));
+    const step = 0.1;
+    [0, 2, 4, 7, 4, 9, 7, 12].forEach((s, i) => {
+      const t = i * step;
+      this.tone(523.25 * Math.pow(2, s / 12), 0.09, { type: 'square', delay: t, gain: 0.11 * vol });
+      this.noise(0.03, { gain: 0.05 * vol, cutoff: 7000, sweep: 0.6, delay: t });
+      if (i % 2 === 0) this.noise(0.09, { gain: 0.09 * vol, cutoff: 220, sweep: 0.2, delay: t });
+    });
   }
 }

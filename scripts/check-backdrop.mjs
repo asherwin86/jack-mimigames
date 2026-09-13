@@ -90,16 +90,16 @@ window.__handlers.pointerdown?.({ clientX: -5000, clientY: -5000 });
 bd.update(DT);
 check('the jingle starts playing once something is clicked', ambientPlays() === 1, `${ambientPlays()} plays`);
 check('the ambient loop is softer than a direct press', meows[0] < 1, `vol=${meows[0]}`);
-// 35 frames is comfortably short of one jingle length (0.7s @ 60fps = 42
+// 44 frames is comfortably short of one jingle length (0.85s @ 60fps = 51
 // frames) — leaving a margin so float drift in the accumulator can't tip it
-// over early, the way exactly-42 occasionally did.
-for (let i = 0; i < 35; i++) bd.update(DT);
+// over early, the way landing exactly on the boundary occasionally did.
+for (let i = 0; i < 44; i++) bd.update(DT);
 check('it holds for one full jingle before repeating', ambientPlays() === 1, `${ambientPlays()} plays`);
 for (let i = 0; i < 15; i++) bd.update(DT);
 check('then it loops again', ambientPlays() === 2, `${ambientPlays()} plays`);
 bd.setProps(false);
 const ambientBefore = ambientPlays();
-for (let i = 0; i < 50; i++) bd.update(DT);
+for (let i = 0; i < 60; i++) bd.update(DT);
 check('the music keeps playing even with props hidden', ambientPlays() > ambientBefore,
   `${ambientBefore} -> ${ambientPlays()}`);
 bd.setProps(true);
@@ -132,9 +132,9 @@ check('pressing empty sky does not play it', heldPlays() === 1, `${heldPlays()} 
 
 pressNyan();
 check('pressing again plays it once more', heldPlays() === 2, `${heldPlays()} plays`);
-for (let i = 0; i < 50; i++) bd.update(DT);   // > one jingle length, still held
+for (let i = 0; i < 60; i++) bd.update(DT);   // > one jingle length (51 frames), still held
 check('holding it down repeats the jingle', heldPlays() === 3, `${heldPlays()} plays`);
-for (let i = 0; i < 50; i++) bd.update(DT);
+for (let i = 0; i < 60; i++) bd.update(DT);
 check('it keeps looping for as long as it is held', heldPlays() === 4, `${heldPlays()} plays`);
 
 upAt();
