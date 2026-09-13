@@ -338,6 +338,40 @@ export default class Blockcraft extends Game {
       else if (e.target.closest('.bc-del')) { deleteWorld(id); this.refreshWorldList(); this.audio.bad(); }
     });
 
+    // No backend here, so "back up across devices" means a file the player
+    // moves themselves — export downloads one, import reads one back in.
+    const exportBtn = panel.querySelector('.bc-export');
+    const importBtn = panel.querySelector('.bc-import');
+    const importFile = panel.querySelector('.bc-import-file');
+    exportBtn?.addEventListener('pointerdown', (e) => e.stopPropagation());
+    importBtn?.addEventListener('pointerdown', (e) => e.stopPropagation());
+
+    exportBtn?.addEventListener('click', () => {
+      const json = this.exportWorlds();
+      const url = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `mimi-blockcraft-worlds-${Date.now()}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      this.audio.blip(4);
+    });
+
+    importBtn?.addEventListener('click', () => importFile?.click());
+    importFile?.addEventListener('change', async () => {
+      const file = importFile.files?.[0];
+      importFile.value = '';
+      if (!file) return;
+      try {
+        const count = this.importWorlds(await file.text());
+        this.hud.toast(count ? `IMPORTED ${count} WORLD(S)` : 'NOTHING NEW TO IMPORT', 1400);
+        this.audio.good();
+      } catch {
+        this.hud.toast('IMPORT FAILED — not a worlds backup file', 1800);
+        this.audio.bad();
+      }
+    });
+
     this.refreshWorldList();
   }
 
@@ -381,6 +415,21 @@ export default class Blockcraft extends Game {
           ${current ? '' : '<button class="bc-load">Load</button><button class="bc-del">&times;</button>'}
         </div>`;
     }).join('');
+  }
+
+  /** Bundles every saved world (including whatever's unsaved right now) into
+   *  one JSON string — there's no backend, so this file *is* the backup. */
+  exportWorlds() {
+    if (this.dirty) this.save();
+    return exportAllWorlds();
+  }
+
+  /** Merges a previously-exported bundle back in and refreshes the list.
+   *  Throws if `json` isn't a worlds backup — callers show that as an error. */
+  importWorlds(json) {
+    const count = importWorldsBundle(json);
+    this.refreshWorldList();
+    return count;
   }
 
   /** Wires the on-screen joystick, look pad and buttons that appear on touch
@@ -1287,6 +1336,41 @@ function setActiveWorldId(id) {
   try { localStorage.setItem(ACTIVE_KEY, id); } catch { /* ignore */ }
 }
 
+/**
+ * There's no backend here, so "backup across devices" means a file the
+ * player moves themselves: export bundles every saved world (metadata +
+ * its edits) into one JSON blob; import merges one back in.
+ */
+function exportAllWorlds() {
+  const worlds = loadWorldList()
+    .map((meta) => ({ meta, data: loadWorldData(meta.id) }))
+    .filter((w) => w.data);
+  return JSON.stringify({ version: 1, exportedAt: Date.now(), worlds });
+}
+
+/** Merges an exported bundle into local storage. A world already present
+ *  keeps whichever copy was saved more recently, so exporting from one
+ *  device and importing on another is safe to do in either direction —
+ *  it can't clobber newer progress with an older backup. Returns how many
+ *  worlds were actually added or updated. */
+function importWorldsBundle(json) {
+  const bundle = JSON.parse(json);
+  if (!bundle || !Array.isArray(bundle.worlds)) throw new Error('not a worlds backup file');
+  const byId = new Map(loadWorldList().map((w) => [w.id, w]));
+  let changed = 0;
+  for (const entry of bundle.worlds) {
+    const { meta, data } = entry ?? {};
+    if (!meta?.id || !data) continue;
+    const existing = byId.get(meta.id);
+    if (existing && (existing.savedAt || 0) >= (meta.savedAt || 0)) continue;
+    byId.set(meta.id, meta);
+    writeWorldData(meta.id, data);
+    changed++;
+  }
+  writeWorldList([...byId.values()].sort((a, b) => (b.savedAt || 0) - (a.savedAt || 0)));
+  return changed;
+}
+
 /* ------------------------------------------------------------------ atlas */
 
 const ATLAS_N = 5;      // 5 x 5 tiles
@@ -1506,6 +1590,10 @@ function worldHtml() {
         font:700 10px inherit; padding:2px 6px; color:#fff; background:rgba(255,255,255,.14); }
       .bc-world .bc-del { padding:2px 7px; background:rgba(255,90,80,.3); }
       .bc-world .bc-world-empty { color:rgba(255,255,255,.45); font-size:11px; }
+      .bc-world .bc-backup { display:flex; gap:4px; }
+      .bc-world .bc-backup button { flex:1; padding:4px 0; border-radius:5px;
+        border:1px solid rgba(255,255,255,.2); background:rgba(255,255,255,.06);
+        color:#fff; cursor:pointer; font:inherit; }
     </style>
     <div class="bc-world">
       <div class="bc-label">New world seed</div>
@@ -1515,6 +1603,11 @@ function worldHtml() {
       <div class="bc-views">${views}</div>
       <div class="bc-label">Your worlds</div>
       <div class="bc-worlds-list"></div>
+      <div class="bc-backup">
+        <button class="bc-export">Export</button>
+        <button class="bc-import">Import</button>
+      </div>
+      <input class="bc-import-file" type="file" accept="application/json" hidden />
     </div>`;
 }
 

@@ -311,6 +311,52 @@ game2.loadWorld(originalWorldId);
 check('loading a different world switches its seed back', game2.seed === game.seed);
 check('loading a different world restores its edit', game2.get(1, 3, 2) === 9);
 
+// --- backup: export / import (no backend, so this is a file the player
+// moves themselves between devices) --------------------------------------
+{
+  const bundle = JSON.parse(game.exportWorlds());
+  check('export produces a versioned bundle', bundle.version === 1 && Array.isArray(bundle.worlds));
+  check('export includes every saved world', bundle.worlds.length === loadWorldListForTest().length,
+    `${bundle.worlds.length} vs ${loadWorldListForTest().length} listed`);
+  const own = bundle.worlds.find((w) => w.meta.id === game.worldId);
+  check('the exported entry for this world carries its edits',
+    !!own && Object.keys(own.data.edits).length === game.edits.size);
+
+  // Simulate "accidentally deleted a world, restored it from a backup":
+  // importing the same bundle back in should bring it back.
+  const deletedId = game2.worldId;
+  deleteWorldForTest(deletedId);
+  check('the world is gone locally before restoring it', !loadWorldData(deletedId));
+  const restored = game2.importWorlds(JSON.stringify(bundle));
+  check('importing restores a deleted world', restored >= 1 && !!loadWorldData(deletedId),
+    `${restored} changed`);
+
+  // A stale backup (older savedAt) must not clobber newer local progress —
+  // importing an old export should never undo more recent play.
+  const staleBundle = JSON.parse(JSON.stringify(bundle));
+  const staleOwn = staleBundle.worlds.find((w) => w.meta.id === game.worldId);
+  staleOwn.meta.savedAt = 1;
+  staleOwn.data.pos = { x: -999, y: -999, z: -999 };
+  const restale = game2.importWorlds(JSON.stringify(staleBundle));
+  check('a stale backup does not overwrite newer local saves',
+    loadWorldData(game.worldId)?.pos.x !== -999, `${restale} changed`);
+
+  check('a non-backup file is rejected', (() => {
+    try { game2.importWorlds('{"not":"a backup"}'); return false; } catch { return true; }
+  })());
+}
+
+function loadWorldData(id) {
+  try { return JSON.parse(memStore.get(`mg.blockcraft.world.${id}`) || 'null'); } catch { return null; }
+}
+
+/** Mirrors blockcraft.js's own (unexported) deleteWorld() by poking the
+ *  shared mock store directly — good enough for setting up this one test. */
+function deleteWorldForTest(id) {
+  memStore.delete(`mg.blockcraft.world.${id}`);
+  memStore.set('mg.blockcraft.worlds.v1', JSON.stringify(loadWorldListForTest().filter((w) => w.id !== id)));
+}
+
 function loadWorldListForTest() {
   try { return JSON.parse(memStore.get('mg.blockcraft.worlds.v1') || '[]'); } catch { return []; }
 }
