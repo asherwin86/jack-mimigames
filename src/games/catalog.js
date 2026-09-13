@@ -117,6 +117,52 @@ export const CATALOG = [
     controls: 'Click to lock · WASD + Space · left click mines, right click places · 1-9 picks a block · F to fly',
     unit: 'blocks', sandbox: true,
   },
+  {
+    id: 'fruit-slice', n: 22, name: 'Fruit Slice', tags: ['arcade', 'aim'],
+    blurb: 'Fruit arcs up from below. Drag through it to slice — just mind the bombs.',
+    controls: 'Hold and drag across the fruit', unit: 'pts',
+  },
+  {
+    id: 'wrecking-ball', n: 23, name: 'Wrecking Ball', tags: ['physics', 'aim'],
+    blurb: 'Swing a chained ball into a tower of blocks and knock it flat.',
+    controls: 'Move the mouse to swing the ball', unit: 'pts',
+  },
+  {
+    id: 'frog-hopper', n: 24, name: 'Frog Hopper', tags: ['arcade', 'timing'],
+    blurb: 'Cross traffic and ride the river logs to reach the far bank. Repeat, faster.',
+    controls: 'WASD or arrows to hop', unit: 'crossings',
+  },
+  {
+    id: 'hurdle-runner', n: 25, name: 'Hurdle Runner', tags: ['runner', 'reflex'],
+    blurb: 'A neon track with hurdles to clear and bars to duck. Speed keeps climbing.',
+    controls: 'A / D to change lane · Space to jump · S to duck', unit: 'm',
+  },
+  {
+    id: 'free-throw', n: 26, name: 'Free Throw', tags: ['sport', 'aim'],
+    blurb: 'Charge your shot and sink baskets from wherever the spot lands next.',
+    controls: 'Hold click to charge, release to shoot', unit: 'pts',
+  },
+  {
+    id: 'plate-spinner', n: 27, name: 'Plate Spinner', tags: ['skill', 'reflex'],
+    blurb: 'Keep every plate spinning. Click one before it wobbles too far and falls.',
+    controls: 'Click a wobbling plate to save it', unit: 's',
+  },
+  {
+    id: 'grapple-gap', n: 28, name: 'Grapple Gap', tags: ['platformer', 'skill'],
+    blurb: 'Fire a grapple to the floating anchors and swing yourself across the chasm.',
+    controls: 'Space or click near an anchor to grapple it · A / D to steer', unit: 'm',
+  },
+  {
+    id: 'skeet-range', n: 29, name: 'Skeet Range', tags: ['aim', 'reflex'],
+    blurb: 'Clay pairs launch across the sky. Click fast before they land.',
+    controls: 'Click a target while it is airborne', unit: 'pts',
+  },
+  {
+    id: 'arena-fighter', n: 30, name: 'Arena Fighter', tags: ['fighting', 'arcade'],
+    blurb: 'A 3D one-on-one brawl. Land punches and kicks, block theirs, outlast the clock.',
+    controls: 'WASD to move · click or J to punch · K to kick · hold Shift to block',
+    unit: 'dmg',
+  },
 ];
 
 export const BY_ID = new Map(CATALOG.map((e) => [e.id, e]));
