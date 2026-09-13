@@ -95,4 +95,14 @@ export class Audio {
       if (i % 2 === 0) this.noise(0.09, { gain: 0.09 * vol, cutoff: 220, sweep: 0.2, delay: t });
     });
   }
+
+  /** A soft, slow, spaced-out arpeggio — for occasional ambient moments
+   *  (think Minecraft's own sparse, calm soundtrack) rather than a tight
+   *  loop. Call it every so often, not every frame. */
+  ambientChime(vol = 1) {
+    const notes = [0, 7, 12, 16];
+    notes.forEach((s, i) => this.tone(
+      261.63 * Math.pow(2, s / 12), 1.6, { type: 'sine', delay: i * 0.7, gain: 0.045 * vol },
+    ));
+  }
 }

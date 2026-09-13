@@ -1,15 +1,36 @@
 import * as THREE from 'three';
 import { Game } from '../engine/Game.js';
-import { sky, clamp, damp, seeded, lerp, invLerp, Burst } from '../engine/utils.js';
+import { sky, clamp, damp, seeded, lerp, invLerp, rand, Burst } from '../engine/utils.js';
 
 /* ------------------------------------------------------------------ world */
 
 const CHUNK = 16;
-const CHUNKS = 6;                 // world is CHUNKS x CHUNKS chunks
-const W = CHUNK * CHUNKS;         // 96 blocks across
 const H = 40;                     // build height
 const SEA = 12;
 const REACH = 6;                  // how far you can break / place
+
+// The world has no edge: chunks generate on demand as the player walks and
+// unload behind them, exactly like real Minecraft. View distance controls
+// how many chunks out (in every direction) stay loaded at once.
+const VIEW_DISTANCES = [
+  { chunks: 3, label: 'S' },
+  { chunks: 5, label: 'M' },
+  { chunks: 7, label: 'L' },
+];
+const DEFAULT_VIEW_DIST = 5;
+const UNLOAD_MARGIN = 2;          // chunks of hysteresis so walking back and forth at the
+                                   // edge of view distance doesn't load/unload the same chunk repeatedly
+const VIEW_DIST_KEY = 'mg.blockcraft.viewDist';
+
+// Every world gets its own storage slot, so a player can keep several going
+// at once: WORLDS_KEY is a small index (name/seed, not the terrain) and
+// ACTIVE_KEY says which one to continue automatically next time. Since
+// terrain regenerates identically from its seed, only the chunks a player
+// actually changed need to be saved — everything else regrows for free.
+const WORLDS_KEY = 'mg.blockcraft.worlds.v1';
+const ACTIVE_KEY = 'mg.blockcraft.active.v1';
+const worldDataKey = (id) => `mg.blockcraft.world.${id}`;
+const SAVE_INTERVAL = 20;         // seconds between autosaves, only while something changed
 
 // id -> { name, tiles: [top, side, bottom], solid, alpha }
 const BLOCKS = [
@@ -44,9 +65,9 @@ const hardnessOf = (id) => HARDNESS[id] ?? 0.6;
 
 // Average colour of each block, for the debris thrown when one breaks.
 const DEBRIS = {
-  1: 0x5fa63b, 2: 0x8a5f3c, 3: 0x7e7e86, 4: 0xded2a4, 5: 0x6b4a2c, 6: 0x3f7d32,
-  7: 0x3f7fd8, 8: 0xa97c4c, 9: 0xa04a3c, 10: 0x8b8b93, 11: 0xbfe4f2,
-  12: 0xf0c14b, 13: 0xeef4ff, 14: 0x241f36, 15: 0x2b2b31, 16: 0xd8b48c,
+  1: 0x6bbf3a, 2: 0x8b6239, 3: 0x8c8c96, 4: 0xecdfab, 5: 0x6e4a2a, 6: 0x3f9a2a,
+  7: 0x2e72e6, 8: 0xbd8f56, 9: 0xa94a3a, 10: 0x87878f, 11: 0xcdeaf5,
+  12: 0xffd83f, 13: 0xf6faff, 14: 0x1a1526, 15: 0x1c1c20, 16: 0xe3c19a,
 };
 
 const isSolid = (id) => id !== AIR && BLOCKS[id].solid !== false;
@@ -67,24 +88,25 @@ export default class Blockcraft extends Game {
     sky(this.scene, '#7fb2f0', '#c8e0ff', 55, 130);
     this.scene.fog = new THREE.Fog(0xa8cdf5, 45, 125);
 
+    // Every block face is unlit (MeshBasicMaterial, shaded by baked vertex
+    // colour rather than a real light) — so the sun here is purely a bright
+    // disc hanging in the sky, immune to fog, not an actual light source.
+    this.sun = this.add(new THREE.Mesh(
+      new THREE.SphereGeometry(14, 16, 12),
+      new THREE.MeshBasicMaterial({ color: 0xfff6d2, fog: false }),
+    ));
+    this.sunGlow = this.add(new THREE.Mesh(
+      new THREE.SphereGeometry(24, 16, 12),
+      new THREE.MeshBasicMaterial({
+        color: 0xfff6d2, transparent: true, opacity: 0.22, fog: false, depthWrite: false,
+      }),
+    ));
+
     this.atlas = buildAtlas();
     this.opaqueMat = new THREE.MeshBasicMaterial({ map: this.atlas, vertexColors: true });
     this.alphaMat = new THREE.MeshBasicMaterial({
       map: this.atlas, vertexColors: true, transparent: true, opacity: 0.78, depthWrite: false,
     });
-
-    this.voxels = new Uint8Array(W * H * W);
-    this.seed = (Math.random() * 65535) | 0;
-    generate(this.voxels, this.seed);
-
-    this.chunks = new Map();
-    this.queue = [];
-    for (let cz = 0; cz < CHUNKS; cz++) {
-      for (let cx = 0; cx < CHUNKS; cx++) this.queue.push(`${cx},${cz}`);
-    }
-    // Mesh the middle of the map first so the player spawns into finished land.
-    const mid = (CHUNKS - 1) / 2;
-    this.queue.sort((a, b) => keyDist(a, mid) - keyDist(b, mid));
 
     // Highlight box around the targeted block.
     this.highlight = new THREE.LineSegments(
@@ -102,24 +124,8 @@ export default class Blockcraft extends Game {
     this.crack.visible = false;
     this.add(this.crack);
     this.debris = new Burst(this.scene, 90, 0.13);
-    this.clouds = buildClouds();
-    this.add(this.clouds);
 
-    // Spawn on the surface at the middle of the world.
-    const sx = W / 2;
-    const sz = W / 2;
-    let sy = H - 1;
-    while (sy > 1 && !isSolid(this.get(sx, sy - 1, sz))) sy--;
-    this.pos = new THREE.Vector3(sx + 0.5, sy + 0.2, sz + 0.5);
-    this.vel = new THREE.Vector3();
-
-    this.yaw = 0;
-    this.pitch = -0.15;
-    this.grounded = false;
-    this.flying = false;
     this.slot = 0;
-    this.mined = 0;
-    this.placed = 0;
     this.cool = 0;
     this.lastJump = -1;
     this.mineKey = null;    // which block the current dig is against
@@ -128,21 +134,253 @@ export default class Blockcraft extends Game {
     this.stepT = 0;         // distance left before the next footstep
     this.wasWet = false;
     this.sprinting = false;
+    this.grounded = false;
+
+    this.viewDist = loadViewDist();
+
+    // Continue whichever world was last active, if it and its data both still
+    // exist; otherwise a fresh world with a random seed.
+    const activeId = getActiveWorldId();
+    const activeMeta = activeId ? loadWorldList().find((w) => w.id === activeId) : null;
+    const activeData = activeMeta ? loadWorldData(activeId) : null;
+
+    if (activeMeta && activeData) {
+      this.buildWorld(activeMeta.seed, activeData.edits, activeMeta.name, activeMeta.id);
+      this.pos.set(activeData.pos.x, activeData.pos.y, activeData.pos.z);
+      this.yaw = activeData.yaw;
+      this.pitch = activeData.pitch;
+      this.flying = !!activeData.flying;
+      this.mined = activeData.mined || 0;
+      this.placed = activeData.placed || 0;
+      this.dirty = false;
+      this.touchActive();
+    } else {
+      this.buildWorld(randomSeed(), null, null, null);
+      this.dirty = false;
+      this.save();
+    }
+    this.saveTimer = SAVE_INTERVAL;
+    this.musicTimer = rand(14, 24);   // first ambient phrase comes a little sooner than later ones
+    const loaded = !!(activeMeta && activeData);
 
     this.camera.fov = 75;
     this.camera.near = 0.1;
     this.camera.far = 400;
     this.camera.updateProjectionMatrix();
 
-    this.hud.panel(hotbarHtml() + touchHtml());
+    this.hud.panel(hotbarHtml() + touchHtml() + worldHtml());
     this.refreshHotbar();
     this.touch = { move: { x: 0, y: 0 }, look: { x: 0, y: 0 }, mine: false, place: false, up: false };
     this.bindTouch();
+    this.bindWorldPanel();
 
+    this.hud.hint((loaded ? `Loaded ${this.worldName} · ` : `New world, seed ${this.seed} · `) + this.controlsHint());
+  }
+
+  /** The control scheme half of the hint text — shared by start() and the
+   *  New World button, which both need to restate the current seed too. */
+  controlsHint() {
     const touchDevice = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
-    this.hud.hint(touchDevice
+    return touchDevice
       ? 'Left stick to move · drag the right side to look · MINE / PLACE / UP · tap FLY to toggle flying'
-      : 'Click to capture the mouse · WASD + Space · hold left click to mine, right click places · middle click copies a block · 1-9 or scroll · F to fly · or plug in a controller');
+      : 'Click to capture the mouse · WASD + Space · hold left click to mine, right click places · middle click copies a block · 1-9 or scroll · F to fly · or plug in a controller';
+  }
+
+  /**
+   * (Re)builds the world: tears down any previously loaded/meshed chunks (a
+   * "New World" or Load mid-session isn't the first call), restores any
+   * previously edited chunks, calibrates this seed's height curve, and
+   * resets the player to spawn. Terrain itself streams in afterward via
+   * updateStreaming() — this doesn't generate anything yet except spawn's
+   * own column. Called once from start(), and again from the World panel.
+   */
+  buildWorld(seed, savedEdits, name, id) {
+    for (const meshes of this.chunks?.values() ?? []) {
+      for (const m of meshes) { this.scene.remove(m); m.geometry.dispose(); }
+    }
+    if (this.clouds) {
+      this.scene.remove(this.clouds);
+      for (const c of this.clouds.children) c.geometry.dispose();
+      this.clouds.children[0]?.material.dispose();
+    }
+
+    this.seed = seed;
+    this.worldId = id || String(seed);
+    this.worldName = name || `World ${seed}`;
+    this.heightCal = calibrateHeight(seed);
+
+    // `edits` persists for the whole session, keyed by chunk, and is the only
+    // thing that gets saved — everything else regenerates from the seed.
+    // `chunkData` holds just the currently-loaded chunks; `chunks` their meshes.
+    this.edits = new Map();
+    if (savedEdits) {
+      for (const key of Object.keys(savedEdits)) {
+        this.edits.set(key, rleDecode(savedEdits[key], CHUNK * H * CHUNK));
+      }
+    }
+    this.chunkData = new Map();
+    this.chunks = new Map();
+    this.loadQueue = [];
+    this.centerChunk = null;
+
+    this.clouds = this.add(buildClouds());
+
+    // Spawn at the origin's own surface height — cheap to compute directly,
+    // no need for any chunk to actually be loaded first.
+    const sy = heightAt(0, 0, this.seed, this.heightCal) + 1;
+    this.spawnPos = new THREE.Vector3(0.5, sy + 0.2, 0.5);
+    this.pos = this.spawnPos.clone();
+    this.vel = new THREE.Vector3();
+    this.yaw = 0;
+    this.pitch = -0.15;
+    this.flying = false;
+    this.mined = 0;
+    this.placed = 0;
+    this.grounded = false;
+    this.mineKey = null;
+    this.mineT = 0;
+    this.chip = 0;
+    if (this.highlight) this.highlight.visible = false;
+    if (this.crack) this.crack.visible = false;
+
+    this.updateStreaming(true);   // load what's around spawn immediately, not next frame
+  }
+
+  /** Serializes only the edited chunks (run-length encoded) plus player
+   *  state, keyed by this world's own slot, and updates the world list.
+   *  Untouched terrain never needs saving — it regenerates identically from
+   *  the seed — so this stays small no matter how far a world has been explored. */
+  save() {
+    const edits = {};
+    for (const [key, data] of this.edits) edits[key] = rleEncode(data);
+    writeWorldData(this.worldId, {
+      edits,
+      pos: { x: this.pos.x, y: this.pos.y, z: this.pos.z },
+      yaw: this.yaw,
+      pitch: this.pitch,
+      flying: this.flying,
+      mined: this.mined,
+      placed: this.placed,
+    });
+    this.touchActive();
+  }
+
+  /** Updates this world's entry in the list (bumping it to "most recent")
+   *  and marks it the one to auto-continue next time, without re-encoding
+   *  the voxel data — used when nothing actually changed. */
+  touchActive() {
+    const list = loadWorldList().filter((w) => w.id !== this.worldId);
+    list.unshift({ id: this.worldId, name: this.worldName, seed: this.seed, savedAt: Date.now() });
+    writeWorldList(list);
+    setActiveWorldId(this.worldId);
+  }
+
+  /** Wires the World panel: a seed field and New World button, a live view
+   *  distance control, and the list of every saved world with Load/delete
+   *  buttons. */
+  bindWorldPanel() {
+    const panel = this.hud.$panel;
+    if (!panel) return;
+    this.worldPanel = panel;
+
+    const input = panel.querySelector('.bc-seed-input');
+    const viewButtons = [...panel.querySelectorAll('.bc-view')];
+    const newButton = panel.querySelector('.bc-new');
+    const list = panel.querySelector('.bc-worlds-list');
+
+    // None of this should reach Input's window-level listeners: a click here
+    // must not try to pointer-lock the canvas, and Space in a typed seed
+    // must not get eaten by the game's jump-key handling.
+    input?.addEventListener('pointerdown', (e) => e.stopPropagation());
+    input?.addEventListener('keydown', (e) => e.stopPropagation());
+    newButton?.addEventListener('pointerdown', (e) => e.stopPropagation());
+    list?.addEventListener('pointerdown', (e) => e.stopPropagation());
+    for (const b of viewButtons) b.addEventListener('pointerdown', (e) => e.stopPropagation());
+
+    const highlightView = () => {
+      for (const b of viewButtons) b.classList.toggle('on', Number(b.dataset.chunks) === this.viewDist);
+    };
+    highlightView();
+    for (const b of viewButtons) {
+      // View distance is a live client setting, like in real Minecraft — it
+      // applies to whatever world is open right now, not just new ones.
+      b.addEventListener('click', () => {
+        this.viewDist = Number(b.dataset.chunks);
+        saveViewDist(this.viewDist);
+        this.centerChunk = null;   // forces updateStreaming() to recompute even if standing still
+        highlightView();
+        this.audio.blip(0);
+      });
+    }
+
+    newButton?.addEventListener('click', () => {
+      if (this.dirty) this.save();   // don't lose progress on the world being left
+      const text = input?.value.trim();
+      const seed = text ? hashSeed(text) : randomSeed();
+      const name = text || `World ${seed}`;
+      this.buildWorld(seed, null, name, String(seed));
+      this.dirty = false;
+      this.save();
+      if (input) input.value = '';
+      this.hud.toast(`NEW WORLD · ${name}`, 1400);
+      this.hud.hint(`New world, seed ${this.seed} · ` + this.controlsHint());
+      this.refreshWorldList();
+      this.audio.good();
+    });
+
+    // Delegated: the list is re-rendered wholesale on every change, so a
+    // listener on each row would just be thrown away each time.
+    list?.addEventListener('click', (e) => {
+      const row = e.target.closest('[data-id]');
+      if (!row) return;
+      const id = row.dataset.id;
+      if (e.target.closest('.bc-load')) { this.loadWorld(id); this.audio.blip(4); }
+      else if (e.target.closest('.bc-del')) { deleteWorld(id); this.refreshWorldList(); this.audio.bad(); }
+    });
+
+    this.refreshWorldList();
+  }
+
+  /** Switches to a different saved world, first saving whatever is currently
+   *  in progress so hopping between worlds never loses anything. */
+  loadWorld(id) {
+    if (id === this.worldId) return;
+    if (this.dirty) this.save();
+    const meta = loadWorldList().find((w) => w.id === id);
+    const data = meta && loadWorldData(id);
+    if (!meta || !data) return;
+    this.buildWorld(meta.seed, data.edits, meta.name, meta.id);
+    this.pos.set(data.pos.x, data.pos.y, data.pos.z);
+    this.yaw = data.yaw;
+    this.pitch = data.pitch;
+    this.flying = !!data.flying;
+    this.mined = data.mined || 0;
+    this.placed = data.placed || 0;
+    this.dirty = false;
+    this.touchActive();
+    this.hud.toast(`LOADED · ${meta.name}`, 1200);
+    this.hud.hint(`Loaded ${meta.name}, seed ${this.seed} · ` + this.controlsHint());
+    this.refreshWorldList();
+  }
+
+  /** Re-renders the "Your Worlds" list from storage — called after any
+   *  change (new/load/delete) and once when the panel is first wired up. */
+  refreshWorldList() {
+    const list = this.worldPanel?.querySelector('.bc-worlds-list');
+    if (!list) return;
+    const worlds = loadWorldList();
+    if (!worlds.length) {
+      list.innerHTML = '<div class="bc-world-empty">No other saved worlds</div>';
+      return;
+    }
+    list.innerHTML = worlds.map((w) => {
+      const current = w.id === this.worldId;
+      return `
+        <div class="bc-world-row${current ? ' on' : ''}" data-id="${escapeHtml(w.id)}">
+          <span class="bc-world-name">${escapeHtml(w.name)}</span>
+          ${current ? '' : '<button class="bc-load">Load</button><button class="bc-del">&times;</button>'}
+        </div>`;
+    }).join('');
   }
 
   /** Wires the on-screen joystick, look pad and buttons that appear on touch
@@ -155,7 +393,7 @@ export default class Blockcraft extends Game {
     if (!panel) return;
 
     panel.querySelectorAll('.bc-slot').forEach((el, i) => {
-      el.addEventListener('click', () => { this.slot = i; this.refreshHotbar(); });
+      el.addEventListener('click', () => this.selectSlot(i));
     });
 
     const stickBase = panel.querySelector('.bc-stick-base');
@@ -193,31 +431,104 @@ export default class Blockcraft extends Game {
 
   /* ----------------------------------------------------------- voxel access */
 
-  index(x, y, z) { return (y * W + z) * W + x; }
-
+  /** Any (x,z) is valid — the world has no edge. A coordinate in a chunk
+   *  that isn't currently loaded just reads as air, the same fallback the
+   *  old fixed-size world used for anything out of bounds. */
   get(x, y, z) {
     x |= 0; y |= 0; z |= 0;
-    if (x < 0 || z < 0 || x >= W || z >= W || y < 0 || y >= H) return AIR;
-    return this.voxels[this.index(x, y, z)];
+    if (y < 0 || y >= H) return AIR;
+    const cx = Math.floor(x / CHUNK);
+    const cz = Math.floor(z / CHUNK);
+    const data = this.chunkData.get(`${cx},${cz}`);
+    if (!data) return AIR;
+    const lx = x - cx * CHUNK;
+    const lz = z - cz * CHUNK;
+    return data[(y * CHUNK + lz) * CHUNK + lx];
   }
 
   set(x, y, z, id) {
-    if (x < 0 || z < 0 || x >= W || z >= W || y < 0 || y >= H) return;
-    this.voxels[this.index(x, y, z)] = id;
-    // Rebuild this chunk, plus any neighbour whose border faces just changed.
+    x |= 0; y |= 0; z |= 0;
+    if (y < 0 || y >= H) return;
     const cx = Math.floor(x / CHUNK);
     const cz = Math.floor(z / CHUNK);
-    this.dirty(cx, cz);
-    if (x % CHUNK === 0) this.dirty(cx - 1, cz);
-    if (x % CHUNK === CHUNK - 1) this.dirty(cx + 1, cz);
-    if (z % CHUNK === 0) this.dirty(cx, cz - 1);
-    if (z % CHUNK === CHUNK - 1) this.dirty(cx, cz + 1);
+    const key = `${cx},${cz}`;
+    const data = this.chunkData.get(key);
+    if (!data) return;   // not currently loaded — in practice always true within REACH of the player
+    const lx = x - cx * CHUNK;
+    const lz = z - cz * CHUNK;
+    data[(y * CHUNK + lz) * CHUNK + lx] = id;
+    // The very first edit "promotes" this chunk to persistent: edits and
+    // chunkData share the same array from here on, so every later edit to
+    // it is automatically visible to save() with no extra bookkeeping.
+    this.edits.set(key, data);
+    this.dirty = true;
+    // Rebuild this chunk, plus any neighbour whose border faces just changed.
+    // (lx/lz, not x/z % CHUNK — the world spans negative coordinates too, and
+    // JS's % keeps the sign of its left operand, which breaks the boundary
+    // check for e.g. x = -1.)
+    this.dirtyChunk(cx, cz);
+    if (lx === 0) this.dirtyChunk(cx - 1, cz);
+    if (lx === CHUNK - 1) this.dirtyChunk(cx + 1, cz);
+    if (lz === 0) this.dirtyChunk(cx, cz - 1);
+    if (lz === CHUNK - 1) this.dirtyChunk(cx, cz + 1);
   }
 
-  dirty(cx, cz) {
-    if (cx < 0 || cz < 0 || cx >= CHUNKS || cz >= CHUNKS) return;
+  /** Queues a chunk for remeshing — only meaningful for chunks that are
+   *  actually loaded; an unloaded neighbour will just pick up the change
+   *  whenever it next loads, since get() reads the edit directly. */
+  dirtyChunk(cx, cz) {
     const key = `${cx},${cz}`;
-    if (!this.queue.includes(key)) this.queue.unshift(key);
+    if (this.chunkData.has(key) && !this.loadQueue.includes(key)) this.loadQueue.push(key);
+  }
+
+  /* -------------------------------------------------------------- streaming */
+
+  /**
+   * Loads chunks newly within view distance of the player and unloads ones
+   * now well outside it (a margin past view distance avoids reloading the
+   * same chunk over and over while walking back and forth at the edge).
+   * Cheap to call every frame: it does nothing once the player's current
+   * chunk stops changing, unless `force` or a view-distance change asks it
+   * to recompute anyway.
+   */
+  updateStreaming(force = false) {
+    const cx0 = Math.floor(this.pos.x / CHUNK);
+    const cz0 = Math.floor(this.pos.z / CHUNK);
+    if (!force && this.centerChunk && cx0 === this.centerChunk.cx && cz0 === this.centerChunk.cz) return;
+    this.centerChunk = { cx: cx0, cz: cz0 };
+
+    for (let dz = -this.viewDist; dz <= this.viewDist; dz++) {
+      for (let dx = -this.viewDist; dx <= this.viewDist; dx++) {
+        const cx = cx0 + dx;
+        const cz = cz0 + dz;
+        const key = `${cx},${cz}`;
+        if (this.chunkData.has(key)) continue;
+        const data = this.edits.get(key) || generateChunk(cx, cz, this.seed, this.heightCal);
+        this.chunkData.set(key, data);
+        if (!this.loadQueue.includes(key)) this.loadQueue.push(key);
+      }
+    }
+
+    const unloadDist = this.viewDist + UNLOAD_MARGIN;
+    for (const key of [...this.chunkData.keys()]) {
+      const [cx, cz] = key.split(',').map(Number);
+      if (Math.max(Math.abs(cx - cx0), Math.abs(cz - cz0)) <= unloadDist) continue;
+      const meshes = this.chunks.get(key);
+      if (meshes) {
+        for (const m of meshes) { this.scene.remove(m); m.geometry.dispose(); }
+        this.chunks.delete(key);
+      }
+      this.chunkData.delete(key);
+      const qi = this.loadQueue.indexOf(key);
+      if (qi >= 0) this.loadQueue.splice(qi, 1);
+    }
+
+    this.loadQueue.sort((a, b) => this.chunkDist(a) - this.chunkDist(b));
+  }
+
+  chunkDist(key) {
+    const [cx, cz] = key.split(',').map(Number);
+    return (cx - this.centerChunk.cx) ** 2 + (cz - this.centerChunk.cz) ** 2;
   }
 
   /* -------------------------------------------------------------- meshing */
@@ -287,8 +598,9 @@ export default class Blockcraft extends Game {
   /* --------------------------------------------------------------- update */
 
   update(dt) {
+    this.updateStreaming();
     // Amortise chunk meshing so the frame never stalls.
-    for (let i = 0; i < 2 && this.queue.length; i++) this.buildChunk(this.queue.shift());
+    for (let i = 0; i < 2 && this.loadQueue.length; i++) this.buildChunk(this.loadQueue.shift());
 
     this.look(dt);
     this.move(dt);
@@ -296,6 +608,27 @@ export default class Blockcraft extends Game {
 
     this.debris.update(dt);
     this.driftClouds(dt);
+    // Fixed offset from the player, not a fixed world position — reads as
+    // infinitely far away no matter how far the player wanders, the same
+    // trick driftClouds uses.
+    this.sun.position.set(this.pos.x + 140, 220, this.pos.z - 90);
+    this.sunGlow.position.copy(this.sun.position);
+
+    // Autosave on a timer, but only when something actually changed — no
+    // point writing an identical world to storage every 20 seconds.
+    this.saveTimer -= dt;
+    if (this.saveTimer <= 0) {
+      this.saveTimer = SAVE_INTERVAL;
+      if (this.dirty) { this.save(); this.dirty = false; }
+    }
+
+    // A calm ambient phrase now and then — sparse, like Minecraft's own
+    // soundtrack, not a tight background loop.
+    this.musicTimer -= dt;
+    if (this.musicTimer <= 0) {
+      this.musicTimer = rand(28, 46);
+      this.audio.ambientChime(0.6);
+    }
 
     this.camera.position.set(this.pos.x, this.pos.y + 1.62, this.pos.z);
     this.camera.rotation.set(this.pitch, this.yaw, 0, 'YXZ');
@@ -314,8 +647,9 @@ export default class Blockcraft extends Game {
     this.hud.stat('Placed', this.placed);
     this.hud.stat('XYZ', `${this.pos.x.toFixed(0)} ${this.pos.y.toFixed(0)} ${this.pos.z.toFixed(0)}`);
     this.hud.stat('Mode', this.flying ? 'flying' : 'walking');
-    if (this.queue.length) {
-      this.hud.stat('Chunks', `${this.chunks.size}/${CHUNKS * CHUNKS}`);
+    this.hud.stat('Seed', this.seed);
+    if (this.loadQueue.length) {
+      this.hud.stat('Chunks', `${this.chunks.size}/${this.chunkData.size}`);
     } else if (this.hud.stats.has('Chunks')) {
       this.hud.stats.get('Chunks').remove?.();
       this.hud.stats.delete('Chunks');
@@ -387,6 +721,7 @@ export default class Blockcraft extends Game {
       if (jumpHeld && this.grounded) {
         this.vel.y = 9;
         this.grounded = false;
+        this.audio.tone([420, 560], 0.07, { type: 'triangle', gain: 0.08 });
       }
       this.vel.y = Math.max(this.vel.y, -55);
     }
@@ -415,8 +750,9 @@ export default class Blockcraft extends Game {
     }
 
     if (this.pos.y < -20) {           // fell out of the world
-      this.pos.set(W / 2 + 0.5, H - 1, W / 2 + 0.5);
+      this.pos.copy(this.spawnPos);
       this.vel.set(0, 0, 0);
+      this.updateStreaming(true);    // spawn's chunk may since have unloaded behind us
     }
   }
 
@@ -481,14 +817,11 @@ export default class Blockcraft extends Game {
 
     // Block selection
     for (let i = 0; i < 9; i++) {
-      if (this.input.hit(`Digit${i + 1}`)) { this.slot = i; this.refreshHotbar(); }
+      if (this.input.hit(`Digit${i + 1}`)) this.selectSlot(i);
     }
-    if (this.input.wheel) {
-      this.slot = (this.slot + (this.input.wheel > 0 ? 1 : -1) + 9) % 9;
-      this.refreshHotbar();
-    }
-    if (this.input.gpHit(4)) { this.slot = (this.slot + 8) % 9; this.refreshHotbar(); }
-    if (this.input.gpHit(5)) { this.slot = (this.slot + 1) % 9; this.refreshHotbar(); }
+    if (this.input.wheel) this.selectSlot((this.slot + (this.input.wheel > 0 ? 1 : -1) + 9) % 9);
+    if (this.input.gpHit(4)) this.selectSlot((this.slot + 8) % 9);
+    if (this.input.gpHit(5)) this.selectSlot((this.slot + 1) % 9);
 
     const hit = this.raycast();
     this.highlight.visible = !!hit;
@@ -497,7 +830,7 @@ export default class Blockcraft extends Game {
     // Middle click copies the block you are looking at, if it is on the bar.
     if (hit && this.input.clickedButton(1)) {
       const slot = HOTBAR.indexOf(hit.id);
-      if (slot >= 0) { this.slot = slot; this.refreshHotbar(); this.audio.blip?.(); }
+      if (slot >= 0) this.selectSlot(slot);
     }
 
     this.mine(dt, hit);
@@ -561,12 +894,16 @@ export default class Blockcraft extends Game {
     this.mineT = 0;
     this.crack.visible = false;
     this.audio.noise(0.13, { gain: 0.15, cutoff: 1200, sweep: 0.4 });
+    if (hit.id === 12 || hit.id === 15 || hit.id === 16) this.audio.good();   // a little reward for striking ore
   }
 
   driftClouds(dt) {
+    // Wrapped relative to the player, not a fixed world footprint — there
+    // is no fixed footprint any more, and clouds should still be overhead
+    // no matter how far from spawn the player has wandered.
     for (const c of this.clouds.children) {
       c.position.x += c.userData.speed * dt;
-      if (c.position.x > W * 1.6) c.position.x = -W * 0.6;
+      if (c.position.x - this.pos.x > 110) c.position.x = this.pos.x - 110;
     }
   }
 
@@ -575,6 +912,12 @@ export default class Blockcraft extends Game {
     return x + 1 > this.pos.x - R && x < this.pos.x + R
       && z + 1 > this.pos.z - R && z < this.pos.z + R
       && y + 1 > this.pos.y && y < this.pos.y + 1.8;
+  }
+
+  selectSlot(i) {
+    this.slot = i;
+    this.refreshHotbar();
+    this.audio.blip(2);
   }
 
   refreshHotbar() {
@@ -587,10 +930,15 @@ export default class Blockcraft extends Game {
     if (label) label.textContent = BLOCKS[HOTBAR[this.slot]].name;
   }
 
-  dispose() { this.input.exitLock(); }
+  dispose() {
+    this.input.exitLock();
+    if (this.dirty) { this.save(); this.dirty = false; }
+  }
 }
 
-/** A handful of flat slabs drifting overhead, well above the build height. */
+/** A handful of flat slabs drifting overhead, well above the build height.
+ *  Spawns near the origin — driftClouds() re-centers them on the player
+ *  every frame, so this starting spread only matters for the first moment. */
 function buildClouds() {
   const group = new THREE.Group();
   const mat = new THREE.MeshBasicMaterial({
@@ -600,8 +948,9 @@ function buildClouds() {
   for (let i = 0; i < 16; i++) {
     const w = 10 + rng() * 22;
     const d = 8 + rng() * 16;
+    const span = 110;
     const cloud = new THREE.Mesh(new THREE.BoxGeometry(w, 2 + rng() * 2, d), mat);
-    cloud.position.set(rng() * W * 2 - W / 2, H + 14 + rng() * 10, rng() * W * 2 - W / 2);
+    cloud.position.set(rng() * span * 2 - span, H + 14 + rng() * 10, rng() * span * 2 - span);
     cloud.userData.speed = 0.7 + rng() * 1.1;
     group.add(cloud);
   }
@@ -610,45 +959,84 @@ function buildClouds() {
 
 /* ------------------------------------------------------------- generation */
 
-function generate(voxels, seed) {
-  const idx = (x, y, z) => (y * W + z) * W + x;
-  const heights = new Uint8Array(W * W);   // surface height, kept for cave carving
+/** Layered value noise for elevation. A stationary field — statistically the
+ *  same everywhere — which is exactly what makes chunk-at-a-time generation
+ *  possible: any column can be evaluated on its own, in any order. */
+function fieldAt(x, z, seed) {
+  let e = 0;
+  let amp = 1;
+  let freq = 0.012;
+  let sum = 0;
+  for (let o = 0; o < 4; o++) {
+    e += noise2(x * freq, z * freq, seed + o * 71) * amp;
+    sum += amp;
+    amp *= 0.5;
+    freq *= 2.1;
+  }
+  return e / sum;
+}
 
-  // Elevation first, as a raw field. Layered value noise makes rolling hills
-  // with the odd peak, but its mean wanders from seed to seed.
-  const field = new Float32Array(W * W);
-  for (let z = 0; z < W; z++) {
-    for (let x = 0; x < W; x++) {
-      let e = 0;
-      let amp = 1;
-      let freq = 0.012;
-      let sum = 0;
-      for (let o = 0; o < 4; o++) {
-        e += noise2(x * freq, z * freq, seed + o * 71) * amp;
-        sum += amp;
-        amp *= 0.5;
-        freq *= 2.1;
-      }
-      field[z * W + x] = e / sum;
+/**
+ * Fits the height curve to this seed's own spread rather than to fixed
+ * constants — a flat mapping left some seeds with no sea at all and others
+ * half drowned. Pinning the 30th percentile to the waterline gives every
+ * seed a coast. There's no whole world to scan any more, so this samples a
+ * large, sparse, deterministic spread of columns instead: since the field is
+ * stationary, that sample's percentiles match the true (infinite) field's.
+ */
+function calibrateHeight(seed) {
+  const N = 96;
+  const STRIDE = 37;   // no relation to the noise's own frequencies, so it can't alias with them
+  const samples = new Float32Array(N * N);
+  let i = 0;
+  for (let sz = 0; sz < N; sz++) {
+    for (let sx = 0; sx < N; sx++) {
+      samples[i++] = fieldAt((sx - N / 2) * STRIDE, (sz - N / 2) * STRIDE, seed);
     }
   }
+  const sorted = Float32Array.from(samples).sort();
+  return {
+    low: sorted[0],
+    shore: sorted[Math.floor(sorted.length * 0.3)],
+    peak: sorted[Math.floor(sorted.length * 0.995)],
+  };
+}
 
-  // Fit the curve to this world's own spread rather than to fixed constants.
-  // A flat mapping left some seeds with no sea at all and others half drowned;
-  // pinning the 30th percentile to the waterline gives every world a coast.
-  const sorted = Float32Array.from(field).sort();
-  const low = sorted[0];
-  const shore = sorted[Math.floor(sorted.length * 0.3)];
-  const peak = sorted[Math.floor(sorted.length * 0.995)];
-  const heightAt = (e) => (e <= shore
-    ? Math.round(lerp(2, SEA, invLerp(low, shore, e)))
-    : Math.round(lerp(SEA, H - 6, clamp(invLerp(shore, peak, e), 0, 1) ** 1.15)));
+function heightAt(x, z, seed, cal) {
+  const e = fieldAt(x, z, seed);
+  const h = e <= cal.shore
+    ? Math.round(lerp(2, SEA, invLerp(cal.low, cal.shore, e)))
+    : Math.round(lerp(SEA, H - 6, clamp(invLerp(cal.shore, cal.peak, e), 0, 1) ** 1.15));
+  return clamp(h, 1, H - 6);
+}
 
-  for (let z = 0; z < W; z++) {
-    for (let x = 0; x < W; x++) {
-      const h = clamp(heightAt(field[z * W + x]), 1, H - 6);
+/** Whether world column (x,z) roots a tree, and if so its trunk height — a
+ *  pure function of the column, so it comes out the same regardless of
+ *  which chunk asks (needed since a canopy can cross into a neighbour). */
+function treeAt(x, z, seed, cal) {
+  const h = heightAt(x, z, seed, cal);
+  if (h < SEA + 2 || h > 26) return null;               // underwater/beach or above the treeline
+  if (hash2(x, z, seed ^ 0x5eed) > 0.012) return null;   // ~1.2% of eligible columns
+  return { y: h, trunk: 4 + Math.floor(hash2(x, z, seed ^ 0x7a11) * 3) };
+}
+
+/** Generates one CHUNK x H x CHUNK slice of terrain in world coordinates
+ *  (cx, cz are chunk indices, so world x/z run from cx*CHUNK for CHUNK
+ *  blocks). Deterministic from (cx, cz, seed) alone — regenerating the same
+ *  chunk always reproduces the same terrain, which is what lets an infinite
+ *  world be saved as "just the edits" instead of the whole thing. */
+function generateChunk(cx, cz, seed, cal) {
+  const data = new Uint8Array(CHUNK * H * CHUNK);
+  const idx = (lx, y, lz) => (y * CHUNK + lz) * CHUNK + lx;
+  const ox = cx * CHUNK;
+  const oz = cz * CHUNK;
+
+  const heights = new Int16Array(CHUNK * CHUNK);
+  for (let lz = 0; lz < CHUNK; lz++) {
+    for (let lx = 0; lx < CHUNK; lx++) {
+      const h = heightAt(ox + lx, oz + lz, seed, cal);
+      heights[lz * CHUNK + lx] = h;
       const beach = h <= SEA + 1;
-      heights[z * W + x] = h;
 
       for (let y = 0; y <= Math.max(h, SEA); y++) {
         let id = AIR;
@@ -659,24 +1047,24 @@ function generate(voxels, seed) {
         } else if (y <= SEA) {
           id = WATER;
         }
-        if (id !== AIR) voxels[idx(x, y, z)] = id;
+        if (id !== AIR) data[idx(lx, y, lz)] = id;
       }
 
       // Snow caps
-      if (h > 26) voxels[idx(x, h, z)] = 13;
+      if (h > 26) data[idx(lx, h, lz)] = 13;
     }
   }
 
   // Caves. Carved from 3D noise, but never within three blocks of the surface:
   // that crust is what stops the sea draining into them and the hills going hollow.
   for (let y = 2; y < H - 6; y++) {
-    for (let z = 0; z < W; z++) {
-      for (let x = 0; x < W; x++) {
-        const i = idx(x, y, z);
-        const id = voxels[i];
+    for (let lz = 0; lz < CHUNK; lz++) {
+      for (let lx = 0; lx < CHUNK; lx++) {
+        const i = idx(lx, y, lz);
+        const id = data[i];
         if (id !== 3 && id !== 2) continue;
-        if (y > heights[z * W + x] - 3) continue;
-        if (noise3(x * 0.085, y * 0.13, z * 0.085, seed + 313) > 0.655) voxels[i] = AIR;
+        if (y > heights[lz * CHUNK + lx] - 3) continue;
+        if (noise3((ox + lx) * 0.085, y * 0.13, (oz + lz) * 0.085, seed + 313) > 0.655) data[i] = AIR;
       }
     }
   }
@@ -688,14 +1076,16 @@ function generate(voxels, seed) {
     { id: 12, top: 10, freq: 0.46, cut: 0.885 },
   ];
   for (let y = 1; y < 27; y++) {
-    for (let z = 0; z < W; z++) {
-      for (let x = 0; x < W; x++) {
-        const i = idx(x, y, z);
-        if (voxels[i] !== 3) continue;
+    for (let lz = 0; lz < CHUNK; lz++) {
+      for (let lx = 0; lx < CHUNK; lx++) {
+        const i = idx(lx, y, lz);
+        if (data[i] !== 3) continue;
+        const wx = ox + lx;
+        const wz = oz + lz;
         for (const v of VEINS) {
           if (y > v.top) continue;
-          if (noise3(x * v.freq, y * v.freq, z * v.freq, seed + v.id * 77) > v.cut) {
-            voxels[i] = v.id;
+          if (noise3(wx * v.freq, y * v.freq, wz * v.freq, seed + v.id * 77) > v.cut) {
+            data[i] = v.id;
             break;
           }
         }
@@ -703,32 +1093,44 @@ function generate(voxels, seed) {
     }
   }
 
-  // Trees on grass, away from the shoreline.
-  const rng = seeded(seed ^ 0x5eed);
-  for (let z = 3; z < W - 3; z++) {
-    for (let x = 3; x < W - 3; x++) {
-      let y = H - 1;
-      while (y > 0 && voxels[idx(x, y, z)] === AIR) y--;
-      if (voxels[idx(x, y, z)] !== 1 || y < SEA + 2 || y > 26) continue;
-      if (rng() > 0.012) continue;
-
-      const trunk = 4 + Math.floor(rng() * 3);
-      for (let i = 1; i <= trunk; i++) voxels[idx(x, y + i, z)] = 5;
+  // Trees on grass, away from the shoreline. Scanned over a margin beyond
+  // this chunk's own footprint so a tree rooted in a neighbouring chunk can
+  // still paint canopy in here — and this chunk's own trees paint into the
+  // neighbour the same way when it's that one's turn to generate.
+  const MARGIN = 3;
+  for (let wz = oz - MARGIN; wz < oz + CHUNK + MARGIN; wz++) {
+    for (let wx = ox - MARGIN; wx < ox + CHUNK + MARGIN; wx++) {
+      const tree = treeAt(wx, wz, seed, cal);
+      if (!tree) continue;
+      const { y, trunk } = tree;
+      for (let i = 1; i <= trunk; i++) {
+        const lx = wx - ox;
+        const lz = wz - oz;
+        const yy = y + i;
+        if (lx >= 0 && lx < CHUNK && lz >= 0 && lz < CHUNK && yy < H) data[idx(lx, yy, lz)] = 5;
+      }
       const top = y + trunk;
       for (let dy = -2; dy <= 1; dy++) {
-        const r = dy >= 1 ? 1 : dy === 0 ? 2 : 2;
+        const r = dy >= 1 ? 1 : 2;
         for (let dz = -r; dz <= r; dz++) {
           for (let dx = -r; dx <= r; dx++) {
-            if (Math.abs(dx) === r && Math.abs(dz) === r && rng() < 0.6) continue;
+            const leafX = wx + dx;
+            const leafZ = wz + dz;
+            if (Math.abs(dx) === r && Math.abs(dz) === r
+              && hash3(leafX, top + dy, leafZ, seed ^ 0x9a1e) < 0.6) continue;
+            const lx = leafX - ox;
+            const lz = leafZ - oz;
             const yy = top + dy;
-            if (yy >= H) continue;
-            const i = idx(x + dx, yy, z + dz);
-            if (voxels[i] === AIR) voxels[i] = 6;
+            if (lx < 0 || lx >= CHUNK || lz < 0 || lz >= CHUNK || yy >= H) continue;
+            const i = idx(lx, yy, lz);
+            if (data[i] === AIR) data[i] = 6;
           }
         }
       }
     }
   }
+
+  return data;
 }
 
 function hash2(x, z, seed) {
@@ -779,10 +1181,111 @@ function noise2(x, z, seed) {
   );
 }
 
-const keyDist = (key, mid) => {
-  const [x, z] = key.split(',').map(Number);
-  return (x - mid) ** 2 + (z - mid) ** 2;
-};
+/* ------------------------------------------------------------------- save */
+
+const randomSeed = () => (Math.random() * 0x7fffffff) | 0;
+
+/** Lets a player type any word as a seed, not just digits. */
+function hashSeed(str) {
+  let h = 0;
+  for (let i = 0; i < str.length; i++) h = (Math.imul(h, 31) + str.charCodeAt(i)) | 0;
+  return h >>> 0;
+}
+
+/** Run-length encodes one chunk's voxel data: real terrain is mostly long
+ *  runs of the same block, so an edited chunk still saves small. */
+function rleEncode(voxels) {
+  const out = [];
+  const n = voxels.length;
+  let i = 0;
+  while (i < n) {
+    const v = voxels[i];
+    let run = 1;
+    while (i + run < n && voxels[i + run] === v && run < 0xffff) run++;
+    out.push(v, run);
+    i += run;
+  }
+  return out;
+}
+
+function rleDecode(pairs, total) {
+  const out = new Uint8Array(total);
+  let i = 0;
+  for (let p = 0; p < pairs.length; p += 2) {
+    out.fill(pairs[p], i, i + pairs[p + 1]);
+    i += pairs[p + 1];
+  }
+  return out;
+}
+
+const escapeHtml = (s) => String(s).replace(/[&<>"']/g, (c) => (
+  { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+));
+
+// Every localStorage touch below is try/catched: private-mode/full-storage
+// browsers can throw on read or write, and the Node test harness has no
+// `localStorage` global at all, which throws a ReferenceError just as easily.
+
+function loadViewDist() {
+  try {
+    const v = Number(localStorage.getItem(VIEW_DIST_KEY));
+    return VIEW_DISTANCES.some((d) => d.chunks === v) ? v : DEFAULT_VIEW_DIST;
+  } catch {
+    return DEFAULT_VIEW_DIST;
+  }
+}
+
+function saveViewDist(chunks) {
+  try { localStorage.setItem(VIEW_DIST_KEY, String(chunks)); } catch { /* ignore */ }
+}
+
+/** The world index: name/seed/last-saved-at for every world, newest first.
+ *  Small and cheap to read/write on its own — the (potentially large) per-
+ *  chunk edit data lives separately, one key per world. */
+function loadWorldList() {
+  try {
+    const raw = localStorage.getItem(WORLDS_KEY);
+    const list = raw ? JSON.parse(raw) : [];
+    return Array.isArray(list) ? list : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeWorldList(list) {
+  try { localStorage.setItem(WORLDS_KEY, JSON.stringify(list)); } catch { /* full, or private mode */ }
+}
+
+function loadWorldData(id) {
+  try {
+    const raw = localStorage.getItem(worldDataKey(id));
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    if (!data || typeof data.edits !== 'object' || !data.pos) return null;
+    return data;
+  } catch {
+    return null;
+  }
+}
+
+function writeWorldData(id, data) {
+  try { localStorage.setItem(worldDataKey(id), JSON.stringify(data)); } catch { /* full, or private mode */ }
+}
+
+function deleteWorld(id) {
+  try {
+    localStorage.removeItem(worldDataKey(id));
+    writeWorldList(loadWorldList().filter((w) => w.id !== id));
+  } catch { /* ignore */ }
+}
+
+function getActiveWorldId() {
+  try { return localStorage.getItem(ACTIVE_KEY); } catch { return null; }
+}
+
+function setActiveWorldId(id) {
+  try { localStorage.setItem(ACTIVE_KEY, id); } catch { /* ignore */ }
+}
 
 /* ------------------------------------------------------------------ atlas */
 
@@ -820,69 +1323,71 @@ function buildAtlas() {
     }
   };
 
-  speckle(0, '#5fa63b', ['#6cb844', '#559a33', '#67ad3e']);                 // grass top
-  speckle(2, '#8a5f3c', ['#7d5535', '#966a44', '#84593a']);                 // dirt
-  speckle(1, '#8a5f3c', ['#7d5535', '#966a44']);                            // grass side (dirt base)
+  // A punchier, more saturated palette — closer to Minecraft's own vivid,
+  // high-contrast block textures than a naturalistic one would be.
+  speckle(0, '#6bbf3a', ['#7fd94a', '#59a52c', '#8ee35c']);                 // grass top
+  speckle(2, '#8b6239', ['#7a5029', '#a1774a', '#6e4a29']);                 // dirt
+  speckle(1, '#8b6239', ['#7a5029', '#a1774a']);                            // grass side (dirt base)
   for (let x = 0; x < TILE; x++) {
     const lip = 3 + ((rng() * 2) | 0);
-    for (let y = 0; y < lip; y++) px(1, x, y, rng() < 0.5 ? '#5fa63b' : '#6cb844');
+    for (let y = 0; y < lip; y++) px(1, x, y, rng() < 0.5 ? '#6bbf3a' : '#7fd94a');
   }
-  speckle(3, '#7e7e86', ['#8b8b93', '#71717a', '#868690']);                 // stone
-  speckle(4, '#ded2a4', ['#e8dcb0', '#d2c696', '#e2d6a8']);                 // sand
-  speckle(5, '#6b4a2c', ['#5d4026', '#775432']);                            // log side
+  speckle(3, '#8c8c96', ['#a0a0aa', '#787882', '#6c6c76']);                 // stone
+  speckle(4, '#ecdfab', ['#f6ecc1', '#ddca92', '#f0e2b8']);                 // sand
+  speckle(5, '#6e4a2a', ['#4f3319', '#835730']);                           // log side
   for (let y = 0; y < TILE; y++) {
-    for (const x of [2, 3, 8, 9, 13]) px(5, x, y, rng() < 0.7 ? '#573b23' : '#6b4a2c');
+    for (const x of [2, 3, 8, 9, 13]) px(5, x, y, rng() < 0.7 ? '#4f3319' : '#6e4a2a');
   }
-  speckle(6, '#a9834f', ['#9a7645', '#b58c56']);                            // log end
+  speckle(6, '#c9a869', ['#b7935a', '#dab97a']);                           // log end
   for (let r = 2; r < 8; r += 2) {
     for (let a = 0; a < 64; a++) {
       const t = (a / 64) * Math.PI * 2;
-      px(6, (8 + Math.cos(t) * r) | 0, (8 + Math.sin(t) * r) | 0, '#7d5f39');
+      px(6, (8 + Math.cos(t) * r) | 0, (8 + Math.sin(t) * r) | 0, '#8f6d3f');
     }
   }
-  speckle(7, '#3f7d32', ['#4c9139', '#356b2a', '#58a341']);                 // leaves
-  fill(8, '#a97c4c');                                                        // planks
+  speckle(7, '#3f9a2a', ['#4fb436', '#2f7a1e', '#63cc48']);                 // leaves
+  fill(8, '#bd8f56');                                                       // planks
   for (let y = 0; y < TILE; y++) {
     for (let x = 0; x < TILE; x++) {
-      if (y % 4 === 3) px(8, x, y, '#8a6339');
-      else if (rng() < 0.25) px(8, x, y, '#b98a58');
+      if (y % 4 === 3) px(8, x, y, '#8f6a3a');
+      else if (rng() < 0.25) px(8, x, y, '#d5a86b');
     }
   }
-  fill(9, '#a04a3c');                                                        // brick
+  fill(9, '#a94a3a');                                                       // brick
   for (let y = 0; y < TILE; y++) {
     for (let x = 0; x < TILE; x++) {
       const row = Math.floor(y / 4);
-      if (y % 4 === 0 || (x + (row % 2) * 4) % 8 === 0) px(9, x, y, '#d8d0c8');
-      else if (rng() < 0.18) px(9, x, y, '#b45a49');
+      if (y % 4 === 0 || (x + (row % 2) * 4) % 8 === 0) px(9, x, y, '#ded4c6');
+      else if (rng() < 0.18) px(9, x, y, '#c65e4c');
     }
   }
-  speckle(10, '#8b8b93', ['#6e6e77', '#9b9ba3', '#5f5f68']);                // cobble
-  fill(11, '#bfe4f2');                                                       // glass
+  speckle(10, '#87878f', ['#68686f', '#a3a3ab', '#57575e']);               // cobble
+  fill(11, '#cdeaf5');                                                      // glass
   for (let i = 0; i < TILE; i++) {
     px(11, i, 0, '#ffffff'); px(11, i, TILE - 1, '#ffffff');
     px(11, 0, i, '#ffffff'); px(11, TILE - 1, i, '#ffffff');
   }
-  fill(12, '#3f7fd8');                                                       // water
+  fill(12, '#2e72e6');                                                      // water
   for (let y = 0; y < TILE; y++) {
     for (let x = 0; x < TILE; x++) {
-      if ((x + y * 2 + ((rng() * 2) | 0)) % 7 === 0) px(12, x, y, '#5b9ae8');
+      if ((x + y * 2 + ((rng() * 2) | 0)) % 7 === 0) px(12, x, y, '#5ea3f7');
     }
   }
-  speckle(13, '#7e7e86', ['#8b8b93', '#71717a']);                           // gold ore
-  for (let i = 0; i < 16; i++) px(13, (rng() * TILE) | 0, (rng() * TILE) | 0, '#f0c14b');
-  speckle(14, '#eef4ff', ['#ffffff', '#dfe8f7']);                           // snow
-  speckle(15, '#241f36', ['#312a49', '#1a1628']);                           // obsidian
-  speckle(16, '#7e7e86', ['#8b8b93', '#71717a']);                           // coal ore
+  speckle(13, '#8c8c96', ['#a0a0aa', '#787882']);                          // gold ore
+  for (let i = 0; i < 16; i++) px(13, (rng() * TILE) | 0, (rng() * TILE) | 0, '#ffd83f');
+  speckle(14, '#f6faff', ['#ffffff', '#e6effc']);                          // snow
+  speckle(15, '#1a1526', ['#251d3a', '#0e0c18']);                          // obsidian
+  speckle(16, '#8c8c96', ['#a0a0aa', '#787882']);                          // coal ore
   for (let i = 0; i < 22; i++) {
     const x = (rng() * (TILE - 2)) | 0;
     const y = (rng() * (TILE - 2)) | 0;
-    px(16, x, y, '#26262c'); px(16, x + 1, y, '#1b1b20'); px(16, x, y + 1, '#31313a');
+    px(16, x, y, '#1c1c20'); px(16, x + 1, y, '#101013'); px(16, x, y + 1, '#28282e');
   }
-  speckle(17, '#7e7e86', ['#8b8b93', '#71717a']);                           // iron ore
+  speckle(17, '#8c8c96', ['#a0a0aa', '#787882']);                          // iron ore
   for (let i = 0; i < 20; i++) {
     const x = (rng() * (TILE - 2)) | 0;
     const y = (rng() * (TILE - 2)) | 0;
-    px(17, x, y, '#d8b48c'); px(17, x + 1, y, '#c39a72'); px(17, x, y + 1, '#e8c9a8');
+    px(17, x, y, '#e3c19a'); px(17, x + 1, y, '#d0a87e'); px(17, x, y + 1, '#f2d6b2');
   }
 
   const tex = new THREE.CanvasTexture(c);
@@ -967,6 +1472,52 @@ function touchHtml() {
     </div>`;
 }
 
+/** A small floating panel — top-left, clear of the stats bar and the touch
+ *  controls — for the seed, the live view-distance setting, and the list of
+ *  saved worlds. bindWorldPanel() wires it up. */
+function worldHtml() {
+  const views = VIEW_DISTANCES.map(({ chunks, label }) => `
+    <button class="bc-view" data-chunks="${chunks}">${label}</button>`).join('');
+  return `
+    <style>
+      .bc-world { position:absolute; left:16px; top:64px; pointer-events:auto;
+        background:rgba(10,14,24,.6); border:1px solid rgba(255,255,255,.15);
+        border-radius:8px; padding:8px; display:flex; flex-direction:column; gap:6px;
+        font:600 12px system-ui; color:#fff; width:180px; }
+      .bc-world .bc-label { color:rgba(255,255,255,.6); font-size:10px;
+        text-transform:uppercase; letter-spacing:.5px; margin-top:2px; }
+      .bc-world .bc-label:first-child { margin-top:0; }
+      .bc-world input { width:100%; box-sizing:border-box; background:rgba(255,255,255,.08);
+        border:1px solid rgba(255,255,255,.2); border-radius:5px; color:#fff;
+        padding:4px 6px; font:inherit; }
+      .bc-world .bc-views { display:flex; gap:4px; }
+      .bc-world .bc-view { flex:1; padding:4px 0; border-radius:5px; border:1px solid rgba(255,255,255,.2);
+        background:rgba(255,255,255,.06); color:#fff; cursor:pointer; font:inherit; }
+      .bc-world .bc-view.on { border-color:#fff; background:rgba(255,255,255,.22); }
+      .bc-world .bc-new { padding:5px 0; border-radius:5px; border:1px solid rgba(255,255,255,.25);
+        background:rgba(255,90,80,.25); color:#fff; cursor:pointer; font:700 12px inherit; }
+      .bc-world .bc-worlds-list { display:flex; flex-direction:column; gap:3px;
+        max-height:150px; overflow-y:auto; }
+      .bc-world .bc-world-row { display:flex; align-items:center; gap:4px;
+        border-radius:5px; padding:3px 5px; background:rgba(255,255,255,.05); font-size:11px; }
+      .bc-world .bc-world-row.on { background:rgba(110,231,255,.16); }
+      .bc-world .bc-world-name { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+      .bc-world .bc-load, .bc-world .bc-del { border:none; border-radius:4px; cursor:pointer;
+        font:700 10px inherit; padding:2px 6px; color:#fff; background:rgba(255,255,255,.14); }
+      .bc-world .bc-del { padding:2px 7px; background:rgba(255,90,80,.3); }
+      .bc-world .bc-world-empty { color:rgba(255,255,255,.45); font-size:11px; }
+    </style>
+    <div class="bc-world">
+      <div class="bc-label">New world seed</div>
+      <input class="bc-seed-input" type="text" placeholder="random" maxlength="24" />
+      <button class="bc-new">New World</button>
+      <div class="bc-label">View distance</div>
+      <div class="bc-views">${views}</div>
+      <div class="bc-label">Your worlds</div>
+      <div class="bc-worlds-list"></div>
+    </div>`;
+}
+
 /** A drag-to-move virtual joystick: the knob follows the finger, clamped to
  *  a fixed radius, reporting -1..1 on each axis (+y is "forward", matching
  *  Input's axisY convention) via `onChange`. */
@@ -1026,6 +1577,6 @@ function bindLook(zone, look) {
 }
 
 const SWATCH = {
-  1: '#5fa63b', 3: '#7e7e86', 4: '#ded2a4', 5: '#6b4a2c', 6: '#3f7d32',
-  8: '#a97c4c', 9: '#a04a3c', 10: '#8b8b93', 11: '#bfe4f2',
+  1: '#6bbf3a', 3: '#8c8c96', 4: '#ecdfab', 5: '#6e4a2a', 6: '#3f9a2a',
+  8: '#bd8f56', 9: '#a94a3a', 10: '#87878f', 11: '#cdeaf5',
 };

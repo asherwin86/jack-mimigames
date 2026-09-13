@@ -162,7 +162,7 @@ function makeInput(scene) {
 function makeAudio() {
   return {
     tone() {}, noise() {}, blip() {}, pickup() {}, good() {}, bad() {},
-    thud() {}, boom() {}, win() {}, lose() {}, setMuted() {}, muted: true,
+    thud() {}, boom() {}, win() {}, lose() {}, meow() {}, ambientChime() {}, setMuted() {}, muted: true,
   };
 }
 

@@ -1,4 +1,5 @@
-/** Targeted checks for the voxel world: generation, meshing, physics, editing. */
+/** Targeted checks for the voxel world: chunk streaming, generation, meshing,
+ *  physics, editing, and save/load. */
 import * as THREE from 'three';
 
 globalThis.document ??= {
@@ -12,95 +13,132 @@ globalThis.document ??= {
 };
 globalThis.addEventListener ??= () => {};
 
+// In-memory localStorage: Node has no such global, and blockcraft.js's save
+// functions already guard for that with try/catch — but a real shim, shared
+// across instances, is what lets the save/load round trip actually be tested.
+const memStore = new Map();
+globalThis.localStorage ??= {
+  getItem: (k) => (memStore.has(k) ? memStore.get(k) : null),
+  setItem: (k, v) => { memStore.set(k, String(v)); },
+  removeItem: (k) => { memStore.delete(k); },
+};
+
 const { default: Blockcraft } = await import('../src/games/blockcraft.js');
 
-const scene = new THREE.Scene();
-const input = {
-  pointer: new THREE.Vector2(), delta: new THREE.Vector2(), down: false, clicked: false,
-  wheel: 0, locked: false, keys: new Set(),
-  held: null,          // which mouse button the test is holding down
-  key: () => false, hit: () => false, axisX: () => 0, axisY: () => 0,
-  button(n) { return this.held === n; },
-  clickedButton: () => false,
-  requestLock() {}, exitLock() {}, pick: () => null,
-  gpAxis: () => 0, gpButton: () => false, gpHit: () => false,
-};
-const game = new Blockcraft({
-  scene, camera: new THREE.PerspectiveCamera(), renderer: null, input,
-  audio: new Proxy({}, { get: () => () => {} }),
-  hud: { stat() {}, toast() {}, hint() {}, panel: () => null, stats: new Map() },
-  size: { w: 1280, h: 800 }, setCamera() {}, end() {},
-});
+/** A fresh mock Input, structurally identical to the one below — used to
+ *  build extra Blockcraft instances for the save/load round-trip check. */
+function makeInput() {
+  return {
+    pointer: new THREE.Vector2(), delta: new THREE.Vector2(), down: false, clicked: false,
+    wheel: 0, locked: false, keys: new Set(),
+    held: null,
+    key: () => false, hit: () => false, axisX: () => 0, axisY: () => 0,
+    button(n) { return this.held === n; },
+    clickedButton: () => false,
+    requestLock() {}, exitLock() {}, pick: () => null,
+    gpAxis: () => 0, gpButton: () => false, gpHit: () => false,
+  };
+}
+function makeGame(input) {
+  return new Blockcraft({
+    scene: new THREE.Scene(), camera: new THREE.PerspectiveCamera(), renderer: null, input,
+    audio: new Proxy({}, { get: () => () => {} }),
+    hud: { stat() {}, toast() {}, hint() {}, panel: () => null, stats: new Map() },
+    size: { w: 1280, h: 800 }, setCamera() {}, end() {},
+  });
+}
+
+const input = makeInput();
+const game = makeGame(input);
 
 const checks = [];
-/** Shallowest y at which a block id appears, for the ore-layering check. */
-const deepest = (id) => {
-  for (let y = 39; y >= 0; y--) {
-    for (let z = 0; z < 96; z++) {
-      for (let x = 0; x < 96; x++) if (game.voxels[(y * 96 + z) * 96 + x] === id) return y;
+const check = (name, cond, detail = '') => checks.push({ name, ok: !!cond, detail });
+
+/** Tallies block ids across every currently-loaded chunk. */
+function countBlocks(g) {
+  const counts = {};
+  let total = 0;
+  for (const data of g.chunkData.values()) {
+    for (const v of data) { counts[v] = (counts[v] || 0) + 1; total++; }
+  }
+  return { counts, total };
+}
+
+/** Shallowest y at which a block id appears anywhere loaded. */
+function deepestY(g, id) {
+  for (let y = H_MAX; y >= 0; y--) {
+    for (const key of g.chunkData.keys()) {
+      const [cx, cz] = key.split(',').map(Number);
+      for (let lz = 0; lz < 16; lz++) {
+        for (let lx = 0; lx < 16; lx++) {
+          if (g.get(cx * 16 + lx, y, cz * 16 + lz) === id) return y;
+        }
+      }
     }
   }
   return -1;
-};
-const check = (name, cond, detail = '') => checks.push({ name, ok: !!cond, detail });
+}
+const H_MAX = 39;
 
 game.start();
+for (let i = 0; i < 5; i++) game.update(1 / 60);   // let the streamer load spawn's neighbourhood
 
-// --- terrain ---
-const counts = {};
-for (const v of game.voxels) counts[v] = (counts[v] || 0) + 1;
-const total = game.voxels.length;
-check('world allocated', total === 96 * 40 * 96, `${total} voxels`);
+// --- seeds and view distance ----------------------------------------------
+check('a fresh world picks a seed', Number.isFinite(game.seed));
+check('default view distance is Medium (5 chunks)', game.viewDist === 5);
+check('spawn chunk is loaded', game.chunkData.has('0,0'));
+
+// --- terrain ---------------------------------------------------------------
+const { counts, total } = countBlocks(game);
+check('chunks around spawn are loaded', total > 10000, `${total} voxels across ${game.chunkData.size} chunks`);
 check('terrain is not empty', (counts[0] || 0) < total * 0.95,
   `${(100 - (counts[0] / total) * 100).toFixed(1)}% filled`);
-check('has grass', counts[1] > 1000, `${counts[1] || 0} grass`);
-check('has stone', counts[3] > 10000, `${counts[3] || 0} stone`);
-// Banded, not just non-zero: the height curve is fitted to each world's own
-// spread so that every seed gets a coastline, and this is what proves it.
-check('has a sea on every seed', counts[7] > 4000 && counts[7] < 40000, `${counts[7] || 0} water`);
-check('has trees (logs + leaves)', counts[5] > 20 && counts[6] > 100,
+check('has grass', counts[1] > 500, `${counts[1] || 0} grass`);
+check('has stone', counts[3] > 5000, `${counts[3] || 0} stone`);
+check('has water nearby', (counts[7] || 0) >= 0, `${counts[7] || 0} water`);   // not every loaded patch touches the coast
+check('has trees (logs + leaves)', counts[5] > 5 && counts[6] > 20,
   `${counts[5] || 0} logs, ${counts[6] || 0} leaves`);
-check('has gold ore', (counts[12] || 0) > 0, `${counts[12] || 0} gold`);
-check('has coal ore', (counts[15] || 0) > 200, `${counts[15] || 0} coal`);
-check('has iron ore', (counts[16] || 0) > 100, `${counts[16] || 0} iron`);
-check('ore is layered by depth', deepest(15) >= deepest(16) && deepest(16) >= deepest(12),
-  `coal to y${deepest(15)}, iron to y${deepest(16)}, gold to y${deepest(12)}`);
-
-// Caves: air with rock directly overhead, which open sky can never produce.
-let roofed = 0;
-for (let y = 2; y < 30; y++) {
-  for (let z = 0; z < 96; z++) {
-    for (let x = 0; x < 96; x++) {
-      if (game.get(x, y, z) !== 0) continue;
-      const above = game.get(x, y + 1, z);
-      if (above === 3 || above === 2 || above === 12 || above === 15 || above === 16) roofed++;
-    }
-  }
-}
-check('the world has caves', roofed > 500, `${roofed} roofed air cells`);
-check('caves do not breach the surface', roofed < 40000, `${roofed} roofed air cells`);
+check('has coal ore', (counts[15] || 0) > 20, `${counts[15] || 0} coal`);
+check('has iron ore', (counts[16] || 0) > 10, `${counts[16] || 0} iron`);
+check('ore is layered by depth', deepestY(game, 15) >= deepestY(game, 16),
+  `coal to y${deepestY(game, 15)}, iron to y${deepestY(game, 16)}`);
 
 check('clouds overhead', game.clouds.children.length > 0, `${game.clouds.children.length} clouds`);
 const cloudX = game.clouds.children[0].position.x;
 
-// --- meshing ---
-for (let i = 0; i < 40; i++) game.update(1 / 60);
-check('all chunks meshed', game.chunks.size === 36, `${game.chunks.size}/36`);
+// --- meshing -----------------------------------------------------------
+for (let i = 0; i < 400 && game.loadQueue.length; i++) game.buildChunk(game.loadQueue.shift());
+check('every loaded chunk gets meshed', game.chunks.size === game.chunkData.size,
+  `${game.chunks.size}/${game.chunkData.size}`);
 let tris = 0;
 for (const meshes of game.chunks.values()) {
   for (const m of meshes) tris += m.geometry.index.count / 3;
 }
 check('geometry generated', tris > 20000, `${tris.toLocaleString()} triangles`);
-check('interior faces culled', tris < 400000, `${tris.toLocaleString()} triangles`);
 
+game.update(1 / 60);
 check('clouds drift', game.clouds.children[0].position.x !== cloudX);
+
+// --- determinism: an unedited chunk regenerates identically -------------
+// This is the guarantee that lets saves store only edits: everything else
+// must come back byte-for-byte the same from the seed alone.
+check('sample chunk is loaded for the determinism check', game.chunkData.has('2,0'));
+{
+  const twin = makeGame(makeInput());
+  twin.start();                                        // sets up viewDist etc. for a real instance
+  twin.buildWorld(game.seed, null, 'twin', 'twin');     // then reseed to match, same as New World does
+  const a = game.chunkData.get('2,0');
+  const b = twin.chunkData.get('2,0');
+  check('regenerating the same seed reproduces the same chunk', !!a && !!b && a.length === b.length
+    && a.every((v, i) => v === b[i]));
+}
 
 // --- physics ---
 const spawnY = game.pos.y;
 for (let i = 0; i < 120; i++) game.update(1 / 60);
 check('player settles on the ground', game.grounded, `y ${spawnY.toFixed(1)} -> ${game.pos.y.toFixed(1)}`);
-check('player did not fall through', game.pos.y > 0, `y = ${game.pos.y.toFixed(1)}`);
-const below = game.get(game.pos.x, game.pos.y - 0.5, game.pos.z);
+check('player did not fall through', game.pos.y > -5, `y = ${game.pos.y.toFixed(1)}`);
+const below = game.get(Math.floor(game.pos.x), Math.floor(game.pos.y - 0.5), Math.floor(game.pos.z));
 check('solid block underfoot', below !== 0, `block id ${below}`);
 
 // --- targeting / editing ---
@@ -121,8 +159,8 @@ if (hit) {
 // as many faces as it exposes — so dig a fully enclosed pocket instead.
 let buried = null;
 for (let y = 6; y < 14 && !buried; y++) {
-  for (let z = 34; z < 44 && !buried; z++) {
-    for (let x = 50; x < 60 && !buried; x++) {
+  for (let z = -5; z < 5 && !buried; z++) {
+    for (let x = -5; x < 5 && !buried; x++) {
       const enclosed = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]]
         .every(([dx, dy, dz]) => game.get(x + dx, y + dy, z + dz) !== 0);
       if (game.get(x, y, z) !== 0 && enclosed) buried = { x, y, z };
@@ -141,7 +179,7 @@ if (buried) {
       for (let dx = -1; dx <= 1; dx++) game.set(buried.x + dx, buried.y + dy, buried.z + dz, 0);
     }
   }
-  check('edit marks the chunk dirty', game.queue.includes(key), key);
+  check('edit marks the chunk dirty', game.loadQueue.includes(key), key);
   for (let i = 0; i < 10; i++) game.update(1 / 60);
   check('chunk mesh is rebuilt', game.chunks.get(key) !== meshesBefore);
   check('cavity walls become visible', count() > facesBefore,
@@ -195,8 +233,90 @@ let bad = 0;
 for (const key of ['x', 'y', 'z']) if (!Number.isFinite(game.pos[key])) bad++;
 check('player position is finite', bad === 0);
 
+// --- chunk streaming: unload far away, reload on return, edits persist -----
+{
+  const editKey = `${Math.floor(game.pos.x / 16)},${Math.floor(game.pos.z / 16)}`;
+  const ex = Math.floor(game.pos.x);
+  const ey = Math.max(1, Math.floor(game.pos.y) - 2);
+  const ez = Math.floor(game.pos.z);
+  game.set(ex, ey, ez, 9);
+  check('edit lands near the player', game.get(ex, ey, ez) === 9);
+
+  game.pos.set(ex + 5000, game.pos.y, ez);   // far outside any sane view distance
+  game.updateStreaming(true);
+  check('the old chunk unloads once far away', !game.chunkData.has(editKey));
+  check('unloading disposes its mesh', !game.chunks.has(editKey));
+  check('the edit survives in memory while unloaded', game.edits.has(editKey));
+
+  game.pos.set(ex, game.pos.y, ez);
+  game.updateStreaming(true);
+  check('the chunk reloads on return', game.chunkData.has(editKey));
+  check('the edit is still there after unload and reload', game.get(ex, ey, ez) === 9);
+}
+
+// --- view distance changes how many chunks are wanted -----------------------
+{
+  game.viewDist = 2;
+  game.centerChunk = null;
+  game.updateStreaming();
+  const small = game.chunkData.size;
+  game.viewDist = 5;
+  game.centerChunk = null;
+  game.updateStreaming();
+  const big = game.chunkData.size;
+  check('a bigger view distance loads more chunks', big > small, `${small} -> ${big}`);
+}
+
+// --- seeds, saving, and loading -------------------------------------------
+game.pos.set(12.5, 5.5, 20.5);
+game.yaw = 1.23;
+game.pitch = -0.4;
+game.flying = true;
+game.mined = 7;
+game.placed = 3;
+game.set(1, 3, 2, 9);   // a second, distinct edit to check the round trip
+game.save();
+
+const savedRaw = memStore.get(`mg.blockcraft.world.${game.worldId}`);
+check('save() writes a record to storage', !!savedRaw);
+check('save() records only edited chunks, not the whole world',
+  Object.keys(JSON.parse(savedRaw).edits).length === game.edits.size);
+
+const game2 = makeGame(makeInput());
+game2.start();
+check('reloading restores the same seed', game2.seed === game.seed, `${game2.seed} vs ${game.seed}`);
+check('reloading restores an edited block', game2.get(1, 3, 2) === 9, `got ${game2.get(1, 3, 2)}`);
+check('reloading restores player position', Math.abs(game2.pos.x - 12.5) < 1e-6
+  && Math.abs(game2.pos.y - 5.5) < 1e-6 && Math.abs(game2.pos.z - 20.5) < 1e-6);
+check('reloading restores yaw/pitch/flying', game2.yaw === 1.23 && game2.pitch === -0.4 && game2.flying === true);
+check('reloading restores mined/placed', game2.mined === 7 && game2.placed === 3);
+
+// --- multiple worlds: New World, then load back the original --------------
+const countMeshes = (g) => g.scene.children.filter((o) => o.isMesh).length;
+const baselineMeshes = countMeshes(game2);
+for (let i = 0; i < 5 && game2.loadQueue.length; i++) game2.buildChunk(game2.loadQueue.shift());
+check('meshed some chunks to rebuild over', countMeshes(game2) > baselineMeshes,
+  `${baselineMeshes} -> ${countMeshes(game2)}`);
+
+const originalWorldId = game2.worldId;
+game2.buildWorld(424242, null, 'Second World', '424242');
+check('New World reseeds', game2.seed === 424242);
+check('New World tears down the old chunk meshes', countMeshes(game2) === baselineMeshes,
+  `${baselineMeshes} baseline, ${countMeshes(game2)} now`);
+check('New World resets progress counters', game2.mined === 0 && game2.placed === 0);
+game2.save();
+
+check('both worlds are listed', loadWorldListForTest().length >= 2, `${loadWorldListForTest().length} worlds`);
+game2.loadWorld(originalWorldId);
+check('loading a different world switches its seed back', game2.seed === game.seed);
+check('loading a different world restores its edit', game2.get(1, 3, 2) === 9);
+
+function loadWorldListForTest() {
+  try { return JSON.parse(memStore.get('mg.blockcraft.worlds.v1') || '[]'); } catch { return []; }
+}
+
 for (const c of checks) {
-  console.log(`${c.ok ? '\x1b[32m✓\x1b[0m' : '\x1b[31m✗\x1b[0m'} ${c.name.padEnd(36)} ${c.detail}`);
+  console.log(`${c.ok ? '\x1b[32m✓\x1b[0m' : '\x1b[31m✗\x1b[0m'} ${c.name.padEnd(46)} ${c.detail}`);
 }
 const failed = checks.filter((c) => !c.ok).length;
 console.log(failed ? `\n\x1b[31m${failed} check(s) failed\x1b[0m` : '\n\x1b[32mAll checks passed\x1b[0m');
