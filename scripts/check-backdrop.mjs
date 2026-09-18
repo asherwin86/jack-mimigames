@@ -102,6 +102,15 @@ const ambientBefore = ambientPlays();
 for (let i = 0; i < 60; i++) bd.update(DT);
 check('the music keeps playing even with props hidden', ambientPlays() > ambientBefore,
   `${ambientBefore} -> ${ambientPlays()}`);
+
+// The "Music" menu toggle mutes only the ambient loop, not a direct press.
+bd.setMusic(false);
+const ambientAtMute = ambientPlays();
+for (let i = 0; i < 60; i++) bd.update(DT);
+check('turning music off stops the ambient loop', ambientPlays() === ambientAtMute,
+  `${ambientAtMute} -> ${ambientPlays()}`);
+bd.setMusic(true);
+bd.setProps(true);
 bd.setProps(true);
 
 check('nyan cat flies', FLYER_TYPES.includes('nyancat'));
@@ -331,6 +340,18 @@ check('nothing can be blown up while hidden',
 bd.setProps(true);
 bd.update(DT);
 check('the toggle brings them back', flock[0].position.z !== frozen.z);
+
+// Black sky: swaps the background out for a solid colour, independent of
+// the props toggle — the flock should keep animating either way.
+const rainbowBg = bd.scene.background;
+bd.setBlack(true);
+check('black sky swaps out the rainbow texture', bd.scene.background !== rainbowBg);
+check('black sky is a solid colour, not a texture', bd.scene.background.isColor === true);
+const beforeBlackMove = flock[0].position.z;
+bd.update(DT);
+check('props still animate while the sky is black', flock[0].position.z !== beforeBlackMove);
+bd.setBlack(false);
+check('turning black sky back off restores the rainbow texture', bd.scene.background === rainbowBg);
 
 check('nothing went NaN', !findNaN(bd.scene));
 

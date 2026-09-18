@@ -297,6 +297,7 @@ export function buildBackdrop(size, audio) {
   const JINGLE_LEN = 0.85;
   let ambientT = 0;   // fires immediately once unlocked, then every JINGLE_LEN
   let unlocked = false;
+  let musicOn = true;   // the "Music" menu toggle — the ambient loop only, not direct interaction
   let meowLooping = false;
   let meowT = 0;
   const onDown = (e) => {
@@ -409,26 +410,42 @@ export function buildBackdrop(size, audio) {
   let t = 0;
   let shift = 0;
   let repaint = 0;
+  let blackSky = false;
+
+  /** Swaps the cycling rainbow for a plain dark sky — the "Black sky" menu
+   *  toggle. Independent of the props toggle: the flying creepers/cubes/
+   *  bombs keep animating either way, only the background colour changes. */
+  const setBlack = (on) => {
+    blackSky = !!on;
+    scene.background = blackSky ? new THREE.Color(0x05060a) : tex;
+  };
 
   const update = (dt) => {
     t += dt;
 
     // Cycle the hue. The gradient canvas is 2x256, so redrawing is cheap, but
-    // there is no point doing it more often than the eye can tell.
+    // there is no point doing it more often than the eye can tell — or at
+    // all while the black sky is showing instead of it.
     shift = (shift + dt * 16) % 360;
     repaint -= dt;
     if (repaint <= 0) {
       repaint = 1 / 24;
-      paintRainbow(ctx, shift);
-      tex.needsUpdate = true;
-      scene.fog.color.setHSL(((shift + 180) % 360) / 360, 0.35, 0.16);
+      if (blackSky) {
+        scene.fog.color.setHex(0x05060a);
+      } else {
+        paintRainbow(ctx, shift);
+        tex.needsUpdate = true;
+        scene.fog.color.setHSL(((shift + 180) % 360) / 360, 0.35, 0.16);
+      }
     }
 
     // Nyan Cat's jingle loops softly as ambient menu music, independent of
     // the props toggle — it's music, not one of the visible things in the sky.
     // Gated on `unlocked`: attempting to play before any click just wastes
     // the call, since the browser won't let audio start without a gesture.
-    if (audio && unlocked) {
+    // Also gated on the "Music" menu toggle — petting Nyan Cat directly still
+    // meows either way, that's an interaction, not the ambient loop.
+    if (audio && unlocked && musicOn) {
       ambientT -= dt;
       if (ambientT <= 0) { audio.meow(0.45); ambientT = JINGLE_LEN; }
     }
@@ -531,6 +548,9 @@ export function buildBackdrop(size, audio) {
   /** Shows or hides every prop in the sky. Persisted by the menu toggle. */
   const setProps = (on) => { props.visible = !!on; };
   setProps(Settings.get('bgProps', true));
+  setBlack(Settings.get('bgBlack', false));
+  const setMusic = (on) => { musicOn = !!on; };
+  setMusic(Settings.get('music', true));
 
-  return { scene, camera, update, dispose, setProps };
+  return { scene, camera, update, dispose, setProps, setBlack, setMusic };
 }

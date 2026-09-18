@@ -161,6 +161,38 @@ html, body {
   padding: 3px 5px; background: rgba(255,255,255,.05);
 }
 
+/* ---------- Trailer + What's New ---------- */
+.showcase {
+  display: flex; gap: 20px; flex-wrap: wrap; justify-content: center;
+  max-width: 1000px; margin: 24px auto 0; padding: 0 20px;
+}
+.trailer {
+  width: min(480px, 100%); aspect-ratio: 16 / 9; border-radius: 14px;
+  border: 1px solid var(--line); background: #000;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, .4);
+}
+.whats-new {
+  flex: 1; min-width: 260px; max-width: 420px; text-align: left;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+  padding: 16px 18px; box-sizing: border-box;
+}
+.whats-new h2 {
+  margin: 0 0 10px; font: 700 12px var(--font); text-transform: uppercase;
+  letter-spacing: .8px; color: var(--muted);
+}
+.whats-new ul {
+  list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column;
+  gap: 10px; max-height: 220px; overflow-y: auto;
+}
+.whats-new li { display: flex; flex-direction: column; gap: 2px; }
+.whats-new li strong { font-size: 13px; color: var(--text); }
+.whats-new li span { font-size: 12px; line-height: 1.4; color: var(--muted); }
+
+.menu.compact .showcase { margin-top: 14px; gap: 14px; }
+.menu.compact .trailer { width: min(340px, 100%); }
+.menu.compact .whats-new { padding: 12px 14px; }
+.menu.compact .whats-new ul { max-height: 140px; gap: 7px; }
+
 .chips { display: flex; gap: 7px; justify-content: center; flex-wrap: wrap; margin-top: 12px; }
 .chip {
   border: 1px solid var(--line); background: transparent; color: var(--muted);
@@ -207,6 +239,37 @@ html, body {
 
 @media (prefers-reduced-motion: reduce) {
   .tile, .menu-head h1 { animation: none; }
+}
+/* The in-app "Stop spinning" toggle — same effect as the OS-level
+   prefers-reduced-motion query above, just explicit and user-controlled. */
+.menu.no-spin .tile, .menu.no-spin .menu-head h1 { animation: none; }
+
+/* "High contrast" — brightens the shared text/border tokens so anything
+   using them (tiles, chips, tools) picks it up without a rule of its own. */
+.menu.high-contrast { --text: #ffffff; --muted: #e4e4e4; --line: rgba(255,255,255,.6); }
+.menu.high-contrast .tile {
+  background: #061224; border-width: 2px; border-color: rgba(255,255,255,.6);
+}
+.menu.high-contrast .tile:hover, .menu.high-contrast .tile:focus-visible {
+  border-color: #fff; box-shadow: 0 0 0 3px #fff;
+}
+.menu.high-contrast .tile .pb { color: #baffcf; }
+.menu.high-contrast .chip.on { background: #fff; color: #04121a; border-color: #fff; }
+.menu.high-contrast .menu-tools .toggle[aria-pressed="true"] { color: #04121a; background: #fff; }
+
+/* "Compact" — tighter spacing so more tiles fit without scrolling. */
+.menu.compact .menu-head { padding: 26px 24px 14px; }
+.menu.compact .menu-head h1 { font-size: clamp(26px, 4.5vw, 40px); }
+.menu.compact .menu-head p { margin-top: 6px; font-size: 12px; }
+.menu.compact .menu-tools { margin-top: 14px; }
+.menu.compact .grid {
+  padding: 14px clamp(12px, 4vw, 40px); gap: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+}
+.menu.compact .tile { padding: 12px; min-height: 92px; gap: 4px; }
+.menu.compact .tile .blurb {
+  font-size: 11px; display: -webkit-box; -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2; overflow: hidden;
 }
 
 .empty { text-align: center; color: var(--muted); padding: 60px 20px; font-size: 14px; }

@@ -14,6 +14,8 @@ const engine = new Engine(canvas, hudRoot);
 const menu = new Menu(uiRoot, (id) => { location.hash = `#/${id}`; }, engine.input);
 // The toggle only ever applies to the menu backdrop, which is the idle scene.
 menu.onProps = (on) => engine.idleScene?.setProps?.(on);
+menu.onBlackSky = (on) => engine.idleScene?.setBlack?.(on);
+menu.onMusic = (on) => engine.idleScene?.setMusic?.(on);
 
 let current = null;
 let currentEntry = null;

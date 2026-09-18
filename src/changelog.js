@@ -1,0 +1,28 @@
+/** A short, hand-maintained "What's New" list — newest first. Shown on the
+ *  menu, under the trailer. Keep entries brief; this isn't a commit log. */
+export const CHANGELOG = [
+  {
+    title: 'Gamepad support everywhere',
+    detail: 'The menu and nearly every game now play with a controller — D-pad/stick navigation, and buttons mapped to fit each game.',
+  },
+  {
+    title: 'Start and Pause screens',
+    detail: "Every game shows a title card before it begins, and Escape mid-run pauses instead of dropping you straight back to the menu.",
+  },
+  {
+    title: 'Blockcraft: multiplayer',
+    detail: 'Host a world straight from your browser, or connect to a self-hosted server — play together and chat.',
+  },
+  {
+    title: 'Blockcraft: infinite worlds',
+    detail: 'Chunk-streamed worlds with no edge, typed seeds, multiple saved worlds, and export/import backups.',
+  },
+  {
+    title: 'Display options',
+    detail: 'Black sky, stop spinning, high contrast, and a compact layout — next to Background props, below.',
+  },
+  {
+    title: '9 new games',
+    detail: 'Including a 3D arena fighter, free throw, a grapple-swing platformer, and more.',
+  },
+];
