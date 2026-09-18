@@ -116,6 +116,9 @@ export const CATALOG = [
     blurb: 'A voxel world to mine and build in: hills, caves of ore, water, trees.',
     controls: 'Click to lock · WASD + Space · left click mines, right click places · 1-9 picks a block · F to fly',
     unit: 'blocks', sandbox: true,
+    // Blockcraft shows its own landing screen (world picker, multiplayer
+    // connect/host, a Play button) instead of the generic one — see main.js.
+    customStart: true,
   },
   {
     id: 'fruit-slice', n: 22, name: 'Fruit Slice', tags: ['arcade', 'aim'],

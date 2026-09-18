@@ -97,12 +97,49 @@ try {
   const edit = await readA.expect('edit');
   ok('a live edit is relayed to the other player', edit.x === -8 && edit.y === 12 && edit.z === 4 && edit.b === 15);
 
+  // Bob says something; Alice should see it relayed with his name attached,
+  // but Bob himself should NOT get it echoed back.
+  const readBforEcho = makeReader(b);
+  b.send(JSON.stringify({ t: 'chat', text: 'gg' }));
+  const chat = await readA.expect('chat');
+  ok('a chat message is relayed with the sender\'s name', chat.name === 'Bob' && chat.text === 'gg', JSON.stringify(chat));
+  b.send(JSON.stringify({ t: 'move', x: 2, y: 2, z: 2, yaw: 0, pitch: 0 }));   // sentinel
+  await readA.expect('move');
+  ok('a chat message is never echoed back to its own sender', !readBforEcho.all.some((m) => m.t === 'chat'));
+
+  // An empty or absurdly long chat message shouldn't get relayed verbatim —
+  // the server trims and caps it rather than trusting the client.
+  // (Reusing readA rather than spinning up another makeReader(a): a second
+  // listener on the same socket would still see every later message too,
+  // but never drain its own queue via expect() — leaving stale entries that
+  // a later readA.expect() could resolve against instead of the message
+  // actually being waited for.)
+  b.send(JSON.stringify({ t: 'chat', text: '  ' }));                 // blank after trimming
+  b.send(JSON.stringify({ t: 'chat', text: 'x'.repeat(500) }));      // way over the cap
+  b.send(JSON.stringify({ t: 'move', x: 3, y: 3, z: 3, yaw: 0, pitch: 0 }));   // sentinel
+  await readA.expect('move');
+  const chatsSeen = readA.all.filter((m) => m.t === 'chat');
+  ok('a blank chat message is not relayed', !chatsSeen.some((m) => m.text === ''));
+  ok('an over-long chat message is capped, not relayed verbatim',
+    chatsSeen.every((m) => m.text.length <= 140), `longest seen: ${Math.max(0, ...chatsSeen.map((m) => m.text.length))}`);
+
   // Out-of-range edits should be silently dropped, not crash the server or
   // reach the other player.
   b.send(JSON.stringify({ t: 'edit', x: 0, y: 999, z: 0, b: 3 }));
   b.send(JSON.stringify({ t: 'move', x: 1, y: 1, z: 1, yaw: 0, pitch: 0 }));   // a sentinel that *should* arrive
   await readA.expect('move');   // wait for the sentinel to land, then check nothing snuck in ahead of it
   ok('an out-of-range edit is dropped, not relayed', !readA.all.some((m) => m.t === 'edit' && m.y === 999));
+
+  // Block id 17 is one past the last real block (BLOCKS has 17 entries, ids
+  // 0-16) — a client meshing an id that far out of range would crash, so the
+  // server must reject it rather than just cap at "some big number".
+  b.send(JSON.stringify({ t: 'edit', x: 5, y: 5, z: 5, b: 17 }));
+  b.send(JSON.stringify({ t: 'edit', x: 6, y: 6, z: 6, b: 16 }));   // the actual highest valid id — should go through
+  b.send(JSON.stringify({ t: 'move', x: 9, y: 9, z: 9, yaw: 0, pitch: 0 }));   // sentinel
+  await readA.expect('move');
+  const edits17vs16 = readA.all.filter((m) => m.t === 'edit' && (m.x === 5 || m.x === 6));
+  ok('block id 17 (one past the last real block) is rejected', !edits17vs16.some((m) => m.b === 17));
+  ok('block id 16 (the actual highest valid block) is accepted', edits17vs16.some((m) => m.b === 16));
 
   // Bob leaves; Alice should be told.
   b.close();

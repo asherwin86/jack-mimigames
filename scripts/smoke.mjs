@@ -59,6 +59,7 @@ async function run(entry) {
   let frame = 0;
   try {
     game.start();
+    game.beginPlay?.();   // past any landing/start screen a game manages itself (only Blockcraft has one)
     for (; frame < FRAMES && !ended; frame++) {
       input.step(game, camera);
       game.time += DT;

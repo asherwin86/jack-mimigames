@@ -112,7 +112,8 @@ export class Engine {
     this.camera = this.game.camera || this.camera;
     this._applyAspect(this.camera);
     this._clock.getDelta();
-    this.running = true;
+    // Left paused: main.js shows a Start screen over the freshly-built (but
+    // motionless) scene and calls resume() once the player dismisses it.
   }
 
   unmount() {
@@ -137,6 +138,29 @@ export class Engine {
 
   /** Freeze updates but keep rendering (used while the results card is up). */
   freeze() { this.running = false; }
+
+  /** User-triggered pause: like freeze(), but also releases pointer lock so
+   *  the cursor is free to click the pause card's buttons. */
+  pause() {
+    this.running = false;
+    this.input.exitLock();
+  }
+
+  /** Leaves the Start screen or a pause, and resumes ticking game.update().
+   *  Swallows whatever click/press just dismissed the overlay — Input's
+   *  listeners are window-level, so that same click already landed in
+   *  `input.clicked` etc. by the time this runs, and every game would
+   *  otherwise see it as its own first frame back. */
+  resume() {
+    if (this.running) return;
+    this.running = true;
+    this.input.clicked = false;
+    this.input.down = false;
+    this.input.releasedClick = false;
+    this.input.buttons.clear();
+    this.input.clickedButtons.clear();
+    this._clock.getDelta();
+  }
 
   /** Refreshes the corner readout four times a second. */
   _countFrame() {

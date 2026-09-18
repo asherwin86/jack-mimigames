@@ -28,7 +28,7 @@ import { WebSocketServer } from 'ws';
 const PORT = Number(process.argv[2]) || 7443;
 const SEED = process.argv[3] ? hashSeed(process.argv[3]) : (Math.random() * 0x7fffffff) | 0;
 const BUILD_HEIGHT = 40;   // must match H in src/games/blockcraft.js
-const MAX_BLOCK_ID = 17;   // highest id in BLOCKS there
+const MAX_BLOCK_ID = 16;   // BLOCKS there has 17 entries, indices 0-16 — id 17 is out of range and would crash a client's mesher
 
 const COLORS = ['#ff5a50', '#5ad1ff', '#ffd83f', '#7fd94a', '#c77dff', '#ff9ecb', '#66ffcf', '#ffa64d'];
 

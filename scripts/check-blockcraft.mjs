@@ -81,6 +81,7 @@ function deepestY(g, id) {
 const H_MAX = 39;
 
 game.start();
+game.beginPlay();   // past the landing screen — otherwise update() ignores all input
 for (let i = 0; i < 5; i++) game.update(1 / 60);   // let the streamer load spawn's neighbourhood
 
 // --- seeds and view distance ----------------------------------------------
@@ -400,6 +401,74 @@ check('loading a different world restores its edit', game2.get(1, 3, 2) === 9);
   game.save = originalSave;
   game.multiplayer = false;
   game.dirty = false;
+}
+
+// --- chat: outgoing messages are sent and echoed locally, incoming ones are
+// logged (the server never echoes a message back to whoever sent it) -------
+{
+  game.chatLog = [];
+  const sent = [];
+  game.net = { readyState: 1, send: (raw) => sent.push(JSON.parse(raw)) };
+  game.pushChat('Alice', 'hello', false);   // an incoming message from someone else
+  game.pushChat('Me', 'hi back', true);      // the local echo of a message we sent
+  check('chat messages are logged in order',
+    game.chatLog.length === 2 && game.chatLog[0].text === 'hello' && game.chatLog[1].self === true,
+    JSON.stringify(game.chatLog));
+
+  for (let i = 0; i < 35; i++) game.pushChat('Spam', `msg ${i}`, false);
+  check('the chat log is capped so a long session can\'t grow it forever',
+    game.chatLog.length <= 30, `${game.chatLog.length} entries`);
+
+  game.net = null;
+  check('sending is a no-op with no server connected', (() => {
+    const before = game.chatLog.length;
+    game.mpPanel = null;
+    game.sendChat();
+    return game.chatLog.length === before;
+  })());
+}
+
+// --- browser hosting: this tab relaying for its own connected players -----
+{
+  game.pos.set(0.5, 30, 0.5);
+  game.updateStreaming(true);   // guarantee chunk 0,0 is loaded for what follows
+  game.hostPeer = {};   // truthy sentinel — handleHostData()/hostBroadcast() only check for that
+  game.hostConns = new Map();
+
+  const sentToA = [];
+  const connA = { peer: 'peerA', send: (m) => sentToA.push(m) };
+  game.handleHostData(connA, { t: 'hello', name: 'Guest' });
+  const welcome = sentToA.find((m) => m.t === 'welcome');
+  check('the host welcomes a joining player with its own seed', welcome?.seed === game.seed);
+  check('the welcome lists the host itself as a player', welcome?.players?.some((p) => p.id === 'host'));
+
+  sentToA.length = 0;
+  game.mpPanel = null;   // sendChat() reads the chat box from here; not needed for set()
+  game.set(2, 2, 2, 9);
+  check('the host\'s own edit is broadcast to connected peers',
+    sentToA.some((m) => m.t === 'edit' && m.x === 2 && m.y === 2 && m.z === 2 && m.b === 9));
+  check('flattenEditsForNet reports the real diff, not the whole chunk',
+    game.flattenEditsForNet().some(([x, y, z, id]) => x === 2 && y === 2 && z === 2 && id === 9));
+
+  const sentToB = [];
+  const connB = { peer: 'peerB', send: (m) => sentToB.push(m) };
+  game.handleHostData(connB, { t: 'hello', name: 'Bob' });
+  sentToA.length = 0;
+  sentToB.length = 0;
+  game.handleHostData(connA, { t: 'edit', x: 3, y: 3, z: 3, b: 15 });
+  check('a peer\'s edit is applied on the host', game.get(3, 3, 3) === 15);
+  check('a peer\'s edit is relayed to other peers but not echoed back to the sender',
+    sentToB.some((m) => m.t === 'edit' && m.x === 3) && !sentToA.some((m) => m.t === 'edit' && m.x === 3));
+
+  game.handleHostData(connA, { t: 'edit', x: 4, y: 4, z: 4, b: 17 });   // one past the last real block id
+  check('the host rejects an out-of-range block id from a peer', game.get(4, 4, 4) !== 17);
+
+  game.handleHostConnClose('peerA');
+  check('a closed connection\'s player is removed', !game.netPeers.has('peerA'));
+
+  game.hostConns.clear();
+  game.hostPeer = null;
+  game.netPeers.clear();
 }
 
 function loadWorldData(id) {
