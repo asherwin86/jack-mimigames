@@ -8,15 +8,13 @@ export class Menu {
   constructor(root, onPlay, input) {
     this.root = root;
     this.onPlay = onPlay;
-    this.input = input;   // the app's shared Input instance — for gamepad tile navigation
+    this.input = input;   // the app's shared Input instance — drives the gamepad cursor here too
     this.query = '';
     this.tag = null;
     this.onProps = null;   // (on) => void, so the backdrop can follow the toggle
-    this.focusIndex = 0;
-    this._navDir = { x: 0, y: 0 };
-    this._navRepeatAt = 0;
     this._navRaf = null;
     this._gpAHeld = false;
+    this._hoverEl = null;
   }
 
   show() {
@@ -158,16 +156,15 @@ export class Menu {
           </span>
         </button>`;
     }).join('');
-
-    this._syncFocus();
   }
 
-  /* ---------------------------------------------------------- gamepad nav */
+  /* -------------------------------------------------------- gamepad cursor */
 
   /** Runs its own rAF loop (independent of Engine's, which only ticks a
-   *  mounted game) for as long as the menu is showing, polling the shared
-   *  Input instance for D-pad/left-stick movement between tiles and an A
-   *  press to launch the focused one. */
+   *  mounted game or the idle scene) for as long as the menu is showing,
+   *  hover-highlighting and A-clicking whatever's under the shared gamepad
+   *  cursor — the exact same one a game with showCursor shows, so the menu
+   *  and every game behave like one real mouse throughout. */
   _startGamepadNav() {
     if (this._navRaf || !this.input) return;
     const tick = () => {
@@ -180,98 +177,42 @@ export class Menu {
   _stopGamepadNav() {
     if (this._navRaf) cancelAnimationFrame(this._navRaf);
     this._navRaf = null;
-  }
-
-  _navTiles() {
-    return [...(this.$grid?.querySelectorAll('.tile:not(.soon)') ?? [])];
-  }
-
-  /** Re-focuses whatever tile focusIndex now points at after a re-render
-   *  (search/filter changes rebuild the grid from scratch, so any actual
-   *  DOM focus was just destroyed with the old elements) — clamped in case
-   *  the new list is shorter. Harmless no-op with no gamepad connected. */
-  _syncFocus() {
-    if (!this.input) return;
-    const tiles = this._navTiles();
-    if (!tiles.length) return;
-    this.focusIndex = Math.min(this.focusIndex, tiles.length - 1);
+    this._clearHover();
   }
 
   _pollGamepadNav() {
-    const tiles = this._navTiles();
-    if (!tiles.length) return;
-    if (this.focusIndex >= tiles.length) this.focusIndex = tiles.length - 1;
+    if (!this.input.usingGamepadPointer) { this._clearHover(); this._gpAHeld = false; return; }
 
-    const dx = this.input.gpAxis(0) > 0.5 || this.input.gpButton(15) ? 1
-      : this.input.gpAxis(0) < -0.5 || this.input.gpButton(14) ? -1 : 0;
-    const dy = this.input.gpAxis(1) > 0.5 || this.input.gpButton(13) ? 1
-      : this.input.gpAxis(1) < -0.5 || this.input.gpButton(12) ? -1 : 0;
+    const p = this.input.gpPointer;
+    const x = (p.x * 0.5 + 0.5) * innerWidth;
+    const y = (1 - (p.y * 0.5 + 0.5)) * innerHeight;
+    const el = document.elementFromPoint(x, y);
+    this._setHover(el);
 
-    const now = performance.now();
-    if (dx || dy) {
-      const changed = dx !== this._navDir.x || dy !== this._navDir.y;
-      if (changed || now >= this._navRepeatAt) {
-        this._navDir = { x: dx, y: dy };
-        this._navRepeatAt = now + (changed ? 320 : 130);   // a longer pause before the first repeat
-        this._moveFocus(dx, dy, tiles);
-      }
-    } else {
-      this._navDir = { x: 0, y: 0 };
-    }
-
-    // The gamepad "cursor" is this.focusIndex, not whatever has real DOM
-    // focus (the player may have clicked the search box since) — A always
-    // activates whichever tile it's currently on.
     // Not this.input.gpHit(0): that edge is tracked once per Engine frame,
     // reset by input.endFrame() — which, since Engine's own rAF callback was
     // registered before this loop's, always runs first in any tick they
     // share, clearing the edge before this poll ever sees it "just pressed".
     // A plain held/not-held read, edge-detected locally, sidesteps that.
     const aNow = this.input.gpButton(0);
-    if (aNow && !this._gpAHeld) tiles[this.focusIndex]?.click();
+    if (aNow && !this._gpAHeld) el?.click();   // a real click, wherever the cursor actually is
     this._gpAHeld = aNow;
   }
 
-  /** Moves focus one step in a direction across the tile grid, grouping by
-   *  on-screen row (via offsetTop) rather than assuming a fixed column
-   *  count — the grid's column count is responsive, so it can't be hard-coded. */
-  _moveFocus(dx, dy, tiles) {
-    const rows = [];
-    for (const t of tiles) {
-      const top = t.offsetTop;
-      let row = rows.find((r) => Math.abs(r.top - top) < 4);
-      if (!row) { row = { top, cells: [] }; rows.push(row); }
-      row.cells.push(t);
-    }
-    rows.sort((a, b) => a.top - b.top);
-    for (const r of rows) r.cells.sort((a, b) => a.offsetLeft - b.offsetLeft);
+  /** Highlights whichever tile/button/chip the cursor is over, the closest
+   *  thing to a real `:hover` a script can drive — CSS :hover only follows
+   *  the actual mouse, never something moved by JS. */
+  _setHover(el) {
+    const target = el?.closest?.('.tile, .toggle, .chip') ?? null;
+    if (target === this._hoverEl) return;
+    this._hoverEl?.classList.remove('gp-hover');
+    this._hoverEl = target;
+    this._hoverEl?.classList.add('gp-hover');
+  }
 
-    const current = tiles[this.focusIndex] ?? tiles[0];
-    let ri = 0;
-    let ci = 0;
-    outer: for (let r = 0; r < rows.length; r++) {
-      for (let c = 0; c < rows[r].cells.length; c++) {
-        if (rows[r].cells[c] === current) { ri = r; ci = c; break outer; }
-      }
-    }
-
-    if (dy) {
-      ri = clampIndex(ri + dy, rows.length);
-      ci = Math.min(ci, rows[ri].cells.length - 1);
-    }
-    if (dx) {
-      ci += dx;
-      if (ci < 0) {
-        if (ri > 0) { ri--; ci = rows[ri].cells.length - 1; } else ci = 0;
-      } else if (ci >= rows[ri].cells.length) {
-        if (ri < rows.length - 1) { ri++; ci = 0; } else ci = rows[ri].cells.length - 1;
-      }
-    }
-
-    const next = rows[ri].cells[ci];
-    this.focusIndex = tiles.indexOf(next);
-    next.focus();
-    next.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  _clearHover() {
+    this._hoverEl?.classList.remove('gp-hover');
+    this._hoverEl = null;
   }
 
   hide() {
@@ -281,4 +222,3 @@ export class Menu {
 }
 
 const fmt = (n) => (Number.isInteger(n) ? n : n.toFixed(1));
-const clampIndex = (i, len) => Math.max(0, Math.min(i, len - 1));

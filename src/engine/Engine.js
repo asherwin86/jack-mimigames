@@ -188,9 +188,12 @@ export class Engine {
     const dt = Math.min(this._clock.getDelta(), 1 / 20);
     if (this.paused) return;
     this._countFrame();
+    // Always ticking, not just while a game is running, so the menu (an
+    // idle scene, not a game) gets a live gamepad pointer too — see
+    // _updateCursor() and Menu.js's own use of it for hover/click.
+    this.input.tick(dt);
 
     if (this.running && this.game) {
-      this.input.tick(dt);
       this.game.time += dt;
       try {
         this.game.update(dt, this.game.time);
@@ -209,7 +212,12 @@ export class Engine {
 
   _updateCursor() {
     if (!this._cursorEl) return;
-    const show = !!(this.running && this.game?.showCursor && this.input.usingGamepadPointer);
+    // Wanted either by the current game (opted in via showCursor) or by the
+    // menu — the menu is the idle scene, not a game, so it can't opt in the
+    // same way; it wants the cursor live any time it's the one showing.
+    const wantGame = this.running && this.game?.showCursor;
+    const wantMenu = !!this.idleScene;
+    const show = !!(this.input.usingGamepadPointer && (wantGame || wantMenu));
     this._cursorEl.hidden = !show;
     if (!show) return;
     const p = this.input.activePointer();

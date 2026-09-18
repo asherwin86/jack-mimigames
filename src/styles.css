@@ -228,13 +228,19 @@ html, body {
   display: flex; flex-direction: column; gap: 7px; min-height: 128px;
   animation: tile-spin 4s linear infinite;
 }
-.tile:hover, .tile:focus-visible {
+.tile:hover, .tile:focus-visible, .tile.gp-hover {
   border-color: var(--accent);
   box-shadow: 0 10px 30px rgba(0, 120, 200, .35);
 }
-.tile:focus-visible {
+.tile:focus-visible, .tile.gp-hover {
   outline: none;
   box-shadow: 0 0 0 3px rgba(110, 231, 255, .4), 0 10px 30px rgba(0, 120, 200, .35);
+}
+/* The gamepad cursor moves via JS, so :hover (which only ever follows the
+   real mouse) never lights up for it — this is the same highlight, applied
+   by hand while the cursor sits over an element. See Menu.js's _setHover(). */
+.toggle.gp-hover, .chip.gp-hover {
+  outline: 2px solid var(--accent); outline-offset: 2px;
 }
 /* Always turning. Each tile gets a negative animation-delay from the markup so
    the grid doesn't rotate in lockstep. */
