@@ -159,6 +159,7 @@ export class Engine {
     this.input.releasedClick = false;
     this.input.buttons.clear();
     this.input.clickedButtons.clear();
+    this.input.pressed.clear();   // e.g. the Space/Enter that activated the card's focused button
     this._clock.getDelta();
   }
 

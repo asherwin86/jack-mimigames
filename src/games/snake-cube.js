@@ -69,8 +69,14 @@ export default class SnakeCube extends Game {
 
   update(dt) {
     // Queue turns so a fast double-tap isn't swallowed between ticks.
-    const x = this.input.axisX();
-    const z = -this.input.axisY();
+    // axisX()/axisY() only blend keyboard and the left stick, never the
+    // D-pad, so a D-pad-only press needs its own direction here too.
+    let x = this.input.axisX();
+    let z = -this.input.axisY();
+    if (this.input.gpHit(14)) x = -1;
+    else if (this.input.gpHit(15)) x = 1;
+    else if (this.input.gpHit(12)) z = 1;
+    else if (this.input.gpHit(13)) z = -1;
     if (this.input.hit('ArrowLeft', 'KeyA', 'ArrowRight', 'KeyD', 'ArrowUp', 'KeyW', 'ArrowDown', 'KeyS')
       || this.input.gpHit(12) || this.input.gpHit(13) || this.input.gpHit(14) || this.input.gpHit(15)) {
       const want = x !== 0 ? { x, z: 0 } : { x: 0, z };

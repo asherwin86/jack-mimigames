@@ -2,7 +2,7 @@
 export class Audio {
   constructor() {
     this.ctx = null;
-    this.muted = localStorage.getItem('mg.muted') === '1';
+    try { this.muted = localStorage.getItem('mg.muted') === '1'; } catch { this.muted = false; }
   }
 
   _ensure() {
@@ -25,7 +25,7 @@ export class Audio {
 
   setMuted(m) {
     this.muted = m;
-    localStorage.setItem('mg.muted', m ? '1' : '0');
+    try { localStorage.setItem('mg.muted', m ? '1' : '0'); } catch { /* private mode */ }
   }
 
   /** A single shaped tone. freq may be [from, to] to sweep. */

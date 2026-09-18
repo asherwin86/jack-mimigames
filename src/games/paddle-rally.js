@@ -48,6 +48,7 @@ export default class PaddleRally extends Game {
     this.speed = 22;
     this.gpAimX = 0;   // a gamepad has no cursor, so the left stick nudges these instead
     this.gpAimY = 0;
+    this.usingGp = false;   // sticky: stays true between stick nudges, so it doesn't snap to a stale mouse pos
     this.serve(-1);
 
     this.camera.position.set(0, 1.2, 9);
@@ -69,10 +70,12 @@ export default class PaddleRally extends Game {
     if (gpx || gpy) {
       this.gpAimX = clamp(this.gpAimX + gpx * 2 * dt, -1, 1);
       this.gpAimY = clamp(this.gpAimY - gpy * 2 * dt, -1, 1);
+      this.usingGp = true;
+    } else if (this.input.delta.x || this.input.delta.y) {
+      this.usingGp = false;   // only real mouse movement takes it back, not the stick just resting
     }
-    const usingGp = gpx || gpy;
-    const tx = clamp((usingGp ? this.gpAimX : this.input.pointer.x) * W, -W + PAD.w / 2, W - PAD.w / 2);
-    const ty = clamp((usingGp ? this.gpAimY : this.input.pointer.y) * H, -H + PAD.h / 2, H - PAD.h / 2);
+    const tx = clamp((this.usingGp ? this.gpAimX : this.input.pointer.x) * W, -W + PAD.w / 2, W - PAD.w / 2);
+    const ty = clamp((this.usingGp ? this.gpAimY : this.input.pointer.y) * H, -H + PAD.h / 2, H - PAD.h / 2);
     this.paddle.position.x = damp(this.paddle.position.x, tx, 16, dt);
     this.paddle.position.y = damp(this.paddle.position.y, ty, 16, dt);
 

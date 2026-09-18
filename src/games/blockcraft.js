@@ -375,8 +375,12 @@ export default class Blockcraft extends Game {
     }
 
     newButton?.addEventListener('click', () => {
+      // Note before disconnecting: it clears this.multiplayer, but not the
+      // ephemeral "mp:" worldId, so this must be checked first or a shared
+      // session's dirty edits would get saved as a junk solo world entry.
+      const wasMultiplayer = this.multiplayer;
       this.disconnectMultiplayer();   // starting a solo world means leaving whatever shared one is open
-      if (this.dirty) this.save();   // don't lose progress on the world being left
+      if (this.dirty && !wasMultiplayer) this.save();   // don't lose progress on the world being left
       const text = input?.value.trim();
       const seed = text ? hashSeed(text) : randomSeed();
       const name = text || `World ${seed}`;
@@ -442,8 +446,9 @@ export default class Blockcraft extends Game {
    *  in progress so hopping between worlds never loses anything. */
   loadWorld(id) {
     if (id === this.worldId && !this.multiplayer) return;
+    const wasMultiplayer = this.multiplayer;   // see the same note in bindWorldPanel's New World handler
     this.disconnectMultiplayer();   // loading a solo world means leaving whatever shared one is open
-    if (this.dirty) this.save();
+    if (this.dirty && !wasMultiplayer) this.save();
     const meta = loadWorldList().find((w) => w.id === id);
     const data = meta && loadWorldData(id);
     if (!meta || !data) return;
@@ -651,9 +656,12 @@ export default class Blockcraft extends Game {
         const key = `${cx},${cz}`;
         if (this.chunkData.has(key)) continue;
         const data = this.edits.get(key) || generateChunk(cx, cz, this.seed, this.heightCal);
-        // A chunk regenerated fresh (not from `edits`) may still have edits
-        // another player made while it was unloaded here — stamp those in now.
-        const pending = this.edits.has(key) ? null : this.remoteEdits.get(key);
+        // This chunk — freshly generated, or one carrying its own earlier
+        // local edits — may still be missing edits another player made while
+        // it was unloaded here (writeVoxel() can't touch an unloaded chunk's
+        // array, so those were only ever recorded in remoteEdits); stamp
+        // them in now regardless of which case this is.
+        const pending = this.remoteEdits.get(key);
         if (pending) {
           for (const [posKey, id] of pending) {
             const [wx, wy, wz] = posKey.split(',').map(Number);
@@ -1166,12 +1174,17 @@ export default class Blockcraft extends Game {
     // handing it back — otherwise a code that doesn't belong to anyone
     // would leave connectMultiplayer() stuck at "Connecting…" forever
     // instead of surfacing an error the way a bad ws:// address already does.
-    await new Promise((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error('timed out')), 15000);
-      conn.on('open', () => { clearTimeout(timer); resolve(); });
-      conn.on('error', (e) => { clearTimeout(timer); reject(e); });
-      peer.on('error', (e) => { clearTimeout(timer); reject(e); });   // e.g. "peer-unavailable" for a bad code
-    });
+    try {
+      await new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error('timed out')), 15000);
+        conn.on('open', () => { clearTimeout(timer); resolve(); });
+        conn.on('error', (e) => { clearTimeout(timer); reject(e); });
+        peer.on('error', (e) => { clearTimeout(timer); reject(e); });   // e.g. "peer-unavailable" for a bad code
+      });
+    } catch (err) {
+      peer.destroy();   // a failed/timed-out join must not leave a live connection to the broker behind
+      throw err;
+    }
     return {
       get readyState() { return conn.open ? 1 : 0; },
       send: (raw) => conn.send(JSON.parse(raw)),
@@ -1396,7 +1409,9 @@ export default class Blockcraft extends Game {
       this.buildWorld(msg.seed, null, 'Multiplayer', `mp:${Date.now()}`);
       this.multiplayer = true;
       this.dirty = false;
-      for (const [x, y, z, id] of msg.edits) this.applyRemoteEdit(x, y, z, id);
+      for (const [x, y, z, id] of msg.edits) {
+        if (y >= 0 && y < H && id >= 0 && id < BLOCKS.length) this.applyRemoteEdit(x, y, z, id);
+      }
       for (const p of msg.players) this.addNetPeer(p.id, p);
       this.hud.toast(`CONNECTED · seed ${msg.seed}`, 1600);
       this.beginPlay();   // connecting successfully is enough to jump straight into playing
@@ -1417,7 +1432,9 @@ export default class Blockcraft extends Game {
       const peer = this.netPeers.get(msg.id);
       if (peer) { peer.tx = msg.x; peer.ty = msg.y; peer.tz = msg.z; peer.tyaw = msg.yaw; }
     } else if (msg.t === 'edit') {
-      this.applyRemoteEdit(msg.x, msg.y, msg.z, msg.b);
+      const y = msg.y | 0;
+      const b = msg.b | 0;
+      if (y >= 0 && y < H && b >= 0 && b < BLOCKS.length) this.applyRemoteEdit(msg.x, y, msg.z, b);
     } else if (msg.t === 'chat') {
       this.hud.toast(`${msg.name}: ${msg.text}`, 2200);
       this.pushChat(msg.name, msg.text, false);

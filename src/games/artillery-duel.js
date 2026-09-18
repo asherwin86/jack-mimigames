@@ -41,6 +41,7 @@ export default class ArtilleryDuel extends Game {
     this.wind = new THREE.Vector3(rand(-4, 4), 0, rand(-2, 2));
     this.gpAimX = 0;   // a gamepad has no cursor, so the left stick nudges these instead
     this.gpAimY = 0;
+    this.usingGp = false;   // sticky: stays true between stick nudges, so it doesn't snap to a stale mouse pos
 
     this.camera.position.set(0, 7, 13);
     this.hud.hint('Mouse aims · hold click to charge, release to fire · mind the wind');
@@ -68,10 +69,12 @@ export default class ArtilleryDuel extends Game {
     if (gpx || gpy) {
       this.gpAimX = clamp(this.gpAimX + gpx * 1.6 * dt, -1, 1);
       this.gpAimY = clamp(this.gpAimY - gpy * 1.6 * dt, -1, 1);
+      this.usingGp = true;
+    } else if (this.input.delta.x || this.input.delta.y) {
+      this.usingGp = false;   // only real mouse movement takes it back, not the stick just resting
     }
-    const usingGp = gpx || gpy;
-    const aimX = usingGp ? this.gpAimX : this.input.pointer.x;
-    const aimY = usingGp ? this.gpAimY : this.input.pointer.y;
+    const aimX = this.usingGp ? this.gpAimX : this.input.pointer.x;
+    const aimY = this.usingGp ? this.gpAimY : this.input.pointer.y;
     this.yaw = damp(this.yaw, -aimX * 1.15, 9, dt);
     this.pitch = damp(this.pitch, clamp(0.12 + (aimY + 0.5) * 0.85, 0.06, 1.35), 9, dt);
     this.pivot.rotation.set(0, this.yaw, 0);

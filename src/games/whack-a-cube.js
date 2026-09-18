@@ -122,8 +122,10 @@ export default class WhackACube extends Game {
       if (changed || now >= this.gpNavAt) {
         this.gpNavDir = { x: dx, y: dy };
         this.gpNavAt = now + (changed ? 0.3 : 0.13);
-        this.gpCol = clamp(this.gpCol + dx, 0, N - 1);
-        this.gpRow = clamp(this.gpRow + dy, 0, N - 1);
+        // gpRow indexes i (x, left/right on screen from this camera angle),
+        // gpCol indexes j (z, toward/away) — matches cells[i*N+j] in start().
+        this.gpRow = clamp(this.gpRow + dx, 0, N - 1);
+        this.gpCol = clamp(this.gpCol + dy, 0, N - 1);
       }
     } else {
       this.gpNavDir = { x: 0, y: 0 };
