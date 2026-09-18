@@ -39,6 +39,12 @@ export class Engine {
     this._fpsAt = performance.now();
     this._frames = 0;
 
+    // Same reasoning, same spot: a gamepad has no cursor of its own, so any
+    // game that opts in (this.game.showCursor = true) gets this one drawn
+    // wherever input.activePointer() currently is, only while the left
+    // stick is actually the one steering it — see Input.tick().
+    this._cursorEl = document.getElementById('gp-cursor');
+
     this._clock = new THREE.Clock();
     this._loop = this._loop.bind(this);
     addEventListener('resize', () => this.resize());
@@ -184,6 +190,7 @@ export class Engine {
     this._countFrame();
 
     if (this.running && this.game) {
+      this.input.tick(dt);
       this.game.time += dt;
       try {
         this.game.update(dt, this.game.time);
@@ -194,8 +201,20 @@ export class Engine {
       this.camera = this.game.camera || this.camera;
     }
     if (this.idleScene) this.idleScene.update(dt);
+    this._updateCursor();
     this.input.endFrame();
 
     if (this.scene && this.camera) this.renderer.render(this.scene, this.camera);
+  }
+
+  _updateCursor() {
+    if (!this._cursorEl) return;
+    const show = !!(this.running && this.game?.showCursor && this.input.usingGamepadPointer);
+    this._cursorEl.hidden = !show;
+    if (!show) return;
+    const p = this.input.activePointer();
+    const x = (p.x * 0.5 + 0.5) * this.size.w;
+    const y = (1 - (p.y * 0.5 + 0.5)) * this.size.h;
+    this._cursorEl.style.transform = `translate(${x}px, ${y}px)`;
   }
 }

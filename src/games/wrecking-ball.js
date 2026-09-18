@@ -36,7 +36,7 @@ export default class WreckingBall extends Game {
     this.burst = new Burst(this.scene, 120, 0.2);
     this.score = 0;
     this.timeLeft = 45;
-    this.gpAimX = 0;   // a gamepad has no cursor, so the left stick nudges this instead
+    this.showCursor = true;   // a gamepad has no cursor of its own — see Engine._updateCursor()
     this.buildTower();
 
     this.camera.position.set(0, 8, 14);
@@ -65,9 +65,7 @@ export default class WreckingBall extends Game {
     if (this.timeLeft <= 0) return this.finish();
 
     this.prevAngle = this.angle;
-    const gpx = this.input.gpAxis(0);
-    if (gpx) this.gpAimX = clamp(this.gpAimX + gpx * 1.6 * dt, -1, 1);
-    const target = clamp(-(gpx ? this.gpAimX : this.input.pointer.x) * 1.1, -1.1, 1.1);
+    const target = clamp(-this.input.activePointer().x * 1.1, -1.1, 1.1);
     this.angle = damp(this.angle, target, 6, dt);
     const speed = Math.abs(this.angle - this.prevAngle) / dt;
 

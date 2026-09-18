@@ -110,6 +110,8 @@ function makeInput(scene) {
     pointer: new THREE.Vector2(),
     pixel: new THREE.Vector2(640, 400),
     delta: new THREE.Vector2(),
+    gpPointer: new THREE.Vector2(),
+    usingGamepadPointer: false,
     down: false,
     wheel: 0,
     locked: false,
@@ -126,6 +128,18 @@ function makeInput(scene) {
     gpAxis: (i) => gpAxes[i] || 0,
     gpButton: (n) => gpHeld.has(n),
     gpHit: (n) => gpPressed.has(n),
+    tick(dt) {
+      const gx = gpAxes[0];
+      const gy = gpAxes[1];
+      if (gx || gy) {
+        api.gpPointer.x = Math.max(-1, Math.min(1, api.gpPointer.x + gx * 1.7 * dt));
+        api.gpPointer.y = Math.max(-1, Math.min(1, api.gpPointer.y - gy * 1.7 * dt));
+        api.usingGamepadPointer = true;
+      } else if (api.delta.x || api.delta.y) {
+        api.usingGamepadPointer = false;
+      }
+    },
+    activePointer: () => (api.usingGamepadPointer ? api.gpPointer : api.pointer),
 
     // Pretend the pointer sometimes lands on something clickable, so click
     // handlers (whack-a-cube, simon-cubes) actually get exercised.
@@ -175,6 +189,7 @@ function makeInput(scene) {
         if (gpHeld.has(b)) gpHeld.delete(b);
         else { gpHeld.add(b); gpPressed.add(b); }
       }
+      api.tick(DT);
     },
     endFrame() { clicked = false; clickedButtons.clear(); api.wheel = 0; gpPressed.clear(); },
   };

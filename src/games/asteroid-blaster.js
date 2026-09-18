@@ -44,8 +44,6 @@ export default class AsteroidBlaster extends Game {
     this.camera.fov = 70;
     this.camera.updateProjectionMatrix();
     this._ray = new THREE.Raycaster();
-    this._aim = new THREE.Vector2();   // a gamepad has no cursor, so the left stick drives this instead
-    this._lastAim = this.input.pointer;   // whichever aim source update() last used — fire() must match it
     this.hud.hint('Aim with the mouse, click to fire · big rocks break into smaller ones');
   }
 
@@ -104,15 +102,9 @@ export default class AsteroidBlaster extends Game {
       }
     }
 
-    // Aim — the left stick nudges a virtual pointer when there's no cursor.
-    const gpx = this.input.gpAxis(0);
-    const gpy = this.input.gpAxis(1);
-    if (gpx || gpy) {
-      this._aim.x = clamp(this._aim.x + gpx * 1.6 * dt, -1, 1);
-      this._aim.y = clamp(this._aim.y - gpy * 1.6 * dt, -1, 1);
-    }
-    const aim = gpx || gpy ? this._aim : this.input.pointer;
-    this._lastAim = aim;
+    // Aim — the left stick drives a virtual pointer when there's no cursor,
+    // via the same activePointer() every other aim game reads.
+    const aim = this.input.activePointer();
     this._ray.setFromCamera(aim, this.camera);
     this.reticle.position.copy(this._ray.ray.at(24, new THREE.Vector3()));
     this.reticle.lookAt(this.camera.position);
@@ -139,7 +131,7 @@ export default class AsteroidBlaster extends Game {
     this.shots++;
     this.audio.tone([900, 260], 0.09, { type: 'square', gain: 0.09 });
 
-    this._ray.setFromCamera(this._lastAim, this.camera);
+    this._ray.setFromCamera(this.input.activePointer(), this.camera);
     const hits = this._ray.intersectObjects(this.rocks, false);
     const end = hits.length ? hits[0].point : this._ray.ray.at(160, new THREE.Vector3());
 

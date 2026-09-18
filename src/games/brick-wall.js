@@ -48,8 +48,7 @@ export default class BrickWall extends Game {
     this.score = 0;
     this.lives = 3;
     this.speed = 17;
-    this.gpAimX = 0;   // a gamepad has no cursor, so the left stick nudges this instead
-    this.usingGp = false;   // sticky: stays true between stick nudges, so it doesn't snap to a stale mouse pos
+    this.showCursor = true;   // a gamepad has no cursor of its own — see Engine._updateCursor()
     this.launch();
 
     this.camera.position.set(0, 1.5, 24);
@@ -64,14 +63,7 @@ export default class BrickWall extends Game {
   }
 
   update(dt) {
-    const gpx = this.input.gpAxis(0);
-    if (gpx) {
-      this.gpAimX = clamp(this.gpAimX + gpx * 2.2 * dt, -1, 1);
-      this.usingGp = true;
-    } else if (this.input.delta.x) {
-      this.usingGp = false;   // only real mouse movement takes it back, not the stick just resting
-    }
-    const tx = clamp((this.usingGp ? this.gpAimX : this.input.pointer.x) * (W + 2), -W + 2, W - 2);
+    const tx = clamp(this.input.activePointer().x * (W + 2), -W + 2, W - 2);
     this.paddle.position.x = damp(this.paddle.position.x, tx, 18, dt);
 
     if (this.stuck > 0) {

@@ -25,6 +25,12 @@ export class Input {
     this.gamepadIndex = null;
     this._gpPrevButtons = new Set();
 
+    // A gamepad has no cursor of its own, so aim-with-the-mouse games get a
+    // virtual one here instead: the left stick nudges it, real mouse motion
+    // (via `delta`) hands control back. See tick()/activePointer().
+    this.gpPointer = new THREE.Vector2(0, 0);
+    this.usingGamepadPointer = false;
+
     this._raycaster = new THREE.Raycaster();
     this._bind();
   }
@@ -128,6 +134,28 @@ export class Input {
     return kb || -this.gpAxis(1);
   }
 
+  /** Advances the virtual gamepad pointer — call once per frame, before the
+   *  game reads it. Real mouse movement (this frame's `delta`, cleared by
+   *  endFrame() at the end of every frame either way) always hands control
+   *  straight back, so switching input devices mid-game just works. */
+  tick(dt) {
+    const gx = this.gpAxis(0);
+    const gy = this.gpAxis(1);
+    if (gx || gy) {
+      this.gpPointer.x = clamp1(this.gpPointer.x + gx * 1.7 * dt);
+      this.gpPointer.y = clamp1(this.gpPointer.y - gy * 1.7 * dt);
+      this.usingGamepadPointer = true;
+    } else if (this.delta.x || this.delta.y) {
+      this.usingGamepadPointer = false;
+    }
+  }
+
+  /** Whichever pointer is actually driving aim right now — the real one, or
+   *  the gamepad's virtual one while the left stick is steering it. Games
+   *  that let you aim with the mouse should read this instead of `pointer`
+   *  directly, so a gamepad player gets the same games "for free". */
+  activePointer() { return this.usingGamepadPointer ? this.gpPointer : this.pointer; }
+
   /** Raycast the pointer against objects; returns the first intersection or null. */
   pick(camera, objects, recursive = true) {
     this._raycaster.setFromCamera(this.pointer, camera);
@@ -165,6 +193,8 @@ export class Input {
   reset() {
     this.keys.clear();
     this.buttons.clear();
+    this.gpPointer.set(0, 0);
+    this.usingGamepadPointer = false;
     this.endFrame();
     this.exitLock();
   }
@@ -184,6 +214,7 @@ export class Input {
   }
 }
 
+const clamp1 = (v) => Math.max(-1, Math.min(1, v));
 const GROUND = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 const SWALLOW = new Set([
   'Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Tab',

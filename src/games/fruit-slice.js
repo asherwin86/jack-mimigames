@@ -29,9 +29,9 @@ export default class FruitSlice extends Game {
     this.prevDown = false;
 
     // A gamepad has no cursor, so the left stick steers this reticle instead
-    // — hidden until actually used, so a mouse player never sees it.
+    // — shown only while it's actually the one driving aim, so a mouse
+    // player never sees it (and it doesn't get stuck on if they switch back).
     this._ray = new THREE.Raycaster();
-    this._aim = new THREE.Vector2();
     this.reticle = this.add(torus(0.4, 0.04, PALETTE.white, { cast: false, receive: false }));
     this.reticle.material = glow(PALETTE.white, { transparent: true, opacity: 0.85 });
     this.reticle.visible = false;
@@ -77,15 +77,10 @@ export default class FruitSlice extends Game {
       if (o.position.y < -8) this.recycle(o, i);
     }
 
-    const gpx = this.input.gpAxis(0);
-    const gpy = this.input.gpAxis(1);
-    if (gpx || gpy) {
-      this.reticle.visible = true;
-      this._aim.x = clamp(this._aim.x + gpx * 1.8 * dt, -1, 1);
-      this._aim.y = clamp(this._aim.y - gpy * 1.8 * dt, -1, 1);
-    }
+    this.reticle.visible = this.input.usingGamepadPointer;
     if (this.reticle.visible) {
-      this._ray.setFromCamera(this._aim, this.camera);
+      const aim = this.input.activePointer();
+      this._ray.setFromCamera(aim, this.camera);
       this.reticle.position.copy(this._ray.ray.at(10, new THREE.Vector3()));
       this.reticle.lookAt(this.camera.position);
     }
@@ -96,7 +91,7 @@ export default class FruitSlice extends Game {
       const hit = this.input.pick(this.camera, this.live, false);
       if (hit) this.slice(hit.object);
     } else if (this.input.gpButton(0) && this.reticle.visible) {
-      this._ray.setFromCamera(this._aim, this.camera);
+      this._ray.setFromCamera(this.input.activePointer(), this.camera);
       const hits = this._ray.intersectObjects(this.live, false);
       if (hits.length) this.slice(hits[0].object);
     }

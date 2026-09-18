@@ -36,9 +36,8 @@ export default class SkeetRange extends Game {
     this.nextLaunch = 0.6;
 
     // A gamepad has no cursor, so the left stick steers this reticle instead
-    // — hidden until actually used, so a mouse player never sees it.
+    // — shown only while it's actually the one driving aim.
     this._ray = new THREE.Raycaster();
-    this._aim = new THREE.Vector2();
     this.reticle = this.add(torus(0.4, 0.04, PALETTE.cyan, { cast: false, receive: false }));
     this.reticle.material = glow(PALETTE.cyan, { transparent: true, opacity: 0.85 });
     this.reticle.visible = false;
@@ -86,15 +85,10 @@ export default class SkeetRange extends Game {
       }
     }
 
-    const gpx = this.input.gpAxis(0);
-    const gpy = this.input.gpAxis(1);
-    if (gpx || gpy) {
-      this.reticle.visible = true;
-      this._aim.x = clamp(this._aim.x + gpx * 1.8 * dt, -1, 1);
-      this._aim.y = clamp(this._aim.y - gpy * 1.8 * dt, -1, 1);
-    }
+    this.reticle.visible = this.input.usingGamepadPointer;
     if (this.reticle.visible) {
-      this._ray.setFromCamera(this._aim, this.camera);
+      const aim = this.input.activePointer();
+      this._ray.setFromCamera(aim, this.camera);
       this.reticle.position.copy(this._ray.ray.at(20, new THREE.Vector3()));
       this.reticle.lookAt(this.camera.position);
     }
@@ -103,7 +97,7 @@ export default class SkeetRange extends Game {
       const hit = this.input.pick(this.camera, this.live, false);
       if (hit) this.shoot(hit.object);
     } else if (this.input.gpHit(0)) {
-      this._ray.setFromCamera(this._aim, this.camera);
+      this._ray.setFromCamera(this.input.activePointer(), this.camera);
       const hits = this._ray.intersectObjects(this.live, false);
       if (hits.length) this.shoot(hits[0].object);
     }

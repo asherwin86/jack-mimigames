@@ -54,6 +54,21 @@ html, body {
 #fps[data-rate="ok"] { color: #ffd98a; }
 #fps[data-rate="low"] { color: #ff9a9a; }
 
+/* ---------- Gamepad cursor ---------- */
+/* A stand-in mouse pointer for aim-with-the-mouse games, drawn wherever the
+   left stick has steered it — see Engine._updateCursor(). Fixed positioning
+   at (0,0) plus a permanent centering margin, so the JS side only ever needs
+   to set one transform (translate to the target point) each frame. */
+#gp-cursor {
+  position: fixed; left: 0; top: 0; z-index: 60; pointer-events: none;
+  width: 28px; height: 28px; margin: -14px 0 0 -14px; border-radius: 50%;
+  border: 2px solid #fff; box-shadow: 0 0 0 2px rgba(0, 0, 0, .5), 0 0 14px rgba(110, 231, 255, .7);
+}
+#gp-cursor::after {
+  content: ''; position: absolute; left: 50%; top: 50%; width: 6px; height: 6px;
+  margin: -3px 0 0 -3px; border-radius: 50%; background: var(--accent);
+}
+
 /* ---------- HUD ---------- */
 .hud-bar {
   position: absolute; top: 0; left: 0; right: 0;

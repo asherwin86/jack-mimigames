@@ -46,9 +46,7 @@ export default class PaddleRally extends Game {
     this.best = 0;
     this.lives = 3;
     this.speed = 22;
-    this.gpAimX = 0;   // a gamepad has no cursor, so the left stick nudges these instead
-    this.gpAimY = 0;
-    this.usingGp = false;   // sticky: stays true between stick nudges, so it doesn't snap to a stale mouse pos
+    this.showCursor = true;   // a gamepad has no cursor of its own — see Engine._updateCursor()
     this.serve(-1);
 
     this.camera.position.set(0, 1.2, 9);
@@ -63,19 +61,11 @@ export default class PaddleRally extends Game {
   }
 
   update(dt) {
-    // Paddle tracks the pointer inside the court bounds — or, with a gamepad,
-    // the left stick nudges a virtual pointer of its own.
-    const gpx = this.input.gpAxis(0);
-    const gpy = this.input.gpAxis(1);
-    if (gpx || gpy) {
-      this.gpAimX = clamp(this.gpAimX + gpx * 2 * dt, -1, 1);
-      this.gpAimY = clamp(this.gpAimY - gpy * 2 * dt, -1, 1);
-      this.usingGp = true;
-    } else if (this.input.delta.x || this.input.delta.y) {
-      this.usingGp = false;   // only real mouse movement takes it back, not the stick just resting
-    }
-    const tx = clamp((this.usingGp ? this.gpAimX : this.input.pointer.x) * W, -W + PAD.w / 2, W - PAD.w / 2);
-    const ty = clamp((this.usingGp ? this.gpAimY : this.input.pointer.y) * H, -H + PAD.h / 2, H - PAD.h / 2);
+    // Paddle tracks the pointer inside the court bounds — or, with a
+    // gamepad, whatever activePointer() resolves that to instead.
+    const aim = this.input.activePointer();
+    const tx = clamp(aim.x * W, -W + PAD.w / 2, W - PAD.w / 2);
+    const ty = clamp(aim.y * H, -H + PAD.h / 2, H - PAD.h / 2);
     this.paddle.position.x = damp(this.paddle.position.x, tx, 16, dt);
     this.paddle.position.y = damp(this.paddle.position.y, ty, 16, dt);
 

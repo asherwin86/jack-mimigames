@@ -52,8 +52,7 @@ export default class SkyHoops extends Game {
     this.nextSpawn = 0;
     this.lastRingX = 0;
     this.lastRingY = 8;
-    this.gpAimX = 0;   // a gamepad has no cursor, so the left stick nudges these instead
-    this.gpAimY = 0;
+    this.showCursor = true;   // a gamepad has no cursor of its own — see Engine._updateCursor()
 
     this.camera.position.set(0, 9, 12);
     this.hud.hint('Move the mouse to steer · every ring buys you 2 more seconds');
@@ -85,17 +84,10 @@ export default class SkyHoops extends Game {
 
     this.speed = 46 + Math.min(34, this.rings_hit * 0.9);
 
-    // Mouse position drives a target point; the ship eases toward it. With a
-    // gamepad (no cursor of its own) the left stick nudges a virtual one.
-    const gpx = this.input.gpAxis(0);
-    const gpy = this.input.gpAxis(1);
-    if (gpx || gpy) {
-      this.gpAimX = clamp(this.gpAimX + gpx * 1.6 * dt, -1, 1);
-      this.gpAimY = clamp(this.gpAimY - gpy * 1.6 * dt, -1, 1);
-    }
-    const usingGp = gpx || gpy;
-    const tx = (usingGp ? this.gpAimX : this.input.pointer.x) * 34;
-    const ty = clamp(10 + (usingGp ? this.gpAimY : this.input.pointer.y) * 12, 2.5, 27);
+    // Mouse position drives a target point; the ship eases toward it.
+    const aim = this.input.activePointer();
+    const tx = aim.x * 34;
+    const ty = clamp(10 + aim.y * 12, 2.5, 27);
     const px = this.ship.position.x;
     const py = this.ship.position.y;
     this.ship.position.x = damp(px, tx, 4.5, dt);
