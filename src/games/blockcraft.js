@@ -32,6 +32,13 @@ const ACTIVE_KEY = 'mg.blockcraft.active.v1';
 const worldDataKey = (id) => `mg.blockcraft.world.${id}`;
 const SAVE_INTERVAL = 20;         // seconds between autosaves, only while something changed
 
+// Multiplayer talks to a small self-hosted relay (see server/blockcraft-server.mjs)
+// over a plain WebSocket, JSON messages. There's no matchmaking or accounts —
+// whoever's hosting shares their address, everyone else types it in.
+const MP_NAME_KEY = 'mg.blockcraft.playerName';
+const MP_SERVER_KEY = 'mg.blockcraft.lastServer';
+const NET_MOVE_INTERVAL = 0.1;    // seconds between position updates sent to the server
+
 // id -> { name, tiles: [top, side, bottom], solid, alpha }
 const BLOCKS = [
   null,
@@ -138,6 +145,16 @@ export default class Blockcraft extends Game {
 
     this.viewDist = loadViewDist();
 
+    // Multiplayer: off until the player hits Connect. this.multiplayer tracks
+    // whether the *current world* is a shared one from a server (as opposed
+    // to a solo save) — see connectMultiplayer().
+    this.net = null;
+    this.netStatus = 'offline';
+    this.netPeers = new Map();
+    this.netMoveTimer = 0;
+    this.multiplayer = false;
+    this.playerName = loadPlayerName();
+
     // Continue whichever world was last active, if it and its data both still
     // exist; otherwise a fresh world with a random seed.
     const activeId = getActiveWorldId();
@@ -168,11 +185,12 @@ export default class Blockcraft extends Game {
     this.camera.far = 400;
     this.camera.updateProjectionMatrix();
 
-    this.hud.panel(hotbarHtml() + touchHtml() + worldHtml());
+    this.hud.panel(hotbarHtml() + touchHtml() + worldHtml() + multiplayerHtml());
     this.refreshHotbar();
     this.touch = { move: { x: 0, y: 0 }, look: { x: 0, y: 0 }, mine: false, place: false, up: false };
     this.bindTouch();
     this.bindWorldPanel();
+    this.bindMultiplayerPanel();
 
     this.hud.hint((loaded ? `Loaded ${this.worldName} · ` : `New world, seed ${this.seed} · `) + this.controlsHint());
   }
@@ -222,6 +240,11 @@ export default class Blockcraft extends Game {
     this.chunks = new Map();
     this.loadQueue = [];
     this.centerChunk = null;
+
+    // Edits from other players that arrived for a chunk that wasn't loaded
+    // yet — applied on top of that chunk the moment it does load. Keyed the
+    // same way chunkData is; see updateStreaming() and applyRemoteEdit().
+    this.remoteEdits = new Map();
 
     this.clouds = this.add(buildClouds());
 
@@ -314,6 +337,7 @@ export default class Blockcraft extends Game {
     }
 
     newButton?.addEventListener('click', () => {
+      this.disconnectMultiplayer();   // starting a solo world means leaving whatever shared one is open
       if (this.dirty) this.save();   // don't lose progress on the world being left
       const text = input?.value.trim();
       const seed = text ? hashSeed(text) : randomSeed();
@@ -378,7 +402,8 @@ export default class Blockcraft extends Game {
   /** Switches to a different saved world, first saving whatever is currently
    *  in progress so hopping between worlds never loses anything. */
   loadWorld(id) {
-    if (id === this.worldId) return;
+    if (id === this.worldId && !this.multiplayer) return;
+    this.disconnectMultiplayer();   // loading a solo world means leaving whatever shared one is open
     if (this.dirty) this.save();
     const meta = loadWorldList().find((w) => w.id === id);
     const data = meta && loadWorldData(id);
@@ -495,14 +520,45 @@ export default class Blockcraft extends Game {
     return data[(y * CHUNK + lz) * CHUNK + lx];
   }
 
+  /** The local player's own edit: mutates the world, marks it dirty for
+   *  autosave, and — if a multiplayer server is connected — tells it, so
+   *  everyone else's world updates too. */
   set(x, y, z, id) {
+    if (!this.writeVoxel(x, y, z, id)) return;
+    this.dirty = true;
+    if (this.net && this.net.readyState === 1) {
+      this.net.send(JSON.stringify({ t: 'edit', x: x | 0, y: y | 0, z: z | 0, b: id }));
+    }
+  }
+
+  /** An edit that arrived from another player over the network: mutates the
+   *  world the same way set() does, but never re-broadcasts it (that would
+   *  echo forever) and doesn't count as "your" unsaved progress. Recorded in
+   *  remoteEdits regardless of whether the chunk is loaded right now, so a
+   *  chunk that streams in later still picks it up — see updateStreaming(). */
+  applyRemoteEdit(x, y, z, id) {
     x |= 0; y |= 0; z |= 0;
-    if (y < 0 || y >= H) return;
+    const cx = Math.floor(x / CHUNK);
+    const cz = Math.floor(z / CHUNK);
+    const key = `${cx},${cz}`;
+    let pending = this.remoteEdits.get(key);
+    if (!pending) { pending = new Map(); this.remoteEdits.set(key, pending); }
+    pending.set(`${x},${y},${z}`, id);
+    this.writeVoxel(x, y, z, id);
+  }
+
+  /** The actual voxel mutation shared by set() and applyRemoteEdit(): writes
+   *  into the loaded chunk (a no-op, returning false, if it isn't loaded),
+   *  promotes the chunk into `edits` so it's remembered from here on, and
+   *  queues affected chunks for remeshing. */
+  writeVoxel(x, y, z, id) {
+    x |= 0; y |= 0; z |= 0;
+    if (y < 0 || y >= H) return false;
     const cx = Math.floor(x / CHUNK);
     const cz = Math.floor(z / CHUNK);
     const key = `${cx},${cz}`;
     const data = this.chunkData.get(key);
-    if (!data) return;   // not currently loaded — in practice always true within REACH of the player
+    if (!data) return false;   // not currently loaded
     const lx = x - cx * CHUNK;
     const lz = z - cz * CHUNK;
     data[(y * CHUNK + lz) * CHUNK + lx] = id;
@@ -510,7 +566,6 @@ export default class Blockcraft extends Game {
     // chunkData share the same array from here on, so every later edit to
     // it is automatically visible to save() with no extra bookkeeping.
     this.edits.set(key, data);
-    this.dirty = true;
     // Rebuild this chunk, plus any neighbour whose border faces just changed.
     // (lx/lz, not x/z % CHUNK — the world spans negative coordinates too, and
     // JS's % keeps the sign of its left operand, which breaks the boundary
@@ -520,6 +575,7 @@ export default class Blockcraft extends Game {
     if (lx === CHUNK - 1) this.dirtyChunk(cx + 1, cz);
     if (lz === 0) this.dirtyChunk(cx, cz - 1);
     if (lz === CHUNK - 1) this.dirtyChunk(cx, cz + 1);
+    return true;
   }
 
   /** Queues a chunk for remeshing — only meaningful for chunks that are
@@ -553,6 +609,16 @@ export default class Blockcraft extends Game {
         const key = `${cx},${cz}`;
         if (this.chunkData.has(key)) continue;
         const data = this.edits.get(key) || generateChunk(cx, cz, this.seed, this.heightCal);
+        // A chunk regenerated fresh (not from `edits`) may still have edits
+        // another player made while it was unloaded here — stamp those in now.
+        const pending = this.edits.has(key) ? null : this.remoteEdits.get(key);
+        if (pending) {
+          for (const [posKey, id] of pending) {
+            const [wx, wy, wz] = posKey.split(',').map(Number);
+            data[(wy * CHUNK + (wz - cz * CHUNK)) * CHUNK + (wx - cx * CHUNK)] = id;
+          }
+          this.edits.set(key, data);
+        }
         this.chunkData.set(key, data);
         if (!this.loadQueue.includes(key)) this.loadQueue.push(key);
       }
@@ -664,12 +730,16 @@ export default class Blockcraft extends Game {
     this.sunGlow.position.copy(this.sun.position);
 
     // Autosave on a timer, but only when something actually changed — no
-    // point writing an identical world to storage every 20 seconds.
+    // point writing an identical world to storage every 20 seconds. A
+    // multiplayer session isn't "yours" to save as a solo world slot — it
+    // lives on the server for as long as that stays running.
     this.saveTimer -= dt;
     if (this.saveTimer <= 0) {
       this.saveTimer = SAVE_INTERVAL;
-      if (this.dirty) { this.save(); this.dirty = false; }
+      if (this.dirty && !this.multiplayer) { this.save(); this.dirty = false; }
     }
+
+    this.updateNet(dt);
 
     // A calm ambient phrase now and then — sparse, like Minecraft's own
     // soundtrack, not a tight background loop.
@@ -702,6 +772,12 @@ export default class Blockcraft extends Game {
     } else if (this.hud.stats.has('Chunks')) {
       this.hud.stats.get('Chunks').remove?.();
       this.hud.stats.delete('Chunks');
+    }
+    if (this.multiplayer) {
+      this.hud.stat('Online', this.netPeers.size + 1);
+    } else if (this.hud.stats.has('Online')) {
+      this.hud.stats.get('Online').remove?.();
+      this.hud.stats.delete('Online');
     }
   }
 
@@ -956,6 +1032,209 @@ export default class Blockcraft extends Game {
     }
   }
 
+  /* ------------------------------------------------------------ multiplayer */
+
+  /** Sends this player's own position on a throttled timer (never every
+   *  frame — that's a lot of WebSocket traffic for no visible benefit), and
+   *  eases every other connected player's avatar toward wherever their last
+   *  update placed them, rather than snapping. */
+  updateNet(dt) {
+    if (this.net && this.net.readyState === 1) {
+      this.netMoveTimer -= dt;
+      if (this.netMoveTimer <= 0) {
+        this.netMoveTimer = NET_MOVE_INTERVAL;
+        this.net.send(JSON.stringify({
+          t: 'move', x: this.pos.x, y: this.pos.y, z: this.pos.z, yaw: this.yaw, pitch: this.pitch,
+        }));
+      }
+    }
+    for (const peer of this.netPeers.values()) {
+      peer.x = damp(peer.x, peer.tx, 12, dt);
+      peer.y = damp(peer.y, peer.ty, 12, dt);
+      peer.z = damp(peer.z, peer.tz, 12, dt);
+      peer.yaw = damp(peer.yaw, peer.tyaw, 12, dt);
+      peer.mesh.position.set(peer.x, peer.y, peer.z);
+      peer.mesh.rotation.y = peer.yaw;
+    }
+  }
+
+  /** Opens a connection to a self-hosted Blockcraft server (see
+   *  server/blockcraft-server.mjs) and, once it accepts us, rebuilds the
+   *  world to its shared seed so everyone standing on the same server is
+   *  standing on the same terrain. */
+  connectMultiplayer(url) {
+    this.disconnectMultiplayer();
+    let ws;
+    try {
+      ws = new WebSocket(url);
+    } catch {
+      this.hud.toast('MULTIPLAYER — invalid address', 1600);
+      return;
+    }
+    this.net = ws;
+    this.netStatus = 'connecting';
+    this.refreshMultiplayerPanel();
+
+    ws.addEventListener('open', () => {
+      ws.send(JSON.stringify({ t: 'hello', name: this.playerName }));
+    });
+    ws.addEventListener('message', (e) => this.handleNetMessage(e.data));
+    ws.addEventListener('close', () => this.handleNetClose());
+    ws.addEventListener('error', () => { /* the 'close' event still follows this */ });
+  }
+
+  /** Leaves whatever multiplayer server is connected, if any — called both
+   *  when the player explicitly disconnects and when they start or load a
+   *  solo world (which isn't a thing you can do mid-session and stay synced). */
+  disconnectMultiplayer() {
+    if (!this.net) return;
+    const ws = this.net;
+    this.net = null;
+    try { ws.close(); } catch { /* already closing */ }
+    this.multiplayer = false;
+    this.netStatus = 'offline';
+    for (const peer of this.netPeers.values()) this.scene.remove(peer.mesh);
+    this.netPeers.clear();
+    this.refreshMultiplayerPanel();
+  }
+
+  /** The server closed the connection (host stopped it, network dropped,
+   *  etc.) rather than us choosing to leave — clean up the same way, plus
+   *  tell the player, since this one wasn't their doing. Guarded against
+   *  firing again after an explicit disconnectMultiplayer() already ran. */
+  handleNetClose() {
+    if (!this.net) return;
+    this.net = null;
+    const wasOnline = this.multiplayer;
+    this.multiplayer = false;
+    this.netStatus = 'offline';
+    for (const peer of this.netPeers.values()) this.scene.remove(peer.mesh);
+    this.netPeers.clear();
+    if (wasOnline) this.hud.toast('DISCONNECTED from multiplayer server', 1800);
+    this.refreshMultiplayerPanel();
+  }
+
+  handleNetMessage(raw) {
+    let msg;
+    try { msg = JSON.parse(raw); } catch { return; }
+    if (!msg || typeof msg !== 'object') return;
+
+    if (msg.t === 'welcome') {
+      this.netId = msg.id;
+      this.netStatus = 'online';
+      if (this.dirty) this.save();   // don't lose the solo world being left behind
+      this.buildWorld(msg.seed, null, 'Multiplayer', `mp:${Date.now()}`);
+      this.multiplayer = true;
+      this.dirty = false;
+      for (const [x, y, z, id] of msg.edits) this.applyRemoteEdit(x, y, z, id);
+      for (const p of msg.players) this.addNetPeer(p.id, p);
+      this.hud.toast(`CONNECTED · seed ${msg.seed}`, 1600);
+      this.hud.hint(`Multiplayer, seed ${msg.seed} · ` + this.controlsHint());
+      this.refreshMultiplayerPanel();
+    } else if (msg.t === 'join') {
+      this.addNetPeer(msg.id, {
+        name: msg.name, color: msg.color, x: this.pos.x, y: this.pos.y, z: this.pos.z, yaw: this.yaw,
+      });
+      this.hud.toast(`${msg.name} joined`, 1200);
+      this.refreshMultiplayerPanel();
+    } else if (msg.t === 'leave') {
+      const peer = this.netPeers.get(msg.id);
+      if (peer) this.hud.toast(`${peer.name} left`, 1200);
+      this.removeNetPeer(msg.id);
+      this.refreshMultiplayerPanel();
+    } else if (msg.t === 'move') {
+      const peer = this.netPeers.get(msg.id);
+      if (peer) { peer.tx = msg.x; peer.ty = msg.y; peer.tz = msg.z; peer.tyaw = msg.yaw; }
+    } else if (msg.t === 'edit') {
+      this.applyRemoteEdit(msg.x, msg.y, msg.z, msg.b);
+    } else if (msg.t === 'chat') {
+      this.hud.toast(`${msg.name}: ${msg.text}`, 2200);
+    }
+  }
+
+  addNetPeer(id, info) {
+    if (this.netPeers.has(id)) return;
+    const mesh = buildAvatar(info.color);
+    mesh.position.set(info.x, info.y, info.z);
+    this.scene.add(mesh);
+    this.netPeers.set(id, {
+      mesh, name: info.name, color: info.color,
+      x: info.x, y: info.y, z: info.z, yaw: info.yaw || 0,
+      tx: info.x, ty: info.y, tz: info.z, tyaw: info.yaw || 0,
+    });
+  }
+
+  removeNetPeer(id) {
+    const peer = this.netPeers.get(id);
+    if (!peer) return;
+    this.scene.remove(peer.mesh);
+    this.netPeers.delete(id);
+  }
+
+  /** Wires the Multiplayer panel: name field, server address field, and the
+   *  Connect/Disconnect toggle, plus renders its own status/player list. */
+  bindMultiplayerPanel() {
+    const panel = this.hud.$panel;
+    if (!panel) return;
+    this.mpPanel = panel;
+
+    const nameInput = panel.querySelector('.bc-name-input');
+    const serverInput = panel.querySelector('.bc-server-input');
+    const connectBtn = panel.querySelector('.bc-connect');
+    nameInput?.addEventListener('pointerdown', (e) => e.stopPropagation());
+    nameInput?.addEventListener('keydown', (e) => e.stopPropagation());
+    serverInput?.addEventListener('pointerdown', (e) => e.stopPropagation());
+    serverInput?.addEventListener('keydown', (e) => e.stopPropagation());
+    connectBtn?.addEventListener('pointerdown', (e) => e.stopPropagation());
+
+    if (nameInput) nameInput.value = this.playerName;
+    if (serverInput) serverInput.value = loadLastServer();
+
+    nameInput?.addEventListener('change', () => {
+      this.playerName = nameInput.value.trim().slice(0, 16) || 'Player';
+      savePlayerName(this.playerName);
+    });
+
+    connectBtn?.addEventListener('click', () => {
+      if (this.net) {
+        this.disconnectMultiplayer();
+        this.hud.toast('DISCONNECTED', 1000);
+        return;
+      }
+      const url = serverInput?.value.trim();
+      if (!url) { this.hud.toast('Enter a server address first', 1400); return; }
+      saveLastServer(url);
+      this.connectMultiplayer(url);
+    });
+
+    this.refreshMultiplayerPanel();
+  }
+
+  /** Re-renders the connect button label, status line, and connected-player
+   *  list — called on every state change (connecting/online/offline, peers
+   *  joining or leaving). */
+  refreshMultiplayerPanel() {
+    const panel = this.mpPanel;
+    if (!panel) return;
+    const connectBtn = panel.querySelector('.bc-connect');
+    const status = panel.querySelector('.bc-mp-status');
+    const list = panel.querySelector('.bc-mp-players');
+    if (connectBtn) {
+      connectBtn.textContent = this.net ? 'Disconnect' : 'Connect';
+      connectBtn.classList.toggle('on', !!this.net);
+    }
+    if (status) {
+      status.textContent = this.netStatus === 'online' ? `Online · ${this.netPeers.size + 1} playing`
+        : this.netStatus === 'connecting' ? 'Connecting…'
+          : 'Offline — playing solo';
+    }
+    if (list) {
+      list.innerHTML = [...this.netPeers.values()].map((p) => (
+        `<div class="bc-mp-player"><span class="bc-mp-dot" style="background:${escapeHtml(p.color)}"></span>${escapeHtml(p.name)}</div>`
+      )).join('');
+    }
+  }
+
   intersectsPlayer(x, y, z) {
     const R = 0.3;
     return x + 1 > this.pos.x - R && x < this.pos.x + R
@@ -981,7 +1260,8 @@ export default class Blockcraft extends Game {
 
   dispose() {
     this.input.exitLock();
-    if (this.dirty) { this.save(); this.dirty = false; }
+    if (this.net) { const ws = this.net; this.net = null; try { ws.close(); } catch { /* ignore */ } }
+    if (this.dirty && !this.multiplayer) { this.save(); this.dirty = false; }
   }
 }
 
@@ -1003,6 +1283,20 @@ function buildClouds() {
     cloud.userData.speed = 0.7 + rng() * 1.1;
     group.add(cloud);
   }
+  return group;
+}
+
+/** A simple blocky stand-in for another connected player: a torso and a head,
+ *  flat-shaded in their assigned colour. Positioned at their feet, the same
+ *  convention this.pos uses, and rotated by updateNet() to face their yaw. */
+function buildAvatar(color) {
+  const group = new THREE.Group();
+  const mat = new THREE.MeshBasicMaterial({ color });
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.5, 1.2, 0.3), mat);
+  body.position.y = 0.9;
+  const head = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.42, 0.42), mat);
+  head.position.y = 1.75;
+  group.add(body, head);
   return group;
 }
 
@@ -1286,6 +1580,23 @@ function loadViewDist() {
 
 function saveViewDist(chunks) {
   try { localStorage.setItem(VIEW_DIST_KEY, String(chunks)); } catch { /* ignore */ }
+}
+
+function loadPlayerName() {
+  try { return localStorage.getItem(MP_NAME_KEY) || `Player${((Math.random() * 9000) | 0) + 1000}`; }
+  catch { return 'Player'; }
+}
+
+function savePlayerName(name) {
+  try { localStorage.setItem(MP_NAME_KEY, name); } catch { /* ignore */ }
+}
+
+function loadLastServer() {
+  try { return localStorage.getItem(MP_SERVER_KEY) || ''; } catch { return ''; }
+}
+
+function saveLastServer(url) {
+  try { localStorage.setItem(MP_SERVER_KEY, url); } catch { /* ignore */ }
 }
 
 /** The world index: name/seed/last-saved-at for every world, newest first.
@@ -1608,6 +1919,43 @@ function worldHtml() {
         <button class="bc-import">Import</button>
       </div>
       <input class="bc-import-file" type="file" accept="application/json" hidden />
+    </div>`;
+}
+
+/** A small panel — top-right, clear of everything else — for playing with
+ *  other people: a display name, a server address (from someone running
+ *  server/blockcraft-server.mjs), a Connect/Disconnect toggle, and the list
+ *  of who else is currently on. bindMultiplayerPanel() wires it up. */
+function multiplayerHtml() {
+  return `
+    <style>
+      .bc-mp { position:absolute; right:16px; top:64px; pointer-events:auto;
+        background:rgba(10,14,24,.6); border:1px solid rgba(255,255,255,.15);
+        border-radius:8px; padding:8px; display:flex; flex-direction:column; gap:6px;
+        font:600 12px system-ui; color:#fff; width:180px; }
+      .bc-mp .bc-label { color:rgba(255,255,255,.6); font-size:10px;
+        text-transform:uppercase; letter-spacing:.5px; margin-top:2px; }
+      .bc-mp .bc-label:first-child { margin-top:0; }
+      .bc-mp input { width:100%; box-sizing:border-box; background:rgba(255,255,255,.08);
+        border:1px solid rgba(255,255,255,.2); border-radius:5px; color:#fff;
+        padding:4px 6px; font:inherit; }
+      .bc-mp .bc-connect { padding:5px 0; border-radius:5px; border:1px solid rgba(255,255,255,.25);
+        background:rgba(110,231,255,.22); color:#fff; cursor:pointer; font:700 12px inherit; }
+      .bc-mp .bc-connect.on { background:rgba(255,90,80,.25); }
+      .bc-mp .bc-mp-status { font-size:11px; color:rgba(255,255,255,.7); }
+      .bc-mp .bc-mp-players { display:flex; flex-direction:column; gap:3px; max-height:110px; overflow-y:auto; }
+      .bc-mp-player { display:flex; align-items:center; gap:5px; font-size:11px;
+        overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+      .bc-mp-dot { width:8px; height:8px; border-radius:50%; flex:none; }
+    </style>
+    <div class="bc-mp">
+      <div class="bc-label">Your name</div>
+      <input class="bc-name-input" type="text" placeholder="Player" maxlength="16" />
+      <div class="bc-label">Server address</div>
+      <input class="bc-server-input" type="text" placeholder="ws://host:7443" maxlength="80" />
+      <button class="bc-connect">Connect</button>
+      <div class="bc-mp-status">Offline — playing solo</div>
+      <div class="bc-mp-players"></div>
     </div>`;
 }
 

@@ -346,6 +346,62 @@ check('loading a different world restores its edit', game2.get(1, 3, 2) === 9);
   })());
 }
 
+// --- multiplayer: remote edits land (now or later), local edits notify a
+// connected server, remote ones never echo back, and a live session isn't
+// autosaved as a solo world -------------------------------------------------
+{
+  game.pos.set(0.5, 30, 0.5);
+  game.updateStreaming(true);   // guarantee chunk 0,0 is loaded for what follows
+
+  const before = game.get(2, 2, 2);
+  const remoteId = before === 15 ? 16 : 15;
+  game.applyRemoteEdit(2, 2, 2, remoteId);
+  check('a remote edit to an already-loaded chunk lands immediately', game.get(2, 2, 2) === remoteId);
+
+  // A remote edit to a chunk nobody's streamed in yet must not be dropped —
+  // it's remembered and gets stamped on the moment that chunk does load.
+  const farX = 500 * 16;
+  const farZ = 500 * 16;
+  check('the far chunk is not loaded yet', !game.chunkData.has('500,500'));
+  game.applyRemoteEdit(farX + 3, 9, farZ + 3, 12);
+  check('an edit to an unloaded chunk is remembered instead of dropped',
+    game.remoteEdits.get('500,500')?.get(`${farX + 3},9,${farZ + 3}`) === 12);
+
+  game.pos.set(farX + 0.5, 20, farZ + 0.5);
+  game.updateStreaming(true);
+  check('the remembered edit is applied once its chunk streams in',
+    game.get(farX + 3, 9, farZ + 3) === 12);
+
+  game.pos.set(0.5, 30, 0.5);
+  game.updateStreaming(true);   // back near spawn for anything else that runs
+
+  // set() is the local player's own edit — it should tell a connected server.
+  const sent = [];
+  game.net = { readyState: 1, send: (raw) => sent.push(JSON.parse(raw)) };
+  game.set(3, 3, 3, 9);
+  check('a local edit is sent to a connected server',
+    sent.length === 1 && sent[0].t === 'edit' && sent[0].x === 3 && sent[0].y === 3 && sent[0].z === 3 && sent[0].b === 9,
+    JSON.stringify(sent[0]));
+  game.applyRemoteEdit(4, 4, 4, 9);
+  check('a remote edit is never echoed back to the server', sent.length === 1);
+  game.net = null;
+
+  // A multiplayer session lives on the server, not in a local world slot —
+  // autosave (and, by the same logic, dispose()) must leave it alone.
+  game.multiplayer = true;
+  game.dirty = true;
+  let saveCalls = 0;
+  const originalSave = game.save.bind(game);
+  game.save = () => { saveCalls++; originalSave(); };
+  game.saveTimer = 0;
+  game.update(1 / 60);
+  check('autosave is skipped while a multiplayer session is open',
+    saveCalls === 0 && game.dirty === true);
+  game.save = originalSave;
+  game.multiplayer = false;
+  game.dirty = false;
+}
+
 function loadWorldData(id) {
   try { return JSON.parse(memStore.get(`mg.blockcraft.world.${id}`) || 'null'); } catch { return null; }
 }

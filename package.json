@@ -11,13 +11,15 @@
     "smoke": "node scripts/smoke.mjs",
     "check:voxels": "node scripts/check-blockcraft.mjs",
     "check:backdrop": "node scripts/check-backdrop.mjs",
+    "server:blockcraft": "node server/blockcraft-server.mjs",
     "electron": "npm run build && electron .",
     "dist:win": "npm run build && electron-builder --win --publish=never",
     "release:win": "npm run build && electron-builder --win --publish=always"
   },
   "dependencies": {
     "electron-updater": "^6.3.9",
-    "three": "^0.180.0"
+    "three": "^0.180.0",
+    "ws": "^8.21.3"
   },
   "devDependencies": {
     "electron": "^33.2.1",
