@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { Game } from '../engine/Game.js';
 import {
-  ball, torus, ground, lights, sky, glow, Burst, clamp, rand, pick, PALETTE, COLORS,
+  ball, ground, lights, sky, Burst, clamp, rand, pick, PALETTE, COLORS,
 } from '../engine/utils.js';
 
 const GRAV = 13;
@@ -27,14 +27,8 @@ export default class FruitSlice extends Game {
     this.lives = LIVES;
     this.nextSpawn = 0.6;
     this.prevDown = false;
-
-    // A gamepad has no cursor, so the left stick steers this reticle instead
-    // — shown only while it's actually the one driving aim, so a mouse
-    // player never sees it (and it doesn't get stuck on if they switch back).
+    this.showCursor = true;   // a real on-screen cursor — see Engine._updateCursor()
     this._ray = new THREE.Raycaster();
-    this.reticle = this.add(torus(0.4, 0.04, PALETTE.white, { cast: false, receive: false }));
-    this.reticle.material = glow(PALETTE.white, { transparent: true, opacity: 0.85 });
-    this.reticle.visible = false;
 
     this.camera.position.set(0, 1.5, 11);
     this.camera.lookAt(0, 1.5, 0);
@@ -77,20 +71,12 @@ export default class FruitSlice extends Game {
       if (o.position.y < -8) this.recycle(o, i);
     }
 
-    this.reticle.visible = this.input.usingGamepadPointer;
-    if (this.reticle.visible) {
-      const aim = this.input.activePointer();
-      this._ray.setFromCamera(aim, this.camera);
-      this.reticle.position.copy(this._ray.ray.at(10, new THREE.Vector3()));
-      this.reticle.lookAt(this.camera.position);
-    }
-
     // A swipe is any drag while the button is held; picking every frame while
     // down is enough to catch a fast pass across several fruit in one stroke.
     if (this.input.down) {
       const hit = this.input.pick(this.camera, this.live, false);
       if (hit) this.slice(hit.object);
-    } else if (this.input.gpButton(0) && this.reticle.visible) {
+    } else if (this.input.gpButton(0)) {
       this._ray.setFromCamera(this.input.activePointer(), this.camera);
       const hits = this._ray.intersectObjects(this.live, false);
       if (hits.length) this.slice(hits[0].object);

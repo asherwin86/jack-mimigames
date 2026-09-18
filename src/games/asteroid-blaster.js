@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { Game } from '../engine/Game.js';
 import {
-  torus, lights, sky, glow, mat, starfield, Burst, clamp, damp, rand, randInt, PALETTE,
+  lights, sky, mat, starfield, Burst, clamp, damp, rand, randInt, PALETTE,
 } from '../engine/utils.js';
 
 const SPAWN_Z = -170;
@@ -19,10 +19,7 @@ export default class AsteroidBlaster extends Game {
 
     this.rocks = [];
     this.burst = new Burst(this.scene, 140, 0.3);
-
-    // Reticle sits on the pointer ray so aiming reads in 3D.
-    this.reticle = this.add(torus(0.55, 0.05, PALETTE.cyan, { cast: false, receive: false }));
-    this.reticle.material = glow(PALETTE.cyan, { transparent: true, opacity: 0.85 });
+    this.showCursor = true;   // a real on-screen cursor — see Engine._updateCursor()
 
     // Tracer beam, reused for every shot.
     this.beam = this.add(new THREE.Mesh(
@@ -102,13 +99,10 @@ export default class AsteroidBlaster extends Game {
       }
     }
 
-    // Aim — the left stick drives a virtual pointer when there's no cursor,
-    // via the same activePointer() every other aim game reads.
+    // Aim — activePointer() is the real mouse, or the on-screen cursor while
+    // the left stick is steering it.
     const aim = this.input.activePointer();
     this._ray.setFromCamera(aim, this.camera);
-    this.reticle.position.copy(this._ray.ray.at(24, new THREE.Vector3()));
-    this.reticle.lookAt(this.camera.position);
-    this.reticle.rotation.z = this.time * 1.5;
 
     this.cooldown -= dt;
     if ((this.input.down || this.input.gpButton(0)) && this.cooldown <= 0) this.fire();

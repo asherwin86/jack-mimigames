@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { Game } from '../engine/Game.js';
 import {
-  cyl, torus, ground, lights, sky, glow, mat, Burst, clamp, rand, pick, PALETTE,
+  cyl, ground, lights, sky, glow, mat, Burst, clamp, rand, pick, PALETTE,
 } from '../engine/utils.js';
 
 const GRAV = 9;
@@ -34,13 +34,8 @@ export default class SkeetRange extends Game {
     this.hits = 0;
     this.misses = 0;
     this.nextLaunch = 0.6;
-
-    // A gamepad has no cursor, so the left stick steers this reticle instead
-    // — shown only while it's actually the one driving aim.
+    this.showCursor = true;   // a real on-screen cursor — see Engine._updateCursor()
     this._ray = new THREE.Raycaster();
-    this.reticle = this.add(torus(0.4, 0.04, PALETTE.cyan, { cast: false, receive: false }));
-    this.reticle.material = glow(PALETTE.cyan, { transparent: true, opacity: 0.85 });
-    this.reticle.visible = false;
 
     this.camera.position.set(0, 4, 14);
     this.camera.lookAt(0, 5, -14);
@@ -83,14 +78,6 @@ export default class SkeetRange extends Game {
         this.audio.tone([180, 90], 0.12, { type: 'sawtooth', gain: 0.08 });
         this.recycle(d, i);
       }
-    }
-
-    this.reticle.visible = this.input.usingGamepadPointer;
-    if (this.reticle.visible) {
-      const aim = this.input.activePointer();
-      this._ray.setFromCamera(aim, this.camera);
-      this.reticle.position.copy(this._ray.ray.at(20, new THREE.Vector3()));
-      this.reticle.lookAt(this.camera.position);
     }
 
     if (this.input.clicked) {
