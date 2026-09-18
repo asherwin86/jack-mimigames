@@ -9,6 +9,7 @@ const ORDER = [0, 4, 2, 6, 1, 5, 3, 7];   // spreads new plates out, not cluster
 const ACTIVATE_EVERY = 8;
 const RESPAWN_AFTER = 2.4;
 const LOSS_LIMIT = 5;
+const GP_SLOT_BUTTONS = [0, 1, 2, 3, 12, 13, 14, 15];   // A/B/X/Y then the D-pad, one per slot
 
 export default class PlateSpinner extends Game {
   start() {
@@ -105,6 +106,15 @@ export default class PlateSpinner extends Game {
       if (hit) {
         const slot = this.slots.find((s) => s.plate === hit.object);
         this.save(slot);
+      }
+    } else {
+      // Eight slots map onto the four face buttons plus the D-pad.
+      for (let i = 0; i < GP_SLOT_BUTTONS.length; i++) {
+        if (this.input.gpHit(GP_SLOT_BUTTONS[i])) {
+          const slot = this.slots[i];
+          if (slot.active && !slot.falling) this.save(slot);
+          break;
+        }
       }
     }
 

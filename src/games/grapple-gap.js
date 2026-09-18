@@ -71,7 +71,7 @@ export default class GrappleGap extends Game {
     if (!this.grapple) {
       this.vel.x = this.grounded ? steer * 6 : this.vel.x + steer * 4 * dt;
 
-      if ((this.input.hit('Space') || this.input.clicked) && !this.grounded) {
+      if ((this.input.hit('Space') || this.input.clicked || this.input.gpHit(0)) && !this.grounded) {
         const anchor = this.nearestAnchor(this.player.position);
         if (anchor) {
           this.grapple = { anchor, dir: null };

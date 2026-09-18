@@ -40,6 +40,15 @@ export default class WhackACube extends Game {
     this.timeLeft = ROUND;
     this.nextPop = 0.6;
 
+    // A gamepad has no cursor to click with, so it gets a grid cursor
+    // instead — the D-pad/left stick steps between cells, A swings.
+    this.gpCol = Math.floor(N / 2);
+    this.gpRow = Math.floor(N / 2);
+    this.gpNavDir = { x: 0, y: 0 };
+    this.gpNavAt = 0;
+    this.gpMarker = this.add(box(1.95, 0.08, 1.95, glow(PALETTE.white, { transparent: true, opacity: 0.55 })));
+    this.gpMarker.visible = false;
+
     this.camera.position.set(0, 11.5, 11);
     this.camera.lookAt(0, 0, 0.5);
     this.hud.hint('Smash cyan cubes · gold is worth triple · never hit red');
@@ -88,6 +97,7 @@ export default class WhackACube extends Game {
     }
 
     if (this.input.clicked) this.swing();
+    this.updateGpCursor(dt);
 
     this.burst.update(dt);
 
@@ -96,15 +106,55 @@ export default class WhackACube extends Game {
     this.hud.stat('Time', this.timeLeft.toFixed(1), this.timeLeft < 8);
   }
 
+  /** Steps a grid cursor between cells for anyone without a mouse to point
+   *  with — the D-pad/left stick moves it, A swings wherever it's sitting.
+   *  Only appears once actually used, so mouse players never see it. */
+  updateGpCursor(dt) {
+    const dx = this.input.gpAxis(0) > 0.5 || this.input.gpButton(15) ? 1
+      : this.input.gpAxis(0) < -0.5 || this.input.gpButton(14) ? -1 : 0;
+    const dy = this.input.gpAxis(1) > 0.5 || this.input.gpButton(13) ? 1
+      : this.input.gpAxis(1) < -0.5 || this.input.gpButton(12) ? -1 : 0;
+
+    const now = this.time;
+    if (dx || dy) {
+      this.gpMarker.visible = true;
+      const changed = dx !== this.gpNavDir.x || dy !== this.gpNavDir.y;
+      if (changed || now >= this.gpNavAt) {
+        this.gpNavDir = { x: dx, y: dy };
+        this.gpNavAt = now + (changed ? 0.3 : 0.13);
+        this.gpCol = clamp(this.gpCol + dx, 0, N - 1);
+        this.gpRow = clamp(this.gpRow + dy, 0, N - 1);
+      }
+    } else {
+      this.gpNavDir = { x: 0, y: 0 };
+    }
+
+    if (this.gpMarker.visible) {
+      const cell = this.cells[this.gpRow * N + this.gpCol];
+      this.gpMarker.position.set(cell.userData.home, 0.2, cell.userData.z);
+    }
+
+    if (this.input.gpHit(0)) {
+      this.gpMarker.visible = true;
+      const cell = this.cells[this.gpRow * N + this.gpCol];
+      this.strike(cell.userData.state === 'up' ? cell : null);
+    }
+  }
+
   swing() {
     const ups = this.cells.filter((c) => c.userData.state === 'up');
     const hit = this.input.pick(this.camera, ups, false);
-    if (!hit) {
+    this.strike(hit?.object ?? null);
+  }
+
+  /** Resolves a swing against a specific cube (or null for a miss) — shared
+   *  by the mouse-pick path (swing()) and the gamepad grid cursor. */
+  strike(c) {
+    if (!c) {
       this.combo = 0;
       this.audio.tone(140, 0.05, { type: 'sine', gain: 0.05 });
       return;
     }
-    const c = hit.object;
     const kind = c.userData.kind;
 
     if (kind === 'bomb') {

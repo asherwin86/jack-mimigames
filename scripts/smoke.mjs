@@ -99,6 +99,13 @@ function makeInput(scene) {
   let clicked = false;
   let t = 0;
 
+  // A simulated gamepad, so every game's gpAxis()/gpButton()/gpHit() branches
+  // actually get exercised too, not just the keyboard/mouse ones.
+  const gpAxes = [0, 0, 0, 0];
+  const gpHeld = new Set();
+  const gpPressed = new Set();
+  const GP_BUTTONS = [0, 1, 2, 3, 4, 5, 6, 7, 12, 13, 14, 15];
+
   const api = {
     pointer: new THREE.Vector2(),
     pixel: new THREE.Vector2(640, 400),
@@ -110,13 +117,15 @@ function makeInput(scene) {
     key: (...c) => c.some((k) => held.has(k)),
     hit: (...c) => c.some((k) => pressed.has(k)),
     let_go: () => false,
-    axisX: () => (held.has('KeyD') ? 1 : 0) - (held.has('KeyA') ? 1 : 0),
-    axisY: () => (held.has('KeyW') ? 1 : 0) - (held.has('KeyS') ? 1 : 0),
+    axisX: () => (held.has('KeyD') ? 1 : 0) - (held.has('KeyA') ? 1 : 0) || gpAxes[0],
+    axisY: () => (held.has('KeyW') ? 1 : 0) - (held.has('KeyS') ? 1 : 0) || -gpAxes[1],
     button: (n) => buttons.has(n),
     clickedButton: (n) => clickedButtons.has(n),
     requestLock() { api.locked = true; },
     exitLock() { api.locked = false; },
-    gpAxis: () => 0, gpButton: () => false, gpHit: () => false,
+    gpAxis: (i) => gpAxes[i] || 0,
+    gpButton: (n) => gpHeld.has(n),
+    gpHit: (n) => gpPressed.has(n),
 
     // Pretend the pointer sometimes lands on something clickable, so click
     // handlers (whack-a-cube, simon-cubes) actually get exercised.
@@ -154,8 +163,20 @@ function makeInput(scene) {
       }
       if (clicked) api.locked = true;
       api.wheel = Math.random() < 0.03 ? (Math.random() < 0.5 ? -100 : 100) : 0;
+
+      // Wander the two sticks and churn a handful of gamepad buttons.
+      gpAxes[0] = Math.sin(t * 1.3) * 0.9;
+      gpAxes[1] = Math.cos(t * 0.9) * 0.9;
+      gpAxes[2] = Math.sin(t * 0.7) * 0.6;
+      gpAxes[3] = Math.cos(t * 1.1) * 0.6;
+      gpPressed.clear();
+      if (Math.random() < 0.06) {
+        const b = GP_BUTTONS[(Math.random() * GP_BUTTONS.length) | 0];
+        if (gpHeld.has(b)) gpHeld.delete(b);
+        else { gpHeld.add(b); gpPressed.add(b); }
+      }
     },
-    endFrame() { clicked = false; clickedButtons.clear(); api.wheel = 0; },
+    endFrame() { clicked = false; clickedButtons.clear(); api.wheel = 0; gpPressed.clear(); },
   };
   return api;
 }

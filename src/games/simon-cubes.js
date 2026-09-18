@@ -83,6 +83,13 @@ export default class SimonCubes extends Game {
       this.inputClock -= dt;
       if (this.inputClock <= 0) return this.fail('Too slow.');
       if (this.input.clicked) this.handleClick();
+      // Five pads map straight onto the four face buttons plus a bumper —
+      // no reticle needed, the pads themselves are the "buttons".
+      else if (this.input.gpHit(0)) this.pressPad(0);
+      else if (this.input.gpHit(1)) this.pressPad(1);
+      else if (this.input.gpHit(2)) this.pressPad(2);
+      else if (this.input.gpHit(3)) this.pressPad(3);
+      else if (this.input.gpHit(4)) this.pressPad(4);
     }
 
     const label = this.phase === 'show' ? 'watch' : this.phase === 'input' ? 'your turn' : '…';
@@ -95,8 +102,11 @@ export default class SimonCubes extends Game {
 
   handleClick() {
     const hit = this.input.pick(this.camera, this.pads, false);
-    if (!hit) return;
-    const i = hit.object.userData.index;
+    if (hit) this.pressPad(hit.object.userData.index);
+  }
+
+  pressPad(i) {
+    if (i >= PADS.length) return;
     this.flash(i, 0.3);
 
     if (i !== this.sequence[this.step]) return this.fail('Wrong pad.');

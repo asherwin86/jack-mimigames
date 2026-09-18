@@ -64,7 +64,7 @@ export default class LavaFloor extends Game {
     this.vel.x = damp(this.vel.x, dir.x * 11, 14, dt);
     this.vel.z = damp(this.vel.z, dir.z * 11, 14, dt);
 
-    if (this.input.hit('Space') && this.grounded) {
+    if ((this.input.hit('Space') || this.input.gpHit(0)) && this.grounded) {
       this.vel.y = 14;
       this.grounded = false;
       this.audio.tone([400, 680], 0.09, { type: 'triangle', gain: 0.1 });

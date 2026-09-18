@@ -73,7 +73,7 @@ export default class PlatformHop extends Game {
     this.vel.z = damp(this.vel.z, inZ * RUN, accel / RUN, dt);
 
     this.coyote -= dt;
-    if (this.input.hit('Space') && (this.grounded || this.coyote > 0)) {
+    if ((this.input.hit('Space') || this.input.gpHit(0)) && (this.grounded || this.coyote > 0)) {
       this.vel.y = JUMP;
       this.grounded = false;
       this.coyote = 0;

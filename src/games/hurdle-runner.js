@@ -83,7 +83,7 @@ export default class HurdleRunner extends Game {
     this.player.position.x = damp(this.player.position.x, this.playerX, 16, dt);
 
     // Jump
-    if (this.input.hit('Space') && this.grounded) {
+    if ((this.input.hit('Space') || this.input.gpHit(0)) && this.grounded) {
       this.velY = JUMP;
       this.grounded = false;
       this.audio.tone([420, 700], 0.08, { type: 'triangle', gain: 0.11 });
@@ -97,7 +97,7 @@ export default class HurdleRunner extends Game {
     }
 
     // Duck
-    this.ducking = this.input.key('KeyS', 'ArrowDown', 'ControlLeft') && this.grounded;
+    this.ducking = (this.input.key('KeyS', 'ArrowDown', 'ControlLeft') || this.input.gpButton(1)) && this.grounded;
     this.player.scale.y = damp(this.player.scale.y, this.ducking ? 0.5 : 1, 16, dt);
 
     this.nextSpawn -= dt;

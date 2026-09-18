@@ -85,10 +85,10 @@ export default class FrogHopper extends Game {
   }
 
   update(dt) {
-    if (this.input.hit('KeyW', 'ArrowUp')) this.hop(0, 1);
-    else if (this.input.hit('KeyS', 'ArrowDown')) this.hop(0, -1);
-    else if (this.input.hit('KeyA', 'ArrowLeft')) this.hop(-1, 0);
-    else if (this.input.hit('KeyD', 'ArrowRight')) this.hop(1, 0);
+    if (this.input.hit('KeyW', 'ArrowUp') || this.input.gpHit(12)) this.hop(0, 1);
+    else if (this.input.hit('KeyS', 'ArrowDown') || this.input.gpHit(13)) this.hop(0, -1);
+    else if (this.input.hit('KeyA', 'ArrowLeft') || this.input.gpHit(14)) this.hop(-1, 0);
+    else if (this.input.hit('KeyD', 'ArrowRight') || this.input.gpHit(15)) this.hop(1, 0);
 
     this.hopT = Math.max(0, this.hopT - dt * 6);
     const p = this.player;

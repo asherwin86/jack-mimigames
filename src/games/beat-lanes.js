@@ -86,7 +86,7 @@ export default class BeatLanes extends Game {
 
     for (let i = 0; i < LANES; i++) {
       const l = this.lanes[i];
-      if (this.input.hit(...KEYS[i])) this.strike(i);
+      if (this.input.hit(...KEYS[i]) || this.input.gpHit(i)) this.strike(i);
       l.flash = Math.max(0, l.flash - dt * 4);
       l.pad.material.emissiveIntensity = damp(l.pad.material.emissiveIntensity, 0.25 + l.flash * 1.6, 14, dt);
       l.pad.position.y = damp(l.pad.position.y, l.flash > 0.5 ? -0.15 : 0, 16, dt);

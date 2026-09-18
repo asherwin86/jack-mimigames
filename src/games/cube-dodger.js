@@ -76,7 +76,7 @@ export default class CubeDodger extends Game {
   }
 
   update(dt) {
-    const boosting = this.input.key('ShiftLeft', 'ShiftRight') && this.boost > 0.02;
+    const boosting = (this.input.key('ShiftLeft', 'ShiftRight') || this.input.gpButton(7)) && this.boost > 0.02;
     this.boost = clamp(this.boost + (boosting ? -0.42 : 0.18) * dt, 0, 1);
 
     const target = 22 + Math.min(38, this.distance / 60);

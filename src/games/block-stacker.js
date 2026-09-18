@@ -67,7 +67,7 @@ export default class BlockStacker extends Game {
         p.z += this.dir * this.speed * dt;
         if (Math.abs(p.z) > limit) { p.z = Math.sign(p.z) * limit; this.dir *= -1; }
       }
-      const wants = this.input.clicked || this.input.hit('Space', 'Enter');
+      const wants = this.input.clicked || this.input.hit('Space', 'Enter') || this.input.gpHit(0);
       if (wants && this.dropLock <= 0) this.drop();
     }
 

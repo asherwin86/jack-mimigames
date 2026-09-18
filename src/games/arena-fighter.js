@@ -79,12 +79,12 @@ export default class ArenaFighter extends Game {
     this.player.position.addScaledVector(dir, MOVE_SPEED * dt);
     this.clampToArena(this.player.position);
 
-    this.playerBlocking = this.input.key('ShiftLeft', 'ShiftRight');
+    this.playerBlocking = this.input.key('ShiftLeft', 'ShiftRight') || this.input.gpButton(5);
     if (!this.playerBlocking && !this.playerAttack) {
-      if ((this.input.hit('KeyJ') || this.input.clicked) && this.punchCd <= 0) {
+      if ((this.input.hit('KeyJ') || this.input.clicked || this.input.gpHit(0)) && this.punchCd <= 0) {
         this.playerAttack = { kind: PUNCH, t: 0, dealt: false };
         this.punchCd = PUNCH.cd;
-      } else if (this.input.hit('KeyK') && this.kickCd <= 0) {
+      } else if ((this.input.hit('KeyK') || this.input.gpHit(2)) && this.kickCd <= 0) {
         this.playerAttack = { kind: KICK, t: 0, dealt: false };
         this.kickCd = KICK.cd;
       }

@@ -57,7 +57,7 @@ export default class FreeThrow extends Game {
     this.timeLeft -= dt;
     if (this.timeLeft <= 0 && !this.shots.length) return this.finish();
 
-    if (this.input.down && this.ballMesh.visible) {
+    if ((this.input.down || this.input.gpButton(0)) && this.ballMesh.visible) {
       if (!this.charging) { this.charging = true; this.power = 0; }
       this.power = clamp(this.power + dt * 0.85, 0, 1);
     } else if (this.charging) {

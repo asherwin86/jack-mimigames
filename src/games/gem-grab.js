@@ -91,7 +91,7 @@ export default class GemGrab extends Game {
     const dir = new THREE.Vector3(this.input.axisX(), 0, -this.input.axisY());
     if (dir.lengthSq() > 0) dir.normalize();
 
-    if (this.input.hit('Space') && this.dashCharge >= 1 && dir.lengthSq() > 0) {
+    if ((this.input.hit('Space') || this.input.gpHit(0)) && this.dashCharge >= 1 && dir.lengthSq() > 0) {
       this.dashCharge = 0;
       this.dashTime = 0.18;
       this.invuln = Math.max(this.invuln, 0.35);

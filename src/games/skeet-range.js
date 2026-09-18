@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { Game } from '../engine/Game.js';
 import {
-  cyl, ground, lights, sky, glow, mat, Burst, clamp, rand, pick, PALETTE,
+  cyl, torus, ground, lights, sky, glow, mat, Burst, clamp, rand, pick, PALETTE,
 } from '../engine/utils.js';
 
 const GRAV = 9;
@@ -34,6 +34,14 @@ export default class SkeetRange extends Game {
     this.hits = 0;
     this.misses = 0;
     this.nextLaunch = 0.6;
+
+    // A gamepad has no cursor, so the left stick steers this reticle instead
+    // — hidden until actually used, so a mouse player never sees it.
+    this._ray = new THREE.Raycaster();
+    this._aim = new THREE.Vector2();
+    this.reticle = this.add(torus(0.4, 0.04, PALETTE.cyan, { cast: false, receive: false }));
+    this.reticle.material = glow(PALETTE.cyan, { transparent: true, opacity: 0.85 });
+    this.reticle.visible = false;
 
     this.camera.position.set(0, 4, 14);
     this.camera.lookAt(0, 5, -14);
@@ -78,9 +86,26 @@ export default class SkeetRange extends Game {
       }
     }
 
+    const gpx = this.input.gpAxis(0);
+    const gpy = this.input.gpAxis(1);
+    if (gpx || gpy) {
+      this.reticle.visible = true;
+      this._aim.x = clamp(this._aim.x + gpx * 1.8 * dt, -1, 1);
+      this._aim.y = clamp(this._aim.y - gpy * 1.8 * dt, -1, 1);
+    }
+    if (this.reticle.visible) {
+      this._ray.setFromCamera(this._aim, this.camera);
+      this.reticle.position.copy(this._ray.ray.at(20, new THREE.Vector3()));
+      this.reticle.lookAt(this.camera.position);
+    }
+
     if (this.input.clicked) {
       const hit = this.input.pick(this.camera, this.live, false);
       if (hit) this.shoot(hit.object);
+    } else if (this.input.gpHit(0)) {
+      this._ray.setFromCamera(this._aim, this.camera);
+      const hits = this._ray.intersectObjects(this.live, false);
+      if (hits.length) this.shoot(hits[0].object);
     }
 
     this.burst.update(dt);

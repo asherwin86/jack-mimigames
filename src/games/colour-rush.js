@@ -86,6 +86,11 @@ export default class ColourRush extends Game {
     if (this.input.clicked) {
       const hit = this.input.pick(this.camera, this.pads, false);
       if (hit) this.choose(hit.object);
+    } else {
+      // Four pads map straight onto the four face buttons.
+      for (let i = 0; i < this.pads.length; i++) {
+        if (this.input.gpHit(i)) { this.choose(this.pads[i]); break; }
+      }
     }
 
     this.burst.update(dt);

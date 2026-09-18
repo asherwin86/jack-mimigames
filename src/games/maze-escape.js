@@ -75,12 +75,15 @@ export default class MazeEscape extends Game {
     // Keyboard turning so the game is playable without pointer lock.
     if (this.input.key('KeyQ')) this.yaw += 2.2 * dt;
     if (this.input.key('KeyE')) this.yaw -= 2.2 * dt;
+    // A gamepad's right stick turns at a steady rate, same as Q/E.
+    const gx = this.input.gpAxis(2);
+    if (gx) this.yaw -= gx * 2.4 * dt;
 
     const fwd = this.input.axisY();
     const strafe = this.input.axisX();
     const sin = Math.sin(this.yaw);
     const cos = Math.cos(this.yaw);
-    const speed = this.input.key('ShiftLeft', 'ShiftRight') ? 11 : 7;
+    const speed = this.input.key('ShiftLeft', 'ShiftRight') || this.input.gpButton(7) ? 11 : 7;
 
     // Move and resolve against walls one axis at a time so you slide along them.
     const dx = (-sin * fwd + cos * strafe) * speed * dt;

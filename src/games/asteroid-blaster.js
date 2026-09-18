@@ -44,6 +44,7 @@ export default class AsteroidBlaster extends Game {
     this.camera.fov = 70;
     this.camera.updateProjectionMatrix();
     this._ray = new THREE.Raycaster();
+    this._aim = new THREE.Vector2();   // a gamepad has no cursor, so the left stick drives this instead
     this.hud.hint('Aim with the mouse, click to fire · big rocks break into smaller ones');
   }
 
@@ -102,22 +103,29 @@ export default class AsteroidBlaster extends Game {
       }
     }
 
-    // Aim
-    this._ray.setFromCamera(this.input.pointer, this.camera);
+    // Aim — the left stick nudges a virtual pointer when there's no cursor.
+    const gpx = this.input.gpAxis(0);
+    const gpy = this.input.gpAxis(1);
+    if (gpx || gpy) {
+      this._aim.x = clamp(this._aim.x + gpx * 1.6 * dt, -1, 1);
+      this._aim.y = clamp(this._aim.y - gpy * 1.6 * dt, -1, 1);
+    }
+    const aim = gpx || gpy ? this._aim : this.input.pointer;
+    this._ray.setFromCamera(aim, this.camera);
     this.reticle.position.copy(this._ray.ray.at(24, new THREE.Vector3()));
     this.reticle.lookAt(this.camera.position);
     this.reticle.rotation.z = this.time * 1.5;
 
     this.cooldown -= dt;
-    if (this.input.down && this.cooldown <= 0) this.fire();
+    if ((this.input.down || this.input.gpButton(0)) && this.cooldown <= 0) this.fire();
 
     this.beam.material.opacity = Math.max(0, this.beam.material.opacity - dt * 5);
     this.burst.update(dt);
 
     // Camera drifts slightly with the pointer, plus impact shake.
     this.shake = Math.max(0, this.shake - dt * 3);
-    this.camera.rotation.x = damp(this.camera.rotation.x, this.input.pointer.y * 0.07, 5, dt) + rand(-1, 1) * this.shake * 0.02;
-    this.camera.rotation.y = damp(this.camera.rotation.y, -this.input.pointer.x * 0.09, 5, dt) + rand(-1, 1) * this.shake * 0.02;
+    this.camera.rotation.x = damp(this.camera.rotation.x, aim.y * 0.07, 5, dt) + rand(-1, 1) * this.shake * 0.02;
+    this.camera.rotation.y = damp(this.camera.rotation.y, -aim.x * 0.09, 5, dt) + rand(-1, 1) * this.shake * 0.02;
 
     this.hud.stat('Score', this.score);
     this.hud.stat('Hull', '▮'.repeat(this.hull) || '—', this.hull <= 2);

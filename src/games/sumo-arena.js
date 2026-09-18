@@ -69,7 +69,7 @@ export default class SumoArena extends Game {
     if (dir.lengthSq()) dir.normalize();
 
     this.dashCharge = Math.min(1, this.dashCharge + dt / 2.5);
-    if (this.input.hit('Space') && this.dashCharge >= 1 && dir.lengthSq()) {
+    if ((this.input.hit('Space') || this.input.gpHit(0)) && this.dashCharge >= 1 && dir.lengthSq()) {
       this.dashCharge = 0;
       p.userData.vel.addScaledVector(dir, 17);
       this.burst.burst(p.position, PALETTE.cyan, 10, 5);

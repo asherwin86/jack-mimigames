@@ -48,6 +48,7 @@ export default class BrickWall extends Game {
     this.score = 0;
     this.lives = 3;
     this.speed = 17;
+    this.gpAimX = 0;   // a gamepad has no cursor, so the left stick nudges this instead
     this.launch();
 
     this.camera.position.set(0, 1.5, 24);
@@ -62,7 +63,9 @@ export default class BrickWall extends Game {
   }
 
   update(dt) {
-    const tx = clamp(this.input.pointer.x * (W + 2), -W + 2, W - 2);
+    const gpx = this.input.gpAxis(0);
+    if (gpx) this.gpAimX = clamp(this.gpAimX + gpx * 2.2 * dt, -1, 1);
+    const tx = clamp((gpx ? this.gpAimX : this.input.pointer.x) * (W + 2), -W + 2, W - 2);
     this.paddle.position.x = damp(this.paddle.position.x, tx, 18, dt);
 
     if (this.stuck > 0) {
