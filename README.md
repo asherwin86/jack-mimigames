@@ -1,5 +1,7 @@
 # 100 Mimi Games
 
+**Play now: [mimi-games-hzi0.onrender.com](https://mimi-games-hzi0.onrender.com/)**
+
 A 3D mini-game arcade in the browser: one engine, one hub, and a catalogue that
 grows toward 100 games. Built with [Three.js](https://threejs.org) and Vite.
 
