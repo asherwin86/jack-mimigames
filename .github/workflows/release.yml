@@ -1,0 +1,33 @@
+# Builds the Windows installer and publishes it as a GitHub Release whenever a
+# version tag is pushed:   git tag v1.0.1 && git push origin v1.0.1
+# Installed copies of the game find that release themselves and update.
+name: Release Windows app
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # The release's version comes from the tag, so the installer, latest.yml
+      # and the tag can never disagree (which is what breaks auto-update).
+      - name: Set version from tag
+        shell: bash
+        run: npm version "${GITHUB_REF_NAME#v}" --no-git-tag-version --allow-same-version
+      - name: Smoke test
+        run: npm run smoke -- 5
+      - name: Build and publish
+        run: npm run release:win
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

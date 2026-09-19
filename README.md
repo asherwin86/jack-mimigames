@@ -104,6 +104,18 @@ down, `key('Space')` is true while it is held. `clicked` works the same way.
 `chase`, and the `PALETTE` / `COLORS` shared by every game so the arcade reads
 as one product.
 
+## Windows app (auto-updating)
+
+**[Download 100-Mimi-Games-Setup.exe](https://github.com/asherwin86/jack-mimigames/releases/latest/download/100-Mimi-Games-Setup.exe)** — install once and it keeps itself up to date: it checks GitHub Releases on launch (and every few hours), downloads new versions in the background, and asks whether to restart into it. The installer isn't code-signed, so Windows SmartScreen may say "Windows protected your PC" — choose *More info → Run anyway*.
+
+To ship an update, push a version tag; GitHub Actions builds the installer and publishes the release:
+
+```bash
+git tag v1.0.1 && git push origin v1.0.1
+```
+
+Or build and publish by hand with `npm run release:win` (needs `GH_TOKEN`), or just build locally with `npm run dist:win` (output in `release/`).
+
 ## Testing
 
 `npm run smoke` boots every catalogued game with stubbed input, audio and HUD,

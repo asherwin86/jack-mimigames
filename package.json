@@ -1,7 +1,7 @@
 {
   "name": "mini-games",
   "private": true,
-  "version": "0.1.0",
+  "version": "1.0.0",
   "type": "module",
   "main": "electron/main.js",
   "scripts": {
@@ -40,11 +40,14 @@
       "electron/**"
     ],
     "win": {
-      "target": "nsis"
+      "target": "nsis",
+      "icon": "build/icon.png"
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "100-Mimi-Games-Setup.${ext}",
+      "createDesktopShortcut": true
     },
     "publish": {
       "provider": "github",
