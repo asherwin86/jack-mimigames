@@ -141,9 +141,33 @@ try {
   ok('block id 17 (one past the last real block) is rejected', !edits17vs16.some((m) => m.b === 17));
   ok('block id 16 (the actual highest valid block) is accepted', edits17vs16.some((m) => m.b === 16));
 
+  // Skins: a small PNG data URL is relayed (in join, in later welcomes, and on
+  // live changes); anything else is dropped to null rather than passed along.
+  const GOOD_SKIN = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==';
+  const c = new WebSocket(url);
+  await waitFor(c, 'open');
+  const readC = makeReader(c);
+  c.send(JSON.stringify({ t: 'hello', name: 'Cara', skin: GOOD_SKIN }));
+  const welcomeC = await readC.expect('welcome');
+  const joinC = await readA.expect('join');
+  ok('a valid skin is relayed in the join broadcast', joinC.skin === GOOD_SKIN);
+  const d = new WebSocket(url);
+  await waitFor(d, 'open');
+  const readD = makeReader(d);
+  d.send(JSON.stringify({ t: 'hello', name: 'Dan', skin: 'data:text/html;base64,PHNjcmlwdD4=' }));
+  const welcomeD = await readD.expect('welcome');
+  ok('a later joiner is replayed earlier players\' skins', welcomeD.players.find((p) => p.name === 'Cara')?.skin === GOOD_SKIN);
+  ok('a non-PNG skin is dropped, not relayed', welcomeD.players.every((p) => p.name !== 'Dan') && (await readC.expect('join')).skin === null);
+  d.send(JSON.stringify({ t: 'skin', skin: GOOD_SKIN }));
+  ok('a live skin change is broadcast to others', (await readC.expect('skin')).skin === GOOD_SKIN);
+  d.send(JSON.stringify({ t: 'skin', skin: 'data:image/png;base64,' + 'A'.repeat(40000) }));
+  ok('an oversized skin change becomes null', (await readC.expect('skin')).skin === null);
+  c.close(); d.close();
+
   // Bob leaves; Alice should be told.
   b.close();
-  const leave = await readA.expect('leave');
+  let leave = await readA.expect('leave');
+  while (leave.id !== welcomeB.id) leave = await readA.expect('leave');   // skip Cara's and Dan's earlier departures
   ok('a disconnect is broadcast as leave', leave.id === welcomeB.id);
 
   a.close();

@@ -463,6 +463,16 @@ check('loading a different world restores its edit', game2.get(1, 3, 2) === 9);
   game.handleHostData(connA, { t: 'edit', x: 4, y: 4, z: 4, b: 17 });   // one past the last real block id
   check('the host rejects an out-of-range block id from a peer', game.get(4, 4, 4) !== 17);
 
+  // Skins: a joiner's skin is validated (junk → default look, never a crash)
+  // and shows up in what a later joiner is sent.
+  const GOOD_SKIN = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==';
+  game.handleHostData(connA, { t: 'skin', skin: GOOD_SKIN });
+  check('the host records a valid skin from a peer', game.hostConns.get('peerA').skin === GOOD_SKIN);
+  check('a peer skin change is relayed to other peers', sentToB.some((m) => m.t === 'skin' && m.skin === GOOD_SKIN));
+  game.handleHostData(connA, { t: 'skin', skin: '<script>alert(1)</script>' });
+  check('the host drops a non-PNG skin', game.hostConns.get('peerA').skin === null);
+  check('every connected peer has a posable avatar', [...game.netPeers.values()].every((p) => p.avatar?.parts?.head && p.avatar.parts.legL));
+
   game.handleHostConnClose('peerA');
   check('a closed connection\'s player is removed', !game.netPeers.has('peerA'));
 

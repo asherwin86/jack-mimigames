@@ -30,6 +30,8 @@ const SEED = process.argv[3] ? hashSeed(process.argv[3]) : (Math.random() * 0x7f
 const BUILD_HEIGHT = 40;   // must match H in src/games/blockcraft.js
 const MAX_BLOCK_ID = 16;   // BLOCKS there has 17 entries, indices 0-16 — id 17 is out of range and would crash a client's mesher
 
+const MAX_SKIN_CHARS = 30000;   // must match Skin.js — a 64x64 PNG data URL is well under this
+
 const COLORS = ['#ff5a50', '#5ad1ff', '#ffd83f', '#7fd94a', '#c77dff', '#ff9ecb', '#66ffcf', '#ffa64d'];
 
 const players = new Map();   // id -> { ws, name, color, x, y, z, yaw, pitch }
@@ -52,7 +54,7 @@ wss.on('connection', (ws) => {
       joined = true;
       const color = COLORS[(Number(id) - 1) % COLORS.length];
       const name = String(msg.name || `Player${id}`).trim().slice(0, 16) || `Player${id}`;
-      players.set(id, { ws, name, color, x: 0, y: 0, z: 0, yaw: 0, pitch: 0 });
+      players.set(id, { ws, name, color, skin: validSkin(msg.skin), x: 0, y: 0, z: 0, yaw: 0, pitch: 0 });
 
       send(ws, {
         t: 'welcome',
@@ -61,9 +63,9 @@ wss.on('connection', (ws) => {
         edits: [...edits.entries()].map(([key, b]) => [...key.split(',').map(Number), b]),
         players: [...players.entries()]
           .filter(([pid]) => pid !== id)
-          .map(([pid, p]) => ({ id: pid, name: p.name, color: p.color, x: p.x, y: p.y, z: p.z, yaw: p.yaw })),
+          .map(([pid, p]) => ({ id: pid, name: p.name, color: p.color, skin: p.skin, x: p.x, y: p.y, z: p.z, yaw: p.yaw })),
       });
-      broadcast(id, { t: 'join', id, name, color });
+      broadcast(id, { t: 'join', id, name, color, skin: players.get(id).skin });
       log(`${name} joined (${players.size} online)`);
       return;
     }
@@ -78,6 +80,9 @@ wss.on('connection', (ws) => {
       player.yaw = finite(msg.yaw);
       player.pitch = finite(msg.pitch);
       broadcast(id, { t: 'move', id, x: player.x, y: player.y, z: player.z, yaw: player.yaw, pitch: player.pitch });
+    } else if (msg.t === 'skin') {
+      player.skin = validSkin(msg.skin);
+      broadcast(id, { t: 'skin', id, skin: player.skin });
     } else if (msg.t === 'edit') {
       const x = msg.x | 0;
       const y = msg.y | 0;
@@ -118,6 +123,14 @@ function broadcast(fromId, msg) {
     if (pid === fromId) continue;
     try { p.ws.send(json); } catch { /* ignore, its own close handler will clean it up */ }
   }
+}
+
+/** Only a small PNG data URL is ever relayed as a skin; anything else is
+ *  dropped (null = the default look) rather than passed on to other players. */
+function validSkin(s) {
+  const PREFIX = 'data:image/png;base64,';
+  return typeof s === 'string' && s.length > PREFIX.length && s.length <= MAX_SKIN_CHARS
+    && s.startsWith(PREFIX) && /^[A-Za-z0-9+/]+={0,2}$/.test(s.slice(PREFIX.length)) ? s : null;
 }
 
 function finite(n) {

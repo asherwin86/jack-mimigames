@@ -1,6 +1,9 @@
 import * as THREE from 'three';
 import { Game } from '../engine/Game.js';
 import { sky, clamp, damp, seeded, lerp, invLerp, rand, Burst } from '../engine/utils.js';
+import {
+  isValidSkinData, importSkinFile, skinToDataURL, skinFromDataURL, defaultSkinCanvas, buildSkinnedPlayer, drawSkinPreview,
+} from '../engine/Skin.js';
 
 /* ------------------------------------------------------------------ world */
 
@@ -37,6 +40,7 @@ const SAVE_INTERVAL = 20;         // seconds between autosaves, only while somet
 // whoever's hosting shares their address, everyone else types it in.
 const MP_NAME_KEY = 'mg.blockcraft.playerName';
 const MP_SERVER_KEY = 'mg.blockcraft.lastServer';
+const MP_SKIN_KEY = 'mg.blockcraft.skin';   // the player's imported skin, as a small PNG data URL
 const NET_MOVE_INTERVAL = 0.1;    // seconds between position updates sent to the server
 
 // id -> { name, tiles: [top, side, bottom], solid, alpha }
@@ -159,6 +163,8 @@ export default class Blockcraft extends Game {
     this.netMoveTimer = 0;
     this.multiplayer = false;
     this.playerName = loadPlayerName();
+    this.skinData = loadSkin();     // validated PNG data URL, or null for the default look
+    this.skinCanvas = null;         // decoded 64x64 canvas of it (for the preview), filled in async
     this.chatLog = [];
     // Browser hosting (see hostMultiplayer()): this tab acting as the server
     // itself, over WebRTC, rather than connecting out to one.
@@ -1116,8 +1122,17 @@ export default class Blockcraft extends Game {
       peer.y = damp(peer.y, peer.ty, 12, dt);
       peer.z = damp(peer.z, peer.tz, 12, dt);
       peer.yaw = damp(peer.yaw, peer.tyaw, 12, dt);
-      peer.mesh.position.set(peer.x, peer.y, peer.z);
-      peer.mesh.rotation.y = peer.yaw;
+      const moved = Math.hypot(peer.tx - peer.x, peer.tz - peer.z);
+      peer.walk = damp(peer.walk, clamp(moved * 6, 0, 1), 10, dt);   // how hard they're walking right now (0..1), smoothed
+      peer.phase += dt * 9 * peer.walk;
+      const swing = Math.sin(peer.phase) * 0.9 * peer.walk;
+      const { head, armL, armR, legL, legR } = peer.avatar.parts;
+      armR.rotation.x = swing; armL.rotation.x = -swing;
+      legR.rotation.x = -swing; legL.rotation.x = swing;
+      peer.pitch = damp(peer.pitch, peer.tpitch, 12, dt);
+      head.rotation.x = clamp(-peer.pitch, -1.2, 1.2);
+      peer.avatar.group.position.set(peer.x, peer.y, peer.z);
+      peer.avatar.group.rotation.y = peer.yaw;
     }
   }
 
@@ -1151,7 +1166,7 @@ export default class Blockcraft extends Game {
     this.net = link;
 
     link.addEventListener('open', () => {
-      link.send(JSON.stringify({ t: 'hello', name: this.playerName }));
+      link.send(JSON.stringify({ t: 'hello', name: this.playerName, skin: this.skinData }));
     });
     link.addEventListener('message', (e) => this.handleNetMessage(e.data));
     link.addEventListener('close', () => this.handleNetClose());
@@ -1259,19 +1274,20 @@ export default class Blockcraft extends Game {
       if (this.hostConns.has(pid)) return;
       const color = HOST_COLORS[this.hostConns.size % HOST_COLORS.length];
       const name = String(msg.name || 'Player').trim().slice(0, 16) || 'Player';
-      this.hostConns.set(pid, { conn, name, color });
+      const skin = isValidSkinData(msg.skin) ? msg.skin : null;
+      this.hostConns.set(pid, { conn, name, color, skin });
       conn.send({
         t: 'welcome', id: pid, seed: this.seed, edits: this.flattenEditsForNet(),
         players: [
-          { id: 'host', name: this.playerName, color: '#ffffff', x: this.pos.x, y: this.pos.y, z: this.pos.z, yaw: this.yaw },
+          { id: 'host', name: this.playerName, color: '#ffffff', skin: this.skinData, x: this.pos.x, y: this.pos.y, z: this.pos.z, yaw: this.yaw },
           ...[...this.hostConns].filter(([k]) => k !== pid).map(([k, v]) => {
             const p = this.netPeers.get(k);
-            return { id: k, name: v.name, color: v.color, x: p?.x ?? 0, y: p?.y ?? 0, z: p?.z ?? 0, yaw: p?.yaw ?? 0 };
+            return { id: k, name: v.name, color: v.color, skin: v.skin, x: p?.x ?? 0, y: p?.y ?? 0, z: p?.z ?? 0, yaw: p?.yaw ?? 0 };
           }),
         ],
       });
-      this.addNetPeer(pid, { name, color, x: this.pos.x, y: this.pos.y, z: this.pos.z, yaw: this.yaw });
-      this.hostBroadcast({ t: 'join', id: pid, name, color }, pid);
+      this.addNetPeer(pid, { name, color, skin, x: this.pos.x, y: this.pos.y, z: this.pos.z, yaw: this.yaw });
+      this.hostBroadcast({ t: 'join', id: pid, name, color, skin }, pid);
       this.hud.toast(`${name} joined`, 1200);
       this.refreshMultiplayerPanel();
       return;
@@ -1282,8 +1298,13 @@ export default class Blockcraft extends Game {
 
     if (msg.t === 'move') {
       const peer = this.netPeers.get(pid);
-      if (peer) { peer.tx = msg.x; peer.ty = msg.y; peer.tz = msg.z; peer.tyaw = msg.yaw; }
+      if (peer) { peer.tx = msg.x; peer.ty = msg.y; peer.tz = msg.z; peer.tyaw = msg.yaw; peer.tpitch = Number(msg.pitch) || 0; }
       this.hostBroadcast({ t: 'move', id: pid, x: msg.x, y: msg.y, z: msg.z, yaw: msg.yaw, pitch: msg.pitch }, pid);
+    } else if (msg.t === 'skin') {
+      const skin = isValidSkinData(msg.skin) ? msg.skin : null;
+      entry.skin = skin;
+      this.setPeerSkin(pid, skin);
+      this.hostBroadcast({ t: 'skin', id: pid, skin }, pid);
     } else if (msg.t === 'edit') {
       const x = msg.x | 0, y = msg.y | 0, z = msg.z | 0, b = msg.b | 0;
       if (y < 0 || y >= H || b < 0 || b >= BLOCKS.length) return;
@@ -1348,8 +1369,7 @@ export default class Blockcraft extends Game {
     if (!this.hostPeer) return;
     for (const entry of this.hostConns.values()) { try { entry.conn.close(); } catch { /* already closed */ } }
     this.hostConns.clear();
-    for (const peer of this.netPeers.values()) this.scene.remove(peer.mesh);
-    this.netPeers.clear();
+    this.clearNetPeers();
     try { this.hostPeer.destroy(); } catch { /* already gone */ }
     this.hostPeer = null;
     this.hostCode = null;
@@ -1371,8 +1391,7 @@ export default class Blockcraft extends Game {
     this.multiplayer = false;
     this.netStatus = 'offline';
     this.netMode = null;
-    for (const peer of this.netPeers.values()) this.scene.remove(peer.mesh);
-    this.netPeers.clear();
+    this.clearNetPeers();
     this.refreshMultiplayerPanel();
   }
 
@@ -1419,7 +1438,7 @@ export default class Blockcraft extends Game {
       this.refreshMultiplayerPanel();
     } else if (msg.t === 'join') {
       this.addNetPeer(msg.id, {
-        name: msg.name, color: msg.color, x: this.pos.x, y: this.pos.y, z: this.pos.z, yaw: this.yaw,
+        name: msg.name, color: msg.color, skin: msg.skin, x: this.pos.x, y: this.pos.y, z: this.pos.z, yaw: this.yaw,
       });
       this.hud.toast(`${msg.name} joined`, 1200);
       this.refreshMultiplayerPanel();
@@ -1430,7 +1449,9 @@ export default class Blockcraft extends Game {
       this.refreshMultiplayerPanel();
     } else if (msg.t === 'move') {
       const peer = this.netPeers.get(msg.id);
-      if (peer) { peer.tx = msg.x; peer.ty = msg.y; peer.tz = msg.z; peer.tyaw = msg.yaw; }
+      if (peer) { peer.tx = msg.x; peer.ty = msg.y; peer.tz = msg.z; peer.tyaw = msg.yaw; peer.tpitch = Number(msg.pitch) || 0; }
+    } else if (msg.t === 'skin') {
+      this.setPeerSkin(msg.id, isValidSkinData(msg.skin) ? msg.skin : null);
     } else if (msg.t === 'edit') {
       const y = msg.y | 0;
       const b = msg.b | 0;
@@ -1443,21 +1464,88 @@ export default class Blockcraft extends Game {
 
   addNetPeer(id, info) {
     if (this.netPeers.has(id)) return;
-    const mesh = buildAvatar(info.color);
-    mesh.position.set(info.x, info.y, info.z);
-    this.scene.add(mesh);
+    const avatar = buildSkinnedPlayer(defaultSkinCanvas(info.color));
+    avatar.group.position.set(info.x, info.y, info.z);
+    this.scene.add(avatar.group);
     this.netPeers.set(id, {
-      mesh, name: info.name, color: info.color,
+      avatar, name: info.name, color: info.color, skinToken: 0,
       x: info.x, y: info.y, z: info.z, yaw: info.yaw || 0,
       tx: info.x, ty: info.y, tz: info.z, tyaw: info.yaw || 0,
+      pitch: 0, tpitch: 0, walk: 0, phase: 0,
     });
+    this.setPeerSkin(id, isValidSkinData(info.skin) ? info.skin : null);
   }
 
   removeNetPeer(id) {
     const peer = this.netPeers.get(id);
     if (!peer) return;
-    this.scene.remove(peer.mesh);
+    this.scene.remove(peer.avatar.group);
+    peer.avatar.dispose();
     this.netPeers.delete(id);
+  }
+
+  clearNetPeers() {
+    for (const id of [...this.netPeers.keys()]) this.removeNetPeer(id);
+  }
+
+  /** Dresses a connected player in their imported skin (or, with `null`, back
+   *  in the plain default). Decoding is async, so a token guards against an
+   *  older, slower decode landing after a newer skin — or after they've left. */
+  async setPeerSkin(id, skinData) {
+    const peer = this.netPeers.get(id);
+    if (!peer) return;
+    const token = ++peer.skinToken;
+    let canvas;
+    try {
+      canvas = skinData ? await skinFromDataURL(skinData) : defaultSkinCanvas(peer.color);
+    } catch {
+      canvas = defaultSkinCanvas(peer.color);   // a bad image just means the default look, never a crash
+    }
+    const live = this.netPeers.get(id);
+    if (live !== peer || peer.skinToken !== token) return;
+    const next = buildSkinnedPlayer(canvas);
+    next.group.position.copy(peer.avatar.group.position);
+    next.group.rotation.y = peer.avatar.group.rotation.y;
+    this.scene.remove(peer.avatar.group);
+    peer.avatar.dispose();
+    peer.avatar = next;
+    this.scene.add(next.group);
+  }
+
+  /** Sets (or, with `null`, clears) this player's own skin: remembers it,
+   *  refreshes the preview, and — if connected or hosting — tells everyone. */
+  async setOwnSkin(canvas) {
+    this.skinCanvas = canvas;
+    this.skinData = canvas ? skinToDataURL(canvas) : null;
+    if (this.skinData && !isValidSkinData(this.skinData)) {   // a wildly noisy skin that won't fit the wire limit
+      this.skinData = null;
+      this.skinCanvas = null;
+      this.hud.toast('That skin is too detailed to send — try another', 2200);
+    }
+    saveSkin(this.skinData);
+    this.refreshSkinPreview();
+    if (this.net && this.net.readyState === 1) {
+      this.net.send(JSON.stringify({ t: 'skin', skin: this.skinData }));
+    } else if (this.hostPeer) {
+      this.hostBroadcast({ t: 'skin', id: 'host', skin: this.skinData });
+    }
+  }
+
+  refreshSkinPreview() {
+    const cv = this.mpPanel?.querySelector('.bc-skin-preview');
+    if (!cv) return;
+    drawSkinPreview(cv, this.skinCanvas || defaultSkinCanvas('#5ad1ff'));
+  }
+
+  /** Reads a picked/dropped skin file, applies it, and reports any problem. */
+  async importSkin(file) {
+    try {
+      const canvas = await importSkinFile(file);
+      await this.setOwnSkin(canvas);
+      if (this.skinData) this.hud.toast('SKIN IMPORTED', 1400);
+    } catch (err) {
+      this.hud.toast(err?.message || 'Could not read that skin', 2600);
+    }
   }
 
   /** Wires the Multiplayer panel: name field, server address field, and the
@@ -1481,6 +1569,29 @@ export default class Blockcraft extends Game {
     copyBtn?.addEventListener('pointerdown', (e) => e.stopPropagation());
 
     if (nameInput) nameInput.value = this.playerName;
+
+    const skinFile = panel.querySelector('.bc-skin-file');
+    const skinImport = panel.querySelector('.bc-skin-import');
+    const skinReset = panel.querySelector('.bc-skin-reset');
+    for (const el of [skinImport, skinReset, skinFile]) el?.addEventListener('pointerdown', (e) => e.stopPropagation());
+    skinImport?.addEventListener('click', () => skinFile?.click());
+    skinFile?.addEventListener('change', () => {
+      const f = skinFile.files?.[0];
+      skinFile.value = '';   // so picking the same file again still fires 'change'
+      if (f) this.importSkin(f);
+    });
+    skinReset?.addEventListener('click', () => { this.setOwnSkin(null); this.hud.toast('SKIN RESET', 1000); });
+    panel.addEventListener('dragover', (e) => { if (e.dataTransfer?.types?.includes('Files')) e.preventDefault(); });
+    panel.addEventListener('drop', (e) => {
+      const f = e.dataTransfer?.files?.[0];
+      if (!f) return;
+      e.preventDefault();
+      this.importSkin(f);
+    });
+    if (this.skinData && !this.skinCanvas) {   // restore last session's skin
+      skinFromDataURL(this.skinData).then((c) => { this.skinCanvas = c; this.refreshSkinPreview(); }, () => {});
+    }
+    this.refreshSkinPreview();
     if (serverInput) serverInput.value = loadLastServer();
 
     nameInput?.addEventListener('change', () => {
@@ -1658,20 +1769,6 @@ function buildClouds() {
     cloud.userData.speed = 0.7 + rng() * 1.1;
     group.add(cloud);
   }
-  return group;
-}
-
-/** A simple blocky stand-in for another connected player: a torso and a head,
- *  flat-shaded in their assigned colour. Positioned at their feet, the same
- *  convention this.pos uses, and rotated by updateNet() to face their yaw. */
-function buildAvatar(color) {
-  const group = new THREE.Group();
-  const mat = new THREE.MeshBasicMaterial({ color });
-  const body = new THREE.Mesh(new THREE.BoxGeometry(0.5, 1.2, 0.3), mat);
-  body.position.y = 0.9;
-  const head = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.42, 0.42), mat);
-  head.position.y = 1.75;
-  group.add(body, head);
   return group;
 }
 
@@ -1964,6 +2061,20 @@ function loadPlayerName() {
 
 function savePlayerName(name) {
   try { localStorage.setItem(MP_NAME_KEY, name); } catch { /* ignore */ }
+}
+
+function loadSkin() {
+  try {
+    const s = localStorage.getItem(MP_SKIN_KEY);
+    return isValidSkinData(s) ? s : null;
+  } catch { return null; }
+}
+
+function saveSkin(data) {
+  try {
+    if (data) localStorage.setItem(MP_SKIN_KEY, data);
+    else localStorage.removeItem(MP_SKIN_KEY);
+  } catch { /* ignore */ }
 }
 
 function loadLastServer() {
@@ -2314,6 +2425,13 @@ function multiplayerHtml() {
       .bc-mp input { width:100%; box-sizing:border-box; background:rgba(255,255,255,.08);
         border:1px solid rgba(255,255,255,.2); border-radius:5px; color:#fff;
         padding:4px 6px; font:inherit; }
+      .bc-mp .bc-skin-row { display:flex; gap:8px; align-items:flex-start; }
+      .bc-mp .bc-skin-preview { width:32px; height:64px; flex:none; image-rendering:pixelated;
+        background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.15); border-radius:4px; }
+      .bc-mp .bc-skin-btns { display:flex; flex-direction:column; gap:4px; flex:1; min-width:0; }
+      .bc-mp .bc-skin-btns button { padding:4px 0; border-radius:5px; border:1px solid rgba(255,255,255,.25);
+        background:rgba(255,255,255,.1); color:#fff; cursor:pointer; font:700 11px inherit; }
+      .bc-mp .bc-skin-hint { font-size:10px; line-height:1.3; color:rgba(255,255,255,.5); }
       .bc-mp .bc-net-row { display:flex; gap:4px; }
       .bc-mp .bc-net-row button { flex:1; padding:5px 0; border-radius:5px; border:1px solid rgba(255,255,255,.25);
         background:rgba(110,231,255,.22); color:#fff; cursor:pointer; font:700 12px inherit; }
@@ -2342,6 +2460,16 @@ function multiplayerHtml() {
     <div class="bc-mp">
       <div class="bc-label">Your name</div>
       <input class="bc-name-input" type="text" placeholder="Player" maxlength="16" />
+      <div class="bc-label">Skin</div>
+      <div class="bc-skin-row">
+        <canvas class="bc-skin-preview" width="48" height="96"></canvas>
+        <div class="bc-skin-btns">
+          <button class="bc-skin-import">Import skin…</button>
+          <button class="bc-skin-reset">Reset</button>
+          <span class="bc-skin-hint">A 64×64 Minecraft skin PNG. Drop one here too.</span>
+        </div>
+      </div>
+      <input class="bc-skin-file" type="file" accept="image/png" hidden />
       <div class="bc-label">Server address or host code</div>
       <input class="bc-server-input" type="text" placeholder="ws://host:7443 or a code" maxlength="80" />
       <div class="bc-net-row">
