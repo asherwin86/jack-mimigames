@@ -22,10 +22,10 @@ const ok = (label, cond, detail = '') => {
 };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-function startServer(extra = [], port = PORT, dataFile = DATA_FILE) {
+function startServer(extra = [], port = PORT, dataFile = DATA_FILE, env = {}) {
   const child = spawn(process.execPath, ['server/blockcraft-server.mjs', String(port), 'pvpseed', ...extra], {
     cwd: new URL('..', import.meta.url).pathname,
-    env: { ...process.env, DATA_FILE: dataFile },
+    env: { ...process.env, DATA_FILE: dataFile, ...env },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   child.log = '';
@@ -200,40 +200,40 @@ try {
 // ------------------------------------------------------------------ AI bots
 {
   const BPORT = PORT + 1;
-  const bots = startServer(['--pvp', '--bots=3'], BPORT, '');
+  const bots = startServer(['--pvp', '--bots=2'], BPORT, '', { MAX_BOTS: '6' });
   try {
     await sleep(700);
     const hp = await (await fetch(`http://127.0.0.1:${BPORT}/health`)).json();
     ok('no bots run while the arena is empty', hp.bots === 0, JSON.stringify(hp));
 
     const me = await client('Human', BPORT, { level: 'extreme' });
-    ok('welcome says the server has bots and echoes the level', me.welcome.bots === true && me.welcome.level === 'extreme');
+    ok('welcome says bots are on, echoes the level and the default count', me.welcome.bots === true && me.welcome.level === 'extreme' && me.welcome.botCount === 2);
     await sleep(400);
-    const joins = me.all.filter((m) => m.t === 'join' && /\[bot\]/.test(m.name));
-    ok('bots top the arena up to 3 fighters (2 bots + you)', joins.length === 2, `${joins.length} bots joined`);
-    ok('bots look like players (id, name, colour)', joins.every((j) => /^bot\d+$/.test(j.id) && j.color));
+    const joinsOf = (c) => c.all.filter((m) => m.t === 'join' && /\[bot\]/.test(m.name));
+    ok('a player who does not choose gets the default number of bots', joinsOf(me).length === 2, `${joinsOf(me).length} bots joined`);
+    ok('bots look like players (id, name, colour)', joinsOf(me).every((j) => /^bot\d+$/.test(j.id) && j.color));
 
     // Stand on land at spawn; the bots should walk to us and start swinging.
     const groundAtSpawn = heightAt(0, 0, me.welcome.seed, calibrateHeight(me.welcome.seed)) + 1;   // the same ground the server's bots walk on
     const stand = () => me.send({ t: 'move', x: 0.5, y: groundAtSpawn, z: 0.5, yaw: 0, pitch: 0 });
     stand();
     const iv = setInterval(stand, 200);
-    const first = () => me.all.find((m) => m.t === 'move' && m.id === joins[0].id);
+    const botMoves = () => me.all.filter((m) => m.t === 'move' && /^bot/.test(m.id));
+    const first = () => botMoves().find((m) => m.id === joinsOf(me)[0].id);
     await sleep(600);
     const d0 = Math.hypot(first().x - 0.5, first().z - 0.5);
-    ok('bots move (they are broadcast like any player)', me.all.filter((m) => m.t === 'move' && /^bot/.test(m.id)).length > 3);
+    ok('bots move (they are broadcast like any player)', botMoves().length > 3);
 
     const hurt1 = await me.wait((m) => m.t === 'hurt' && m.id === me.id && /^bot/.test(m.by), 25000).catch(() => null);
     ok('a bot walks up and hits the human', !!hurt1, hurt1 ? `hp ${hurt1.hp}` : 'never hit');
     ok('an EXTREME bot hits hard (3 hearts)', hurt1?.hp === 14, `hp ${hurt1?.hp}`);
-    const lastB = [...me.all].reverse().find((m) => m.t === 'move' && m.id === joins[0].id);
+    const lastB = [...botMoves()].reverse().find((m) => m.id === joinsOf(me)[0].id);
     ok('the bot closed the distance', Math.hypot(lastB.x - 0.5, lastB.z - 0.5) < d0, `${d0.toFixed(1)} → ${Math.hypot(lastB.x - 0.5, lastB.z - 0.5).toFixed(1)}`);
 
     // Drop to super easy: hits now do one half-heart.
     me.send({ t: 'level', level: 'supereasy' });
     await sleep(300);
     const before = me.all.filter((m) => m.t === 'hurt' && m.id === me.id).length;
-    const heal = await me.wait((m) => m.t === 'respawn' && m.id === me.id, 30000).catch(() => null);   // if the extreme bots finish us off, we respawn first
     let sample = null;
     for (let i = 0; i < 120 && !sample; i++) {
       await sleep(250);
@@ -244,12 +244,11 @@ try {
       }
     }
     ok('super easy bots only take half a heart', sample === 1, `hit for ${sample}`);
-    clearInterval(iv);
 
     // Humans hit bots too: swing at the nearest one until it drops.
     const nearestBot = () => {
       const last = (id) => [...me.all].reverse().find((m) => m.t === 'move' && m.id === id);
-      return joins.map((j) => ({ id: j.id, m: last(j.id) })).filter((b) => b.m)
+      return joinsOf(me).map((j) => ({ id: j.id, m: last(j.id) })).filter((x) => x.m)
         .sort((a, b) => Math.hypot(a.m.x - 0.5, a.m.z - 0.5) - Math.hypot(b.m.x - 0.5, b.m.z - 0.5))[0]?.id;
     };
     let killed = null;
@@ -261,10 +260,50 @@ try {
     ok('a human can kill a bot (and is credited)', !!killed && killed.byKills >= 1, killed ? `${killed.name} died` : 'no kill');
     const back = await me.wait((m) => m.t === 'respawn' && /^bot/.test(m.id), 6000).catch(() => null);
     ok('a killed bot respawns', !!back);
-    me.ws.close();
-    await sleep(400);
+
+    // ---- choosing how many: 0 to 50, within the server-wide cap (6 here)
+    const leavesBefore = me.count('leave');
+    me.send({ t: 'bots', n: 0 });
+    const zero = await me.wait((m) => m.t === 'bots' && m.have === 0);
+    await sleep(200);
+    ok('choosing 0 bots removes them all', zero.want === 0 && me.count('leave') - leavesBefore === 2, `${me.count('leave') - leavesBefore} left`);
+    const joinsBefore = joinsOf(me).length;
+    me.send({ t: 'bots', n: 999 });
+    const capped = await me.wait((m) => m.t === 'bots' && m.want === 50);
+    await sleep(300);
+    ok('asking for more than 50 is clamped to 50, then held to the server cap', capped.have === 6, `want ${capped.want}, have ${capped.have}`);
+    ok('the bots that were added really appear', joinsOf(me).length - joinsBefore === 6);
+
+    // A second player: the cap is used up, so they wait; then frees up when the first asks for fewer.
+    const two = await client('Second', BPORT, { bots: 0 });
+    ok('a player can ask for zero bots at join', two.welcome.botCount === 0);
+    two.send({ t: 'bots', n: 3 });
+    const none = await two.wait((m) => m.t === 'bots' && m.want === 3);
+    ok('with the server full a new request is told how many it really got', none.have === 0, `have ${none.have}`);
+    me.send({ t: 'bots', n: 2 });
+    const freed = await two.wait((m) => m.t === 'bots' && m.want === 3 && m.have === 3, 4000).catch(() => null);
+    ok('when the first player asks for fewer, the second gets theirs', !!freed);
+    await sleep(300);
+
+    // Bots belong to their player: standing right next to the first player's bots
+    // as a second player, you are never their target.
+    me.send({ t: 'level', level: 'extreme' });
+    const standTwo = () => two.send({ t: 'move', x: 0.6, y: groundAtSpawn, z: 0.5, yaw: 0, pitch: 0 });
+    const iv2 = setInterval(standTwo, 200);
+    two.send({ t: 'level', level: 'supereasy' });
+    const myHurtsBefore = me.all.filter((m) => m.t === 'hurt' && m.id === me.id).length;
+    await sleep(9000);
+    const myHurts = me.all.filter((m) => m.t === 'hurt' && m.id === me.id).length - myHurtsBefore;
+    const twoHurtBy = two.all.filter((m) => m.t === 'hurt' && m.id === two.id && /^bot/.test(m.by));
+    ok('the first player\'s bots keep attacking their own player', myHurts > 0, `${myHurts} hits`);
+    const foreignBots = new Set(two.welcome.players.filter((p) => /\[bot\]/.test(p.name)).map((p) => p.id));   // the first player's bots, already there when this one joined
+    ok('...and a second player standing beside them is never their target', foreignBots.size > 0 && twoHurtBy.every((m) => !foreignBots.has(m.by)), `${foreignBots.size} foreign bots, ${twoHurtBy.length} hits on the second player`);
+    clearInterval(iv); clearInterval(iv2);
+
+    me.ws.close(); two.ws.close();
+    await sleep(500);
     const hp2 = await (await fetch(`http://127.0.0.1:${BPORT}/health`)).json();
-    ok('bots leave when the last human does', hp2.bots === 0, JSON.stringify(hp2));
+    ok('bots leave with their player', hp2.bots === 0, JSON.stringify(hp2));
   } catch (e) {
     ok(e.message, false);
     console.log(bots.log);

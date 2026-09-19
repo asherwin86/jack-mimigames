@@ -24,15 +24,16 @@
  * client only ever says "I swung at player X"; the server checks reach,
  * cooldown and spawn protection and decides what that did.
  *
- * Bots (PvP only): so there's always someone to fight, the arena tops itself
- * up with AI fighters until BOT_FILL (default 4) fighters are present — bots
- * step aside as real players join, and none run while the arena is empty.
- * `--bots=N` / BOT_FILL=N sets the target; 0 turns them off. Each player picks
- * their own AI level (super easy / easy / medium / hard / extreme) and bots use the level of
- * whoever they're fighting; BOT_LEVEL sets the default for players who don't. Bots walk the
- * real terrain (it's generated from the seed by the same code the game uses),
- * chase the nearest human, and swing at them through the same hit rules as
- * everyone else — reach, cooldown, spawn protection.
+ * Bots (PvP only): AI fighters, chosen per player. Each player picks how many
+ * bots they want to play against (0 to 50) and how hard they fight (super easy /
+ * easy / medium / hard / extreme). Those bots belong to that player: they chase
+ * and swing at their owner only, at the owner's level, and leave with them —
+ * anyone can still shoot or hit them. `--bots=N` / BOTS=N is the default count for
+ * players who don't choose (3); MAX_BOTS caps the server-wide total (60) so a few
+ * players can't ask for more than the machine can run; BOT_LEVEL sets the default
+ * level. Bots walk the real terrain (generated from the seed by the same code the
+ * game uses) and swing through the same hit rules as everyone else — reach,
+ * cooldown, spawn protection.
  *
  * Built to be left running: it answers plain HTTP on the same port (GET / or
  * /health, which is what hosting platforms poll), drops connections that stop
@@ -60,7 +61,10 @@ const positional = args.filter((a) => !a.startsWith('--'));
 const PORT = Number(positional[0]) || Number(process.env.PORT) || 7443;
 const PVP = flags.has('--pvp') || /^(1|true|yes)$/i.test(process.env.PVP || '');
 const botsFlag = args.find((a) => a.startsWith('--bots='));
-const BOT_FILL = PVP ? Math.max(0, Math.min(16, Number(botsFlag ? botsFlag.slice(7) : process.env.BOT_FILL ?? 4) || 0)) : 0;
+const MAX_BOTS_PER_PLAYER = 50;
+const clampBots = (n) => Math.max(0, Math.min(MAX_BOTS_PER_PLAYER, Math.floor(Number(n)) || 0));
+const BOTS_DEFAULT = clampBots(botsFlag ? botsFlag.slice(7) : process.env.BOTS ?? 3);   // bots per player who doesn't choose
+const MAX_BOTS = PVP ? Math.max(0, Math.floor(Number(process.env.MAX_BOTS ?? 60)) || 0) : 0;   // server-wide ceiling; 0 = no bots at all
 const DATA_FILE = process.env.DATA_FILE || '';
 const BUILD_HEIGHT = TERRAIN_H;   // shared with the game via src/engine/terrainHeight.js
 const MAX_BLOCK_ID = 16;   // BLOCKS there has 17 entries, indices 0-16 — id 17 is out of range and would crash a client's mesher
@@ -243,6 +247,8 @@ wss.on('connection', (ws) => {
         ws, name, color, skin: validSkin(msg.skin), x: 0, y: 0, z: 0, yaw: 0, pitch: 0,
         hp: MAX_HP, dead: false, kills: 0, deaths: 0,
         level: validLevel(msg.level) || DEFAULT_LEVEL,
+        wantBots: msg.bots === undefined ? BOTS_DEFAULT : clampBots(msg.bots),
+        botsHave: 0,
         lastHitAt: 0, lastHurtAt: 0, protectUntil: Date.now() + SPAWN_PROTECT_MS, respawnTimer: null,
       });
 
@@ -251,7 +257,9 @@ wss.on('connection', (ws) => {
         id,
         seed: SEED,
         pvp: PVP,
-        bots: BOT_FILL > 0,
+        bots: MAX_BOTS > 0,
+        botsMax: MAX_BOTS_PER_PLAYER,
+        botCount: players.get(id).wantBots,
         level: players.get(id).level,
         maxHp: MAX_HP,
         hp: MAX_HP,
@@ -282,6 +290,8 @@ wss.on('connection', (ws) => {
     } else if (msg.t === 'skin') {
       player.skin = validSkin(msg.skin);
       broadcast(id, { t: 'skin', id, skin: player.skin });
+    } else if (msg.t === 'bots') {
+      if (MAX_BOTS > 0) { player.wantBots = clampBots(msg.n); syncBots(); }
     } else if (msg.t === 'level') {
       player.level = validLevel(msg.level) || player.level;
     } else if (msg.t === 'hit') {
@@ -372,7 +382,7 @@ function handleHit(attackerId, attacker, targetId, damage, kind = MELEE) {
     victim.dead = false;
     victim.hp = MAX_HP;
     victim.protectUntil = Date.now() + SPAWN_PROTECT_MS;
-    if (victim.isBot) Object.assign(victim, botSpawnPoint(), { kx: 0, kz: 0 });
+    if (victim.isBot) Object.assign(victim, botSpawnPoint(players.get(victim.owner)), { kx: 0, kz: 0 });
     broadcastAll({ t: 'respawn', id: targetId, hp: MAX_HP });
   }, RESPAWN_MS);
 }
@@ -395,29 +405,38 @@ let nextBotId = 1;
 /** Ground level a bot stands at for a world column: the top of the terrain. */
 const groundY = (x, z) => heightAt(Math.floor(x), Math.floor(z), SEED, TERRAIN) + 1;
 
-/** A random point on a ring around world spawn — where bots start and reappear. */
-function botSpawnPoint() {
+/** A random dry-land point on a ring around `near` (a player) — or world
+ *  spawn if there isn't one — where a bot starts and reappears. The ring
+ *  widens with the number of bots so a crowd doesn't all stack on one spot. */
+function botSpawnPoint(near) {
+  const cx = near ? near.x : 0.5;
+  const cz = near ? near.z : 0.5;
+  const spread = 14 + Math.min(30, (near?.botsHave || 0) * 0.6);
   for (let i = 0; i < 40; i++) {   // keep trying until it lands on dry ground
     const a = Math.random() * Math.PI * 2;
-    const r = 12 + Math.random() * 14;
-    const x = 0.5 + Math.cos(a) * r;
-    const z = 0.5 + Math.sin(a) * r;
+    const r = 12 + Math.random() * spread;
+    const x = cx + Math.cos(a) * r;
+    const z = cz + Math.sin(a) * r;
     if (groundY(x, z) - 1 >= SEA_LEVEL) return { x, z, y: groundY(x, z) };
   }
-  return { x: 0.5, z: 0.5, y: groundY(0.5, 0.5) };
+  return { x: cx, z: cz, y: groundY(cx, cz) };
 }
 
-function addBot() {
+const botsOf = (ownerId) => [...players].filter(([, p]) => p.isBot && p.owner === ownerId).map(([id]) => id);
+
+function addBot(ownerId) {
+  const owner = players.get(ownerId);
   const id = `bot${nextBotId++}`;
-  const used = new Set([...players.values()].map((p) => p.name));
-  const base = BOT_NAMES.find((n) => !used.has(`${n} [bot]`)) || `Bot${nextBotId}`;
-  const name = `${base} [bot]`;
+  const base = BOT_NAMES[(nextBotId - 2) % BOT_NAMES.length];
+  const lap = Math.floor((nextBotId - 2) / BOT_NAMES.length);
+  const name = `${base}${lap ? ` ${lap + 1}` : ''} [bot]`;
   const color = COLORS[(nextBotId - 1) % COLORS.length];
-  const at = botSpawnPoint();
+  const at = botSpawnPoint(owner);
   players.set(id, {
-    ws: null, isBot: true, name, color, skin: null, x: at.x, y: at.y, z: at.z, yaw: 0, pitch: 0,
+    ws: null, isBot: true, owner: ownerId, name, color, skin: null, x: at.x, y: at.y, z: at.z, yaw: 0, pitch: 0,
     hp: MAX_HP, dead: false, kills: 0, deaths: 0, kx: 0, kz: 0, phase: Math.random() * 6.28, fightLevel: DEFAULT_LEVEL,
     lastHitAt: 0, lastHurtAt: 0, nextSwingIn: 0, protectUntil: Date.now() + SPAWN_PROTECT_MS, respawnTimer: null,
+    sentX: NaN, sentZ: NaN, sentYaw: NaN,
   });
   broadcast(id, { t: 'join', id, name, color, skin: null });
   return id;
@@ -431,14 +450,28 @@ function removeBot(id) {
   broadcast(id, { t: 'leave', id });
 }
 
-/** Keeps the arena stocked: bots fill in up to BOT_FILL fighters, step aside
- *  as people join, and all leave when the last person does. */
+/** Gives every player the bots they asked for, within the server-wide cap:
+ *  players are served in join order, so if the ceiling is hit the later ones
+ *  get fewer (they're told how many they actually have). Bots whose owner has
+ *  gone are removed, and nothing runs at all while the arena is empty. */
 function syncBots() {
-  const humans = humanCount();
-  const want = humans === 0 ? 0 : Math.max(0, BOT_FILL - humans);
-  const bots = [...players].filter(([, p]) => p.isBot).map(([id]) => id);
-  while (bots.length > want) removeBot(bots.pop());
-  for (let i = bots.length; i < want; i++) addBot();
+  if (MAX_BOTS <= 0) return;
+  for (const [id, p] of [...players]) if (p.isBot && !players.has(p.owner)) removeBot(id);
+  let room = MAX_BOTS;
+  for (const [id, p] of players) {
+    if (p.isBot) continue;
+    const want = Math.min(p.wantBots, room);
+    room -= want;
+    const mine = botsOf(id);
+    p.botsHave = mine.length;   // (the spawn ring widens with this)
+    while (mine.length > want) removeBot(mine.pop());
+    while (mine.length < want) { mine.push(addBot(id)); p.botsHave = mine.length; }
+    p.botsHave = mine.length;
+    if (p.ws && p.notifiedBots !== `${p.wantBots}/${p.botsHave}`) {
+      p.notifiedBots = `${p.wantBots}/${p.botsHave}`;
+      send(p.ws, { t: 'bots', want: p.wantBots, have: p.botsHave });
+    }
+  }
 }
 
 /** Whether a bot can step to (nx, nz): dry land, and not a wall. */
@@ -453,13 +486,12 @@ function botTick() {
   for (const [id, bot] of players) {
     if (!bot.isBot || bot.dead) continue;
 
-    // Nearest living human is the target; how it fights depends on that human's level.
+    // A bot only ever fights the player who asked for it, at that player's level.
+    const owner = players.get(bot.owner);
     let target = null;
-    let best = Infinity;
-    for (const [pid, p] of players) {
-      if (p.isBot || p.dead) continue;
-      const d = Math.hypot(p.x - bot.x, p.z - bot.z);
-      if (d < best && d <= LEVELS[p.level].sight) { best = d; target = { id: pid, p, d }; }
+    if (owner && !owner.dead) {
+      const d = Math.hypot(owner.x - bot.x, owner.z - bot.z);
+      if (d <= LEVELS[owner.level].sight) target = { id: bot.owner, p: owner, d };
     }
     const L = LEVELS[target ? target.p.level : DEFAULT_LEVEL];
     bot.fightLevel = target ? target.p.level : DEFAULT_LEVEL;
@@ -505,10 +537,15 @@ function botTick() {
     if (canStep(bot, nx, nz)) { bot.x = nx; bot.z = nz; }
     bot.y += (groundY(bot.x, bot.z) - bot.y) * Math.min(1, dt * 12);
 
-    broadcastAll({ t: 'move', id, x: bot.x, y: bot.y, z: bot.z, yaw: bot.yaw, pitch: bot.pitch });
+    // Only tell everyone when it actually moved or turned — with dozens of bots,
+    // idle ones shouldn't cost bandwidth.
+    if (Math.abs(bot.x - bot.sentX) > 0.02 || Math.abs(bot.z - bot.sentZ) > 0.02 || Math.abs(bot.yaw - bot.sentYaw) > 0.02 || bot.y !== bot.sentY) {
+      bot.sentX = bot.x; bot.sentZ = bot.z; bot.sentYaw = bot.yaw; bot.sentY = bot.y;
+      broadcastAll({ t: 'move', id, x: bot.x, y: bot.y, z: bot.z, yaw: bot.yaw, pitch: bot.pitch });
+    }
   }
 }
-if (BOT_FILL > 0) setInterval(botTick, BOT_TICK_MS).unref();
+if (MAX_BOTS > 0) setInterval(botTick, BOT_TICK_MS).unref();
 
 /* ------------------------------------------------------------ upkeep */
 
@@ -541,7 +578,7 @@ process.on('SIGINT', () => shutdown('SIGINT'));
 httpServer.listen(PORT, '0.0.0.0', () => {
   log(`Blockcraft ${PVP ? 'PvP ' : ''}server listening on ws://0.0.0.0:${PORT} (health check: http://localhost:${PORT}/health)`);
   log(`World seed: ${SEED}`);
-  if (BOT_FILL > 0) log(`AI bots: topping the arena up to ${BOT_FILL} fighters whenever someone is in it`);
+  if (MAX_BOTS > 0) log(`AI bots: each player picks 0-${MAX_BOTS_PER_PLAYER} (default ${BOTS_DEFAULT}), at most ${MAX_BOTS} on the server`);
   if (DATA_FILE) log(`Saving to ${DATA_FILE} (${edits.size} block edits loaded)`);
   else log('No DATA_FILE set — the world resets whenever this restarts.');
   log(`Share ws://<this machine's address>:${PORT} with whoever you want to play with.`);

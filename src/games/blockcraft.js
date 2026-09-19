@@ -50,6 +50,9 @@ const PVP_SERVER_URL = (import.meta.env && import.meta.env.VITE_PVP_SERVER) ?? '
 const REGISTRY_URL = PVP_SERVER_URL.replace(/^ws/i, 'http').replace(/\/+$/, '');
 const MP_LIST_KEY = 'mg.blockcraft.listPublic';
 const MP_LEVEL_KEY = 'mg.blockcraft.aiLevel';
+const MP_BOTS_KEY = 'mg.blockcraft.botCount';
+const DEFAULT_BOTS = 3;
+const MAX_BOTS_CHOICE = 50;   // per player, 0 to 50 — the server also caps the total across everyone
 // How hard the PvP arena's AI bots fight *you* — each player picks their own,
 // and the server applies it to whichever bots are chasing that player.
 const AI_LEVELS = [['supereasy', 'Super easy'], ['easy', 'Easy'], ['medium', 'Medium'], ['hard', 'Hard'], ['extreme', 'Extreme']];
@@ -213,6 +216,8 @@ export default class Blockcraft extends Game {
     this.hostCode = null;
     this.aiLevel = loadAiLevel();       // 'supereasy' … 'extreme'
     this.hasBots = false;               // does the PvP server we're on run AI bots?
+    this.botCount = loadBotCount();     // how many bots you want to fight (0-50)
+    this.botsHave = null;               // how many the server actually gave you (it has a cap)
     this.listPublic = loadListPublic();   // announce a browser/desktop-hosted game on the public list?
     this.announceTimer = null;
     // 'client' / 'host' / null — set the instant Connect/Host is clicked,
@@ -1555,7 +1560,7 @@ export default class Blockcraft extends Game {
     this.net = link;
 
     link.addEventListener('open', () => {
-      link.send(JSON.stringify({ t: 'hello', name: this.playerName, skin: this.skinData, level: this.aiLevel }));
+      link.send(JSON.stringify({ t: 'hello', name: this.playerName, skin: this.skinData, level: this.aiLevel, bots: this.botCount }));
     });
     link.addEventListener('message', (e) => this.handleNetMessage(e.data));
     link.addEventListener('close', () => this.handleNetClose());
@@ -1898,6 +1903,7 @@ export default class Blockcraft extends Game {
         if (y >= 0 && y < H && id >= 0 && id < BLOCKS.length) this.applyRemoteEdit(x, y, z, id);
       }
       this.hasBots = !!msg.bots;
+      this.botsHave = null;
       this.pvp = !!msg.pvp;   // before the players are added, so their name tags know whether to show health
       this.flying = false;    // no flying in the arena — you drop to the ground on joining
       this.setFlyButton();
@@ -1926,6 +1932,9 @@ export default class Blockcraft extends Game {
     } else if (msg.t === 'move') {
       const peer = this.netPeers.get(msg.id);
       if (peer) { peer.tx = msg.x; peer.ty = msg.y; peer.tz = msg.z; peer.tyaw = msg.yaw; peer.tpitch = Number(msg.pitch) || 0; }
+    } else if (msg.t === 'bots') {
+      this.botsHave = Number(msg.have) | 0;
+      this.refreshBotsRow();
     } else if (msg.t === 'arrow') {
       this.spawnRemoteArrow(msg);
     } else if (msg.t === 'skin') {
@@ -2152,6 +2161,7 @@ export default class Blockcraft extends Game {
   resetPvp() {
     this.pvp = false;
     this.hasBots = false;
+    this.botsHave = null;
     this.setFlyButton();
     this.dead = false;
     this.hp = this.maxHp = 20;
@@ -2272,6 +2282,21 @@ export default class Blockcraft extends Game {
         this.hud.toast(`AI level: ${AI_LEVELS.find(([v]) => v === this.aiLevel)?.[1] ?? this.aiLevel}`, 1200);
       });
     }
+    const botsRange = panel.querySelector('.bc-bots');
+    const botsOut = panel.querySelector('.bc-bots-out');
+    botsRange?.addEventListener('pointerdown', (e) => e.stopPropagation());
+    botsRange?.addEventListener('keydown', (e) => e.stopPropagation());
+    if (botsRange) {
+      botsRange.value = String(this.botCount);
+      if (botsOut) botsOut.textContent = String(this.botCount);
+      botsRange.addEventListener('input', () => { if (botsOut) botsOut.textContent = botsRange.value; });
+      botsRange.addEventListener('change', () => {
+        this.botCount = Math.max(0, Math.min(MAX_BOTS_CHOICE, Number(botsRange.value) | 0));
+        saveBotCount(this.botCount);
+        if (this.net && this.net.readyState === 1) this.net.send(JSON.stringify({ t: 'bots', n: this.botCount }));
+        this.refreshBotsRow();
+      });
+    }
     srvRefresh?.addEventListener('click', () => this.refreshServerList());
     srvList?.addEventListener('click', (e) => {
       const target = e.target.closest?.('button[data-join]');
@@ -2345,6 +2370,16 @@ export default class Blockcraft extends Game {
   /** Re-renders the connect button label, status line, and connected-player
    *  list — called on every state change (connecting/online/offline, peers
    *  joining or leaving). */
+  /** The bots slider's note: says so when the server couldn't give you every
+   *  bot you asked for (it caps the total across everyone playing). */
+  refreshBotsRow() {
+    const note = this.mpPanel?.querySelector('.bc-bots-note');
+    if (!note) return;
+    note.textContent = this.botsHave !== null && this.botsHave < this.botCount
+      ? `Server is full of bots — you have ${this.botsHave} of ${this.botCount}`
+      : '';
+  }
+
   refreshMultiplayerPanel() {
     const panel = this.mpPanel;
     if (!panel) return;
@@ -2355,6 +2390,8 @@ export default class Blockcraft extends Game {
     const list = panel.querySelector('.bc-mp-players');
     const levelRow = panel.querySelector('.bc-level-row');
     if (levelRow) levelRow.hidden = !(this.pvp && this.hasBots && this.net);
+    const botsRow = panel.querySelector('.bc-bots-row');
+    if (botsRow) { botsRow.hidden = !(this.pvp && this.hasBots && this.net); this.refreshBotsRow(); }
     if (connectBtn) {
       connectBtn.textContent = this.net ? 'Disconnect' : 'Connect';
       connectBtn.classList.toggle('on', !!this.net);
@@ -2380,9 +2417,14 @@ export default class Blockcraft extends Game {
       const score = (k, d) => (this.pvp ? `<span class="bc-mp-score">⚔${k} ☠${d}</span>` : '');
       const me = this.pvp && this.net
         ? `<div class="bc-mp-player"><span class="bc-mp-dot" style="background:#fff"></span>You${score(this.kills, this.deaths)}</div>` : '';
-      list.innerHTML = me + [...this.netPeers.values()].map((p) => (
+      // Bots (there can be dozens) collapse into one line; people are listed individually.
+      const all = [...this.netPeers].map(([id, p]) => ({ id, p }));
+      const people = all.filter(({ id }) => !String(id).startsWith('bot'));
+      const botCount = all.length - people.length;
+      list.innerHTML = me + people.map(({ p }) => (
         `<div class="bc-mp-player"><span class="bc-mp-dot" style="background:${escapeHtml(p.color)}"></span>${escapeHtml(p.name)}${score(p.kills, p.deaths)}</div>`
-      )).join('');
+      )).join('') + (botCount
+        ? `<div class="bc-mp-player"><span class="bc-mp-dot" style="background:#888"></span>${botCount} bot${botCount === 1 ? '' : 's'}</div>` : '');
     }
   }
 
@@ -2729,6 +2771,17 @@ function saveSkin(data) {
     if (data) localStorage.setItem(MP_SKIN_KEY, data);
     else localStorage.removeItem(MP_SKIN_KEY);
   } catch { /* ignore */ }
+}
+
+function loadBotCount() {
+  try {
+    const n = Number(localStorage.getItem(MP_BOTS_KEY));
+    return localStorage.getItem(MP_BOTS_KEY) !== null && Number.isFinite(n) ? Math.max(0, Math.min(MAX_BOTS_CHOICE, Math.floor(n))) : DEFAULT_BOTS;
+  } catch { return DEFAULT_BOTS; }
+}
+
+function saveBotCount(n) {
+  try { localStorage.setItem(MP_BOTS_KEY, String(n)); } catch { /* ignore */ }
 }
 
 function loadAiLevel() {
@@ -3125,6 +3178,12 @@ function multiplayerHtml() {
       .bc-mp .bc-pvp-join { padding:6px 0; border-radius:5px; border:1px solid rgba(255,120,110,.6);
         background:rgba(255,90,80,.28); color:#fff; cursor:pointer; font:800 12px inherit; }
       .bc-mp .bc-net-row { display:flex; gap:4px; }
+      .bc-mp .bc-bots-row { display:flex; flex-direction:column; gap:3px; font-size:11px; }
+      .bc-mp .bc-bots-row[hidden], .bc-mp .bc-level-row[hidden] { display:none; }
+      .bc-mp .bc-bots-top { display:flex; justify-content:space-between; color:rgba(255,255,255,.8); }
+      .bc-mp .bc-bots-out { font-weight:800; color:#ffd83f; }
+      .bc-mp .bc-bots { width:100%; accent-color:#ffd83f; margin:0; }
+      .bc-mp .bc-bots-note { font-size:10px; color:rgba(255,180,90,.9); min-height:0; }
       .bc-mp .bc-level-row { display:flex; align-items:center; justify-content:space-between; gap:8px; font-size:11px; }
       .bc-mp .bc-level-row label { color:rgba(255,255,255,.8); }
       .bc-mp .bc-level { background:rgba(255,255,255,.1); color:#fff; border:1px solid rgba(255,255,255,.25);
@@ -3189,6 +3248,11 @@ function multiplayerHtml() {
         <button class="bc-host">Host</button>
       </div>
       ${REGISTRY_URL ? '<label class="bc-list-row"><input type="checkbox" class="bc-list-public" /> List my hosted game publicly</label>' : ''}
+      <div class="bc-bots-row" hidden>
+        <div class="bc-bots-top"><label>Bots to fight</label><output class="bc-bots-out">3</output></div>
+        <input type="range" class="bc-bots" min="0" max="${MAX_BOTS_CHOICE}" step="1" value="3" />
+        <div class="bc-bots-note"></div>
+      </div>
       <div class="bc-level-row" hidden>
         <label>AI level</label>
         <select class="bc-level">${AI_LEVELS.map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select>

@@ -7,7 +7,7 @@ export const CHANGELOG = [
   },
   {
     title: 'PvP: AI opponents',
-    detail: 'The PvP arena now fills up with AI bots so there is always someone to fight — pick Super easy, Easy, Medium, Hard or Extreme. They step aside as real players join, so it is AI or people, your call.',
+    detail: 'The PvP arena has AI bots so there is always someone to fight. Choose how many (0 to 50) with the Bots slider and how tough — Super easy, Easy, Medium, Hard or Extreme. Your bots chase only you, so AI or real people, your call.',
   },
   {
     title: 'Tidier menu',
