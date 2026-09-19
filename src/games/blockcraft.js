@@ -80,7 +80,16 @@ const BLOCKS = [
 const AIR = 0;
 const WATER = 7;
 const SWORD = 'sword';   // the one non-block hotbar entry — see updateSword() and interact()
-const HOTBAR = [SWORD, 1, 3, 10, 8, 9, 5, 6, 4, 11];
+const BOW = 'bow';
+const HOTBAR = [SWORD, BOW, 1, 3, 10, 8, 9, 5, 6, 4, 11];
+const HOTBAR_KEYS = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8', 'Digit9', 'Digit0', 'Minus'];
+const FIRST_BLOCK_SLOT = HOTBAR.findIndex((h) => typeof h === 'number');   // where you start, so digging works straight away
+// Bow: hold to draw, release to loose. Speed and damage scale with the draw.
+const BOW_DRAW_TIME = 0.9;        // seconds to a full draw
+const BOW_MIN_DRAW = 0.2;         // less than this and the arrow just drops out — no shot
+const ARROW_GRAVITY = 20;
+const ARROW_LIFE = 14;            // seconds a stuck arrow stays before fading
+const MAX_ARROWS = 40;
 
 // Colours handed out to joining players — same palette server/blockcraft-server.mjs
 // uses, so a player's dot/avatar colour doesn't depend on which kind of
@@ -149,6 +158,10 @@ export default class Blockcraft extends Game {
 
     this.sword = this.buildSword();
     this.swingT = 0;   // 0 = at rest, else progress 0..1 through a swing
+    this.bow = this.buildBow();
+    this.bowCharge = 0;   // 0..1 while the draw button is held
+    this.bowCool = 0;
+    this.arrows = [];
 
     // Darkens over the block being mined, so a long dig shows its progress.
     this.crack = new THREE.Mesh(
@@ -159,7 +172,7 @@ export default class Blockcraft extends Game {
     this.add(this.crack);
     this.debris = new Burst(this.scene, 90, 0.13);
 
-    this.slot = 1;   // start on the first block, not the sword (slot 0), so digging works straight away
+    this.slot = FIRST_BLOCK_SLOT;
     this.cool = 0;
     this.lastJump = -1;
     this.mineKey = null;    // which block the current dig is against
@@ -276,12 +289,12 @@ export default class Blockcraft extends Game {
     const touchDevice = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
     if (this.pvp) {
       return touchDevice
-        ? 'Left stick to move · drag the right side to look · MINE swings your sword · flying is off in PvP'
-        : 'Click to capture the mouse · WASD + Space · left click swings the sword (1) · flying is off in PvP';
+        ? 'Left stick to move · drag the right side to look · MINE swings the sword / draws the bow · flying is off in PvP'
+        : 'Click to capture the mouse · WASD + Space · left click swings the sword (1) · hold to draw the bow (2), release to shoot · flying is off in PvP';
     }
     return touchDevice
       ? 'Left stick to move · drag the right side to look · MINE / PLACE / UP · tap FLY to toggle flying'
-      : 'Click to capture the mouse · WASD + Space · hold left click to mine, right click places · middle click copies a block · 1-0 or scroll (1 is the sword) · F to fly · or plug in a controller';
+      : 'Click to capture the mouse · WASD + Space · hold left click to mine, right click places · middle click copies a block · 1-0 / - or scroll (1 sword, 2 bow: hold to draw) · F to fly · or plug in a controller';
   }
 
   /**
@@ -848,6 +861,8 @@ export default class Blockcraft extends Game {
     this.camera.position.set(this.pos.x, this.pos.y + 1.62, this.pos.z);
     this.camera.rotation.set(this.pitch, this.yaw, 0, 'YXZ');
     this.updateSword(dt);
+    this.updateBow(dt);
+    this.updateArrows(dt);
 
     // A little FOV kick while sprinting; the speed reads better than the number.
     const wantFov = this.sprinting ? 82 : 75;
@@ -1096,6 +1111,209 @@ export default class Blockcraft extends Game {
     model.scale.setScalar(0.8);
   }
 
+  /** The first-person bow: a grip, two limbs, a string that runs to a nock
+   *  point (pulled back as you draw), and an arrow that appears once drawn.
+   *  Same overlay treatment as the sword — drawn on top, never inside a wall. */
+  buildBow() {
+    const mat = (color) => new THREE.MeshBasicMaterial({ color, depthTest: false, fog: false });
+    const box = (w, h, d, color) => {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat(color));
+      m.renderOrder = 999;
+      return m;
+    };
+    const model = new THREE.Group();
+    const grip = box(0.06, 0.16, 0.06, 0x5a3a1a);
+    // Limbs sweep back from the grip toward the string tips, like a real recurve.
+    const upper = box(0.045, 0.3, 0.05, 0x8b5a2b);
+    upper.position.set(0, 0.2, 0.03); upper.rotation.x = 0.22;
+    const lower = box(0.045, 0.3, 0.05, 0x8b5a2b);
+    lower.position.set(0, -0.2, 0.03); lower.rotation.x = -0.22;
+    const stringA = box(0.012, 1, 0.012, 0xf2efe4);   // unit-tall; posed by segment() each frame
+    const stringB = box(0.012, 1, 0.012, 0xf2efe4);
+    const shaft = box(0.02, 0.02, 0.55, 0xb08a52);
+    const tip = box(0.05, 0.05, 0.08, 0xcfd6e4);
+    const fletch = box(0.05, 0.05, 0.08, 0xe04a4a);
+    shaft.visible = tip.visible = fletch.visible = false;
+    model.add(grip, upper, lower, stringA, stringB, shaft, tip, fletch);
+    const rig = new THREE.Group();
+    rig.add(model);
+    rig.visible = false;
+    rig.userData = { model, stringA, stringB, shaft, tip, fletch };
+    this.add(rig);
+    return rig;
+  }
+
+  /** Shows the bow while it's selected; pulls the string and nocks an arrow
+   *  in step with the draw; and keeps it carried with the camera. */
+  updateBow(dt) {
+    const show = this.playing && !this.dead && HOTBAR[this.slot] === BOW;
+    this.bow.visible = show;
+    // The little draw meter under the crosshair (its element is rebuilt with the HUD, so re-find it if stale).
+    if (!this.chargeEl?.isConnected) this.chargeEl = this.hud.$panel?.querySelector('.bc-charge') ?? null;
+    if (this.chargeEl) {
+      const showMeter = show && this.bowCharge > 0;
+      if (this.chargeEl.hidden === showMeter) this.chargeEl.hidden = !showMeter;
+      if (showMeter) this.chargeEl.firstElementChild.style.width = `${Math.round(this.bowCharge * 100)}%`;
+    }
+    if (!show) return;
+    const { model, stringA, stringB, shaft, tip, fletch } = this.bow.userData;
+    const k = this.bowCharge;
+    this.bow.position.copy(this.camera.position);
+    this.bow.quaternion.copy(this.camera.quaternion);
+    // Held slightly right and low; when drawing it drifts toward the middle.
+    model.position.set(0.3 - k * 0.1, -0.28 + k * 0.03, -0.6 - k * 0.02);
+    model.rotation.set(0, 0.12 - k * 0.1, 0);
+    model.scale.setScalar(0.8);
+    // String: tip -> nock -> tip, the nock drawn back toward the eye.
+    const nockZ = 0.05 + k * 0.3;
+    const top = new THREE.Vector3(0, 0.33, 0.1);
+    const bottom = new THREE.Vector3(0, -0.33, 0.1);
+    const nock = new THREE.Vector3(0, 0, nockZ);
+    const seg = (m, a, b) => {
+      const d = b.clone().sub(a);
+      m.position.copy(a).addScaledVector(d, 0.5);
+      m.scale.set(1, d.length(), 1);
+      m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize());
+    };
+    seg(stringA, top, nock);
+    seg(stringB, nock, bottom);
+    const loaded = k > 0.02;
+    shaft.visible = tip.visible = fletch.visible = loaded;
+    if (loaded) {
+      shaft.position.set(0, 0, nockZ - 0.27);
+      tip.position.set(0, 0, nockZ - 0.58);
+      fletch.position.set(0, 0, nockZ - 0.02);
+    }
+  }
+
+  /** Looses an arrow along the view direction. Speed grows with the draw;
+   *  it flies, drops, and either sticks in a block or (PvP) hits a player. */
+  fireArrow(charge) {
+    const dir = new THREE.Vector3(0, 0, -1).applyEuler(new THREE.Euler(this.pitch, this.yaw, 0, 'YXZ'));
+    const speed = 20 + 40 * charge;
+    const pos = new THREE.Vector3(this.pos.x, this.pos.y + 1.62, this.pos.z).addScaledVector(dir, 0.6);
+    const vel = dir.multiplyScalar(speed);
+    this.spawnArrow(pos, vel, true, charge);
+    this.bowCool = 0.35;
+    this.audio.tone(140 + 200 * charge, 0.09, { type: 'triangle', gain: 0.1 });
+    const shot = { t: 'shoot', x: pos.x, y: pos.y, z: pos.z, vx: vel.x, vy: vel.y, vz: vel.z };
+    if (this.net && this.net.readyState === 1) this.net.send(JSON.stringify(shot));
+    else if (this.hostPeer) this.hostBroadcast({ t: 'arrow', id: 'host', x: pos.x, y: pos.y, z: pos.z, vx: vel.x, vy: vel.y, vz: vel.z });
+  }
+
+  /** An arrow someone else fired: just for show, it never hurts anyone. */
+  spawnRemoteArrow(m) {
+    const v = [m.x, m.y, m.z, m.vx, m.vy, m.vz].map(Number);
+    if (!v.every(Number.isFinite) || Math.hypot(v[3], v[4], v[5]) > 70) return;
+    this.spawnArrow(new THREE.Vector3(v[0], v[1], v[2]), new THREE.Vector3(v[3], v[4], v[5]), false, 0);
+  }
+
+  spawnArrow(pos, vel, own, charge) {
+    const group = new THREE.Group();
+    const shaftMat = new THREE.MeshBasicMaterial({ color: 0xb08a52 });
+    const shaft = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, 0.9), shaftMat);
+    const tip = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 0.16), new THREE.MeshBasicMaterial({ color: 0xcfd6e4 }));
+    tip.position.z = -0.5;
+    const fletch = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.12, 0.14), new THREE.MeshBasicMaterial({ color: 0xe04a4a }));
+    fletch.position.z = 0.42;
+    group.add(shaft, tip, fletch);
+    group.position.copy(pos);
+    this.orientArrow(group, vel);
+    this.scene.add(group);
+    this.arrows.push({ group, pos: pos.clone(), vel: vel.clone(), own, charge, stuck: false, life: ARROW_LIFE });
+    while (this.arrows.length > MAX_ARROWS) this.removeArrow(this.arrows[0]);
+  }
+
+  orientArrow(group, vel) {
+    if (vel.lengthSq() > 1e-6) group.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), vel.clone().normalize());
+  }
+
+  removeArrow(a) {
+    this.scene.remove(a.group);
+    a.group.traverse((o) => { o.geometry?.dispose?.(); o.material?.dispose?.(); });
+    const i = this.arrows.indexOf(a);
+    if (i >= 0) this.arrows.splice(i, 1);
+  }
+
+  /** Flies every arrow: gravity, then a swept check so a fast one can't
+   *  tunnel through a wall or a player between two frames. Own arrows in PvP
+   *  report a hit on a player to the server (which decides the damage). */
+  updateArrows(dt) {
+    for (const a of [...this.arrows]) {
+      if (a.stuck) {
+        a.life -= dt;
+        if (a.life <= 0) this.removeArrow(a);
+        continue;
+      }
+      a.life -= dt;
+      if (a.life < ARROW_LIFE - 12) { this.removeArrow(a); continue; }   // 12s of flight at most
+      a.vel.y -= ARROW_GRAVITY * dt;
+      const dist = a.vel.length() * dt;
+      const steps = Math.max(1, Math.ceil(dist / 0.3));
+      const stepV = a.vel.clone().multiplyScalar(dt / steps);
+      let done = false;
+      for (let i = 0; i < steps && !done; i++) {
+        const next = a.pos.clone().add(stepV);
+        // Players first: the segment prev -> next against each body box.
+        if (a.own && this.pvp && this.net) {
+          const victim = this.arrowVictim(a.pos, next);
+          if (victim) {
+            if (this.net.readyState === 1) this.net.send(JSON.stringify({ t: 'hit', target: victim, w: BOW, c: a.charge }));
+            this.audio.tone(520, 0.05, { type: 'square', gain: 0.1 });
+            this.removeArrow(a);
+            done = true;
+            break;
+          }
+        }
+        if (isSolid(this.get(Math.floor(next.x), Math.floor(next.y), Math.floor(next.z)))) {
+          a.stuck = true;   // buried in the block it hit
+          a.life = ARROW_LIFE;
+          a.pos.add(stepV.clone().multiplyScalar(0.5));
+          a.group.position.copy(a.pos);
+          done = true;
+          break;
+        }
+        a.pos.copy(next);
+        if (a.pos.y < -30) { this.removeArrow(a); done = true; }
+      }
+      if (done) continue;
+      a.group.position.copy(a.pos);
+      this.orientArrow(a.group, a.vel);
+    }
+  }
+
+  /** Id of the nearest living player whose body box the segment a -> b passes through. */
+  arrowVictim(a, b) {
+    const d = b.clone().sub(a);
+    const len = d.length();
+    if (len < 1e-6) return null;
+    d.divideScalar(len);
+    let best = null;
+    let bestT = len;
+    for (const [id, peer] of this.netPeers) {
+      if (peer.dead) continue;
+      const lo = [peer.x - 0.4, peer.y - 0.05, peer.z - 0.4];   // a touch generous: arrows are small and fast
+      const hi = [peer.x + 0.4, peer.y + 1.85, peer.z + 0.4];
+      const o = [a.x, a.y, a.z];
+      const dv = [d.x, d.y, d.z];
+      let t0 = 0;
+      let t1 = bestT;
+      for (let i = 0; i < 3 && t0 <= t1; i++) {
+        if (Math.abs(dv[i]) < 1e-9) {
+          if (o[i] < lo[i] || o[i] > hi[i]) t1 = -1;
+        } else {
+          let n = (lo[i] - o[i]) / dv[i];
+          let f = (hi[i] - o[i]) / dv[i];
+          if (n > f) [n, f] = [f, n];
+          t0 = Math.max(t0, n);
+          t1 = Math.min(t1, f);
+        }
+      }
+      if (t0 <= t1) { best = id; bestT = t0; }
+    }
+    return best;
+  }
+
   /** The id of the nearest living player the view ray hits within reach and
    *  before any block in the way, or null. Each player is a 0.6 x 1.8 x 0.6
    *  box, tested with the standard slab method. */
@@ -1138,7 +1356,7 @@ export default class Blockcraft extends Game {
     // Block selection
     const N = HOTBAR.length;
     for (let i = 0; i < N; i++) {
-      if (this.input.hit(`Digit${(i + 1) % 10}`)) this.selectSlot(i);   // 1-9, then 0 for the tenth
+      if (this.input.hit(HOTBAR_KEYS[i])) this.selectSlot(i);   // 1-9, then 0 and -
     }
     if (this.input.wheel) this.selectSlot((this.slot + (this.input.wheel > 0 ? 1 : -1) + N) % N);
     if (this.input.gpHit(4)) this.selectSlot((this.slot + N - 1) % N);
@@ -1158,7 +1376,22 @@ export default class Blockcraft extends Game {
     // the crosshair); it never digs or places. Without it, a swing at a player
     // in PvP still lands, just as a weak punch, and otherwise digs as normal.
     const sword = HOTBAR[this.slot] === SWORD;
+    const bow = HOTBAR[this.slot] === BOW;
     this.atkCool -= dt;
+    if (bow) {
+      // Hold to draw, let go to loose an arrow — never digs, places or melees.
+      this.mine(dt, null);
+      this.bowCool -= dt;
+      const drawing = (this.input.button(0) && this.input.locked) || this.input.gpButton(7) || this.touch.mine;
+      if (drawing && this.bowCool <= 0) {
+        this.bowCharge = Math.min(1, this.bowCharge + dt / BOW_DRAW_TIME);
+      } else if (this.bowCharge > 0) {
+        if (this.bowCharge >= BOW_MIN_DRAW) this.fireArrow(this.bowCharge);
+        this.bowCharge = 0;
+      }
+      return;
+    }
+    if (this.bowCharge > 0) this.bowCharge = 0;   // switched away mid-draw
     const target = this.pvp && this.net ? this.pickPlayer(hit) : null;
     if (target || sword) {
       this.mine(dt, null);
@@ -1458,6 +1691,11 @@ export default class Blockcraft extends Game {
       const peer = this.netPeers.get(pid);
       if (peer) { peer.tx = msg.x; peer.ty = msg.y; peer.tz = msg.z; peer.tyaw = msg.yaw; peer.tpitch = Number(msg.pitch) || 0; }
       this.hostBroadcast({ t: 'move', id: pid, x: msg.x, y: msg.y, z: msg.z, yaw: msg.yaw, pitch: msg.pitch }, pid);
+    } else if (msg.t === 'shoot') {
+      const v = [msg.vx, msg.vy, msg.vz].map(Number);
+      if (![msg.x, msg.y, msg.z, ...v].every(Number.isFinite) || Math.hypot(...v) > 70) return;
+      this.spawnRemoteArrow({ x: msg.x, y: msg.y, z: msg.z, vx: v[0], vy: v[1], vz: v[2] });
+      this.hostBroadcast({ t: 'arrow', id: pid, x: msg.x, y: msg.y, z: msg.z, vx: v[0], vy: v[1], vz: v[2] }, pid);
     } else if (msg.t === 'skin') {
       const skin = isValidSkinData(msg.skin) ? msg.skin : null;
       entry.skin = skin;
@@ -1688,6 +1926,8 @@ export default class Blockcraft extends Game {
     } else if (msg.t === 'move') {
       const peer = this.netPeers.get(msg.id);
       if (peer) { peer.tx = msg.x; peer.ty = msg.y; peer.tz = msg.z; peer.tyaw = msg.yaw; peer.tpitch = Number(msg.pitch) || 0; }
+    } else if (msg.t === 'arrow') {
+      this.spawnRemoteArrow(msg);
     } else if (msg.t === 'skin') {
       this.setPeerSkin(msg.id, isValidSkinData(msg.skin) ? msg.skin : null);
     } else if (this.pvp && (msg.t === 'hurt' || msg.t === 'health' || msg.t === 'died' || msg.t === 'respawn')) {
@@ -2166,7 +2406,7 @@ export default class Blockcraft extends Game {
       s.classList.toggle('on', i === this.slot);
     });
     const label = this.hud.$panel.querySelector('.bc-name');
-    if (label) label.textContent = HOTBAR[this.slot] === SWORD ? 'Sword' : BLOCKS[HOTBAR[this.slot]].name;
+    if (label) label.textContent = HOTBAR[this.slot] === SWORD ? 'Sword' : HOTBAR[this.slot] === BOW ? 'Bow' : BLOCKS[HOTBAR[this.slot]].name;
   }
 
   dispose() {
@@ -2714,6 +2954,13 @@ function buildAtlas() {
 
 /* -------------------------------------------------------------- hotbar UI */
 
+const BOW_ICON = `<svg class="bc-bow-icon" viewBox="0 0 32 32" width="30" height="30" aria-label="Bow">
+  <path d="M9 3 Q29 16 9 29" fill="none" stroke="#8b5a2b" stroke-width="3" stroke-linecap="round"/>
+  <path d="M9 3 L9 29" stroke="#e8e8f0" stroke-width="1" />
+  <path d="M6 16 L27 16" stroke="#c9b27a" stroke-width="1.6"/>
+  <path d="M27 16 L23 13 M27 16 L23 19" stroke="#cfd6e4" stroke-width="1.6" stroke-linecap="round"/>
+</svg>`;
+
 const SWORD_ICON = `<svg class="bc-sword-icon" viewBox="0 0 32 32" width="30" height="30" aria-label="Sword">
   <path d="M27 3 L29 5 L14 20 L12 18 Z" fill="#dfe8f5" stroke="#8ea0b8" stroke-width="1"/>
   <path d="M8 16 L16 24 L14 26 L6 18 Z" fill="#d4a72c" stroke="#8a6a12" stroke-width="1"/>
@@ -2722,9 +2969,9 @@ const SWORD_ICON = `<svg class="bc-sword-icon" viewBox="0 0 32 32" width="30" he
 
 function hotbarHtml() {
   const slots = HOTBAR.map((id, i) => `
-    <div class="bc-slot${i === 1 ? ' on' : ''}">
-      <span class="bc-key">${(i + 1) % 10}</span>
-      ${id === SWORD ? SWORD_ICON : `<span class="bc-swatch" style="background:${SWATCH[id]}"></span>`}
+    <div class="bc-slot${i === FIRST_BLOCK_SLOT ? ' on' : ''}">
+      <span class="bc-key">${i < 9 ? i + 1 : i === 9 ? 0 : '-'}</span>
+      ${id === SWORD ? SWORD_ICON : id === BOW ? BOW_ICON : `<span class="bc-swatch" style="background:${SWATCH[id]}"></span>`}
     </div>`).join('');
   return `
     <style>
@@ -2743,11 +2990,15 @@ function hotbarHtml() {
       .bc-slot.on { border-color:#fff; background:rgba(255,255,255,.12); }
       .bc-key { position:absolute; top:1px; left:4px; font:700 9px system-ui; color:rgba(255,255,255,.6); }
       .bc-swatch { width:26px; height:26px; border-radius:3px; box-shadow:inset 0 -8px 10px rgba(0,0,0,.35); }
+      .bc-charge { position:absolute; left:50%; top:calc(50% + 26px); width:70px; height:6px; transform:translateX(-50%);
+        background:rgba(0,0,0,.45); border:1px solid rgba(255,255,255,.4); border-radius:4px; overflow:hidden; pointer-events:none; }
+      .bc-charge-fill { height:100%; width:0; background:#ffd83f; }
       .bc-name { position:absolute; left:50%; bottom:108px; transform:translateX(-50%);
         font:700 13px system-ui; color:#fff; text-shadow:0 2px 6px rgba(0,0,0,.8); }
     </style>
     <div class="bc-cross"></div>
     <div class="bc-name">Grass</div>
+    <div class="bc-charge" hidden><div class="bc-charge-fill"></div></div>
     <div class="bc-hotbar">${slots}</div>`;
 }
 

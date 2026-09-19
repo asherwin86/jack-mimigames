@@ -2,6 +2,10 @@
  *  menu, under the trailer. Keep entries brief; this isn't a commit log. */
 export const CHANGELOG = [
   {
+    title: 'Blockcraft: a bow',
+    detail: 'Slot 2 is a bow — hold to draw, release to shoot. Arrows arc and stick in blocks, other players see them fly, and in PvP a longer draw hits harder (up to a sword hit) from up to 70 blocks away.',
+  },
+  {
     title: 'PvP: AI opponents',
     detail: 'The PvP arena now fills up with AI bots so there is always someone to fight — pick Super easy, Easy, Medium, Hard or Extreme. They step aside as real players join, so it is AI or people, your call.',
   },

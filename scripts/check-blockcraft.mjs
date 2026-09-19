@@ -250,9 +250,78 @@ if (dig) {
   check('a sword in hand never places', game.placed === before.placed);
   input.held = null;
   input.locked = false;
-  game.selectSlot(1);
+  game.selectSlot(2);
   game.update(1 / 60);
   check('the sword hides when another slot is selected', !game.sword.visible);
+}
+
+// --- the bow ---
+{
+  const before = { mined: game.mined, placed: game.placed };
+  game.pitch = 0.05;
+  game.yaw = 0;
+  game.selectSlot(1);
+  game.update(1 / 60);
+  check('slot 2 is the bow and it is shown', game.bow.visible && !game.sword.visible);
+  input.locked = true;
+
+  // A quick tap never draws far enough to shoot.
+  const arrows0 = game.arrows.length;
+  input.held = 0;
+  for (let i = 0; i < 4; i++) game.update(1 / 60);
+  input.held = null;
+  game.update(1 / 60);
+  check('a quick tap does not loose an arrow', game.arrows.length === arrows0, `${game.arrows.length} arrows`);
+
+  // Hold to a full draw, then let go.
+  input.held = 0;
+  for (let i = 0; i < 70; i++) game.update(1 / 60);
+  check('holding draws the bow to full', game.bowCharge === 1, `charge ${game.bowCharge.toFixed(2)}`);
+  input.held = null;
+  game.update(1 / 60);
+  check('letting go looses one arrow', game.arrows.length === arrows0 + 1 && game.bowCharge === 0);
+  const arrow = game.arrows[game.arrows.length - 1];
+  check('a full draw is fast (about 60 blocks/second)', Math.abs(arrow.vel.length() - 60) < 3, `${arrow.vel.length().toFixed(1)}`);
+  const y0 = arrow.pos.y;
+  const vy0 = arrow.vel.y;
+  for (let i = 0; i < 10; i++) game.update(1 / 60);
+  check('arrows drop under gravity', arrow.vel.y < vy0, `vy ${vy0.toFixed(1)} → ${arrow.vel.y.toFixed(1)}`);
+  for (let i = 0; i < 300 && !arrow.stuck && game.arrows.includes(arrow); i++) game.update(1 / 60);
+  check('an arrow sticks in the first block it hits', arrow.stuck || !game.arrows.includes(arrow), `stuck ${arrow.stuck}`);
+  check('a bow never digs or places', game.mined === before.mined && game.placed === before.placed);
+
+  // PvP: an arrow that passes through a player reports a hit, with its draw.
+  const sent = [];
+  game.net = { readyState: 1, send: (m) => sent.push(JSON.parse(m)) };
+  game.pvp = true;
+  game.addNetPeer('victim', { name: 'V', color: '#fff', x: game.pos.x, y: game.pos.y, z: game.pos.z - 9, yaw: 0 });
+  for (let z = 1; z <= 10; z++) for (let dy = 0; dy <= 3; dy++) {   // clear a straight corridor so terrain can't be in the way
+    for (const dx of [-1, 0, 1]) game.set(Math.floor(game.pos.x) + dx, Math.floor(game.pos.y) + dy, Math.floor(game.pos.z) - z, 0);
+  }
+  game.bowCool = 0;
+  input.held = 0;
+  for (let i = 0; i < 70; i++) game.update(1 / 60);
+  input.held = null;
+  game.update(1 / 60);
+  for (let i = 0; i < 40; i++) game.update(1 / 60);
+  const hit = sent.find((m) => m.t === 'hit');
+  check('an arrow that meets a player sends a bow hit for them', hit && hit.target === 'victim' && hit.w === 'bow' && hit.c > 0.95, JSON.stringify(hit));
+  check('the shot is announced to others too', sent.some((m) => m.t === 'shoot'));
+  check('that arrow is used up', !game.arrows.some((a) => a.own && !a.stuck));
+  game.removeNetPeer('victim');
+  game.net = null;
+  game.pvp = false;
+
+  // Someone else's arrow flies for show and never reports a hit.
+  const n0 = game.arrows.length;
+  game.handleNetMessage(JSON.stringify({ t: 'arrow', id: 'x', x: 0, y: 30, z: 0, vx: 10, vy: 0, vz: 0 }));
+  check('another player\'s arrow appears', game.arrows.length === n0 + 1 && game.arrows[game.arrows.length - 1].own === false);
+  game.handleNetMessage(JSON.stringify({ t: 'arrow', id: 'x', x: 0, y: 30, z: 0, vx: 900, vy: 0, vz: 0 }));
+  check('an impossibly fast arrow is ignored', game.arrows.length === n0 + 1);
+  input.locked = false;
+  game.selectSlot(2);
+  game.update(1 / 60);
+  check('the bow hides when another slot is selected', !game.bow.visible);
 }
 
 // --- no flying in PvP ---

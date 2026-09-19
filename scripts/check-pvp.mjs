@@ -154,6 +154,41 @@ try {
   ok('after a restart the same world is served', c.welcome.seed === seed1);
   ok('after a restart earlier block edits are replayed', c.welcome.edits.some(([x, y, z, id]) => x === 7 && y === 9 && z === -3 && id === 11));
   c.ws.close();
+
+  // --- the bow: long reach, damage scales with the draw, its own cooldown
+  const e = await client('Archer');
+  const f = await client('Target');
+  e.send({ t: 'move', x: 0, y: 0, z: 0, yaw: 0, pitch: 0 });
+  f.send({ t: 'move', x: 40, y: 0, z: 0, yaw: 0, pitch: 0 });
+  await sleep(3300);   // spawn protection over
+  e.send({ t: 'hit', target: f.id, w: 'bow', c: 1 });
+  const b1 = await f.wait((m) => m.t === 'hurt' && m.id === f.id);
+  ok('a full-draw arrow hits from 40 blocks for three hearts', b1.hp === 14, `hp ${b1.hp}`);
+  ok('an arrow shoves far less than a sword', Math.abs(b1.kx) < 4.5 && b1.kx > 0, `kx ${b1.kx}`);
+  e.send({ t: 'hit', target: f.id, w: 'bow', c: 1 });
+  await sleep(250);
+  ok('shooting faster than the bow allows is ignored', f.count('hurt') === 1);
+  await sleep(500);
+  e.send({ t: 'hit', target: f.id, w: 'bow', c: 0.5 });
+  const b2 = await f.wait((m) => m.t === 'hurt' && m.id === f.id && m.hp < 14);
+  ok('a half draw does less (2 hearts)', b2.hp === 10, `hp ${b2.hp}`);
+  await sleep(600);
+  f.send({ t: 'move', x: 100, y: 0, z: 0, yaw: 0, pitch: 0 });
+  await sleep(150);
+  e.send({ t: 'hit', target: f.id, w: 'bow', c: 1 });
+  await sleep(300);
+  ok('an arrow from beyond bow range is ignored', f.count('hurt') === 2);
+  e.send({ t: 'shoot', x: 0, y: 1.6, z: 0, vx: 60, vy: 0, vz: 0 });
+  const arrow = await f.wait((m) => m.t === 'arrow');
+  ok('other players are shown the arrow flying', arrow.id === e.id && arrow.vx === 60);
+  e.send({ t: 'shoot', x: 0, y: 1.6, z: 0, vx: 60, vy: 0, vz: 0 });
+  await sleep(100);
+  ok('shots are rate limited', f.count('arrow') === 1);
+  await sleep(300);
+  e.send({ t: 'shoot', x: 0, y: 1.6, z: 0, vx: 500, vy: 0, vz: 0 });
+  await sleep(150);
+  ok('an impossibly fast shot is dropped', f.count('arrow') === 1);
+  e.ws.close(); f.ws.close();
 } catch (e) {
   ok(e.message, false);
   console.log(server.log);

@@ -79,6 +79,17 @@ const SPAWN_PROTECT_MS = 3000;   // can't be hit just after (re)spawning; attack
 const REGEN_AFTER_MS = 6000;     // hearts creep back once you've gone this long without being hit…
 const REGEN_EVERY_MS = 2000;     // …one half-heart per this
 const KNOCKBACK = 7;
+// The bow: damage scales with how far it was drawn (2 half-hearts at a quick
+// snap, 6 — same as the sword — at full draw). It reaches much further than a
+// swing, but fires slower, and shoots less of a shove.
+const BOW_MIN_DAMAGE = 2;
+const BOW_MAX_DAMAGE = 6;
+const BOW_REACH = 70;
+const BOW_COOLDOWN_MS = 550;
+const ARROW_MAX_SPEED = 70;      // a shot faster than any real draw is dropped
+const SHOOT_COOLDOWN_MS = 250;   // relaying arrows for others to see is rate limited per player
+const MELEE = { reach: HIT_REACH, key: 'lastHitAt', cooldown: HIT_COOLDOWN_MS, kb: 1 };
+const BOW = { reach: BOW_REACH, key: 'lastBowAt', cooldown: BOW_COOLDOWN_MS, kb: 0.5 };
 
 // Bot tuning. A bot fights at the level chosen by the human it's currently
 // chasing, so one server can serve a beginner and a veteran at once.
@@ -274,7 +285,22 @@ wss.on('connection', (ws) => {
     } else if (msg.t === 'level') {
       player.level = validLevel(msg.level) || player.level;
     } else if (msg.t === 'hit') {
-      if (PVP) handleHit(id, player, String(msg.target), msg.w === 'sword' ? SWORD_DAMAGE : FIST_DAMAGE);
+      if (!PVP) return;
+      if (msg.w === 'bow') {
+        const c = Math.min(1, Math.max(0, finite(msg.c)));
+        handleHit(id, player, String(msg.target), BOW_MIN_DAMAGE + Math.round((BOW_MAX_DAMAGE - BOW_MIN_DAMAGE) * c), BOW);
+      } else {
+        handleHit(id, player, String(msg.target), msg.w === 'sword' ? SWORD_DAMAGE : FIST_DAMAGE);
+      }
+    } else if (msg.t === 'shoot') {
+      // Purely visual for everyone else: a shot is relayed so they see the
+      // arrow fly. Damage never rides on this — that's a separate 'hit'.
+      const now = Date.now();
+      if (player.dead || now - (player.lastShotAt || 0) < SHOOT_COOLDOWN_MS) return;
+      const v = [msg.vx, msg.vy, msg.vz].map(finite);
+      if (Math.hypot(...v) > ARROW_MAX_SPEED) return;
+      player.lastShotAt = now;
+      broadcast(id, { t: 'arrow', id, x: finite(msg.x), y: finite(msg.y), z: finite(msg.z), vx: v[0], vy: v[1], vz: v[2] });
     } else if (msg.t === 'edit') {
       if (player.dead) return;
       const x = msg.x | 0;
@@ -306,12 +332,12 @@ wss.on('connection', (ws) => {
 
 /* ------------------------------------------------------------------- PvP */
 
-function handleHit(attackerId, attacker, targetId, damage) {
+function handleHit(attackerId, attacker, targetId, damage, kind = MELEE) {
   const now = Date.now();
   const victim = players.get(targetId);
   if (!victim || targetId === attackerId || attacker.dead || victim.dead) return;
-  if (now - attacker.lastHitAt < HIT_COOLDOWN_MS) return;
-  attacker.lastHitAt = now;
+  if (now - (attacker[kind.key] || 0) < kind.cooldown) return;
+  attacker[kind.key] = now;
   attacker.protectUntil = 0;   // swinging at someone forfeits your own spawn protection
 
   // Reach, from the attacker's eye to the middle of the victim, using the
@@ -319,16 +345,16 @@ function handleHit(attackerId, attacker, targetId, damage) {
   const dx = victim.x - attacker.x;
   const dy = victim.y + 0.9 - (attacker.y + 1.62);
   const dz = victim.z - attacker.z;
-  if (Math.hypot(dx, dy, dz) > HIT_REACH) return;
+  if (Math.hypot(dx, dy, dz) > kind.reach) return;
   if (now < victim.protectUntil) return;
 
   victim.hp = Math.max(0, victim.hp - damage);
   victim.lastHurtAt = now;
   const horiz = Math.hypot(dx, dz) || 1;
-  if (victim.isBot) { victim.kx = (dx / horiz) * KNOCKBACK * (LEVELS[victim.fightLevel]?.kb ?? 1); victim.kz = (dz / horiz) * KNOCKBACK * (LEVELS[victim.fightLevel]?.kb ?? 1); }
+  if (victim.isBot) { victim.kx = (dx / horiz) * KNOCKBACK * kind.kb * (LEVELS[victim.fightLevel]?.kb ?? 1); victim.kz = (dz / horiz) * KNOCKBACK * kind.kb * (LEVELS[victim.fightLevel]?.kb ?? 1); }
   broadcastAll({
     t: 'hurt', id: targetId, by: attackerId, hp: victim.hp,
-    kx: (dx / horiz) * KNOCKBACK, kz: (dz / horiz) * KNOCKBACK,
+    kx: (dx / horiz) * KNOCKBACK * kind.kb, kz: (dz / horiz) * KNOCKBACK * kind.kb,
   });
 
   if (victim.hp > 0) return;
