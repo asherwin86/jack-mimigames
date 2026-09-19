@@ -80,10 +80,10 @@ try {
   ok('a spawn-protected player can\'t be hit', a.count('hurt') === 0 && b.count('hurt') === 0);
 
   await sleep(3000);   // let Bob's protection lapse
-  a.send({ t: 'hit', target: b.id });
+  a.send({ t: 'hit', target: b.id, w: 'sword' });
   const hurtB = await b.wait((m) => m.t === 'hurt');
   const hurtSeenByA = await a.wait((m) => m.t === 'hurt');
-  ok('a hit takes two hearts (20 → 16)', hurtB.hp === 16, `hp ${hurtB.hp}`);
+  ok('a sword hit takes three hearts (20 → 14)', hurtB.hp === 14, `hp ${hurtB.hp}`);
   ok('everyone is told about the hit', hurtSeenByA.id === b.id && hurtSeenByA.by === a.id);
   ok('knockback pushes the victim away from the attacker', hurtB.kx > 5 && Math.abs(hurtB.kz) < 0.001, `kx ${hurtB.kx}`);
 
@@ -104,14 +104,20 @@ try {
 
   // Hearts come back slowly when you've stayed out of trouble.
   const healed = await b.wait((m) => m.t === 'health' && m.id === b.id, 10000);
-  ok('hearts regenerate after a quiet spell', healed.hp === 17, `hp ${healed.hp}`);
+  ok('hearts regenerate after a quiet spell', healed.hp === 15, `hp ${healed.hp}`);
 
-  // Now finish him off.
+  // Bare hands are weaker: a punch is one heart.
   b.send({ t: 'move', x: 2, y: 0, z: 0, yaw: 0, pitch: 0 });
   await sleep(150);
+  a.send({ t: 'hit', target: b.id });
+  const punch = await b.wait((m) => m.t === 'hurt' && m.hp === 13);
+  ok('a bare-handed punch takes one heart (15 → 13)', punch.hp === 13, `hp ${punch.hp}`);
+  await sleep(500);
+
+  // Now finish him off with the sword.
   let died = null;
   for (let i = 0; i < 6 && !died; i++) {
-    a.send({ t: 'hit', target: b.id });
+    a.send({ t: 'hit', target: b.id, w: 'sword' });
     await sleep(520);
     died = a.all.find((m) => m.t === 'died');
   }

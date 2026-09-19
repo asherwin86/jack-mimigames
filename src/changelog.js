@@ -3,7 +3,7 @@
 export const CHANGELOG = [
   {
     title: 'Blockcraft: PvP arena',
-    detail: 'A PvP server adds hearts, fisticuffs, knockback, respawns and a kill scoreboard — hit the player under your crosshair. Always-on servers can be joined in one click.',
+    detail: 'A PvP server adds hearts, knockback, respawns and a kill scoreboard. Grab the sword from your hotbar (key 1) and hit the player under your crosshair. Always-on servers can be joined in one click.',
   },
   {
     title: 'Blockcraft: custom skins',

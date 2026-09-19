@@ -50,7 +50,8 @@ const MAX_PAYLOAD = 64 * 1024;  // one skin plus JSON framing fits with plenty o
 
 // PvP tuning. Health is in half-hearts: 20 = ten hearts.
 const MAX_HP = 20;
-const HIT_DAMAGE = 4;            // two hearts a hit → five hits to kill
+const FIST_DAMAGE = 2;           // bare hands: one heart a hit
+const SWORD_DAMAGE = 6;          // the sword: three hearts a hit → four hits to kill
 const HIT_COOLDOWN_MS = 450;     // per attacker
 const HIT_REACH = 5.0;           // client reach is 3.6; the extra allows for lag in the last-known positions
 const RESPAWN_MS = 3000;
@@ -137,7 +138,7 @@ wss.on('connection', (ws) => {
       player.skin = validSkin(msg.skin);
       broadcast(id, { t: 'skin', id, skin: player.skin });
     } else if (msg.t === 'hit') {
-      if (PVP) handleHit(id, player, String(msg.target));
+      if (PVP) handleHit(id, player, String(msg.target), msg.w === 'sword' ? SWORD_DAMAGE : FIST_DAMAGE);
     } else if (msg.t === 'edit') {
       if (player.dead) return;
       const x = msg.x | 0;
@@ -168,7 +169,7 @@ wss.on('connection', (ws) => {
 
 /* ------------------------------------------------------------------- PvP */
 
-function handleHit(attackerId, attacker, targetId) {
+function handleHit(attackerId, attacker, targetId, damage) {
   const now = Date.now();
   const victim = players.get(targetId);
   if (!victim || targetId === attackerId || attacker.dead || victim.dead) return;
@@ -184,7 +185,7 @@ function handleHit(attackerId, attacker, targetId) {
   if (Math.hypot(dx, dy, dz) > HIT_REACH) return;
   if (now < victim.protectUntil) return;
 
-  victim.hp = Math.max(0, victim.hp - HIT_DAMAGE);
+  victim.hp = Math.max(0, victim.hp - damage);
   victim.lastHurtAt = now;
   const horiz = Math.hypot(dx, dz) || 1;
   broadcastAll({

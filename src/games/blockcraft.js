@@ -71,7 +71,8 @@ const BLOCKS = [
 ];
 const AIR = 0;
 const WATER = 7;
-const HOTBAR = [1, 3, 10, 8, 9, 5, 6, 4, 11];
+const SWORD = 'sword';   // the one non-block hotbar entry — see updateSword() and interact()
+const HOTBAR = [SWORD, 1, 3, 10, 8, 9, 5, 6, 4, 11];
 
 // Colours handed out to joining players — same palette server/blockcraft-server.mjs
 // uses, so a player's dot/avatar colour doesn't depend on which kind of
@@ -138,6 +139,9 @@ export default class Blockcraft extends Game {
     this.highlight.visible = false;
     this.add(this.highlight);
 
+    this.sword = this.buildSword();
+    this.swingT = 0;   // 0 = at rest, else progress 0..1 through a swing
+
     // Darkens over the block being mined, so a long dig shows its progress.
     this.crack = new THREE.Mesh(
       new THREE.BoxGeometry(1.02, 1.02, 1.02),
@@ -147,7 +151,7 @@ export default class Blockcraft extends Game {
     this.add(this.crack);
     this.debris = new Burst(this.scene, 90, 0.13);
 
-    this.slot = 0;
+    this.slot = 1;   // start on the first block, not the sword (slot 0), so digging works straight away
     this.cool = 0;
     this.lastJump = -1;
     this.mineKey = null;    // which block the current dig is against
@@ -260,7 +264,7 @@ export default class Blockcraft extends Game {
     const touchDevice = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
     return touchDevice
       ? 'Left stick to move · drag the right side to look · MINE / PLACE / UP · tap FLY to toggle flying'
-      : 'Click to capture the mouse · WASD + Space · hold left click to mine, right click places · middle click copies a block · 1-9 or scroll · F to fly · or plug in a controller';
+      : 'Click to capture the mouse · WASD + Space · hold left click to mine, right click places · middle click copies a block · 1-0 or scroll (1 is the sword) · F to fly · or plug in a controller';
   }
 
   /**
@@ -827,6 +831,7 @@ export default class Blockcraft extends Game {
 
     this.camera.position.set(this.pos.x, this.pos.y + 1.62, this.pos.z);
     this.camera.rotation.set(this.pitch, this.yaw, 0, 'YXZ');
+    this.updateSword(dt);
 
     // A little FOV kick while sprinting; the speed reads better than the number.
     const wantFov = this.sprinting ? 82 : 75;
@@ -1013,6 +1018,56 @@ export default class Blockcraft extends Game {
     return null;
   }
 
+  /** The first-person sword: a few flat-shaded boxes drawn on top of the world
+   *  (no depth test, so it never sinks into a nearby wall) and posed relative
+   *  to the camera each frame by updateSword(). */
+  buildSword() {
+    const mat = (color) => new THREE.MeshBasicMaterial({ color, depthTest: false, fog: false });
+    const part = (w, h, d, x, y, color) => {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat(color));
+      m.position.set(x, y, 0);
+      m.renderOrder = 999;
+      return m;
+    };
+    const model = new THREE.Group();   // blade points up its local +Y from the grip
+    model.add(
+      part(0.07, 0.62, 0.025, 0, 0.42, 0xdfe8f5),    // blade
+      part(0.025, 0.6, 0.03, 0, 0.42, 0xffffff),     // bright edge down the middle
+      part(0.07, 0.05, 0.03, 0, 0.74, 0xdfe8f5),     // tip
+      part(0.26, 0.05, 0.07, 0, 0.07, 0xd4a72c),     // guard
+      part(0.05, 0.22, 0.05, 0, -0.06, 0x6b4423),    // grip
+      part(0.09, 0.05, 0.09, 0, -0.19, 0xd4a72c),    // pommel
+    );
+    const rig = new THREE.Group();     // placed on the camera; `model` swings inside it
+    rig.add(model);
+    rig.visible = false;
+    rig.userData.model = model;
+    this.add(rig);
+    return rig;
+  }
+
+  /** Shows the sword only while it's the selected slot and you're alive and
+   *  playing; carries it with the camera; and runs the swing (a quick
+   *  down-and-across chop) plus a small walking sway. */
+  updateSword(dt) {
+    const show = this.playing && !this.dead && HOTBAR[this.slot] === SWORD;
+    this.sword.visible = show;
+    if (!show) { this.swingT = 0; return; }
+    if (this.swingT > 0) {
+      this.swingT += dt / 0.3;
+      if (this.swingT >= 1) this.swingT = 0;
+    }
+    const k = this.swingT > 0 ? Math.sin(this.swingT * Math.PI) : 0;
+    this.swayT = (this.swayT || 0) + dt * 7 * Math.min(1, Math.hypot(this.vel.x, this.vel.z) / 4);
+    const sway = Math.sin(this.swayT) * 0.008;
+    this.sword.position.copy(this.camera.position);
+    this.sword.quaternion.copy(this.camera.quaternion);
+    const model = this.sword.userData.model;
+    model.position.set(0.36 - k * 0.2, -0.38 + sway + k * 0.06, -0.72 - k * 0.12);
+    model.rotation.set(-0.3 - k * 1.5, -0.2, 0.45 - k * 0.5);
+    model.scale.setScalar(0.8);
+  }
+
   /** The id of the nearest living player the view ray hits within reach and
    *  before any block in the way, or null. Each player is a 0.6 x 1.8 x 0.6
    *  box, tested with the standard slab method. */
@@ -1053,12 +1108,13 @@ export default class Blockcraft extends Game {
     this.cool -= dt;
 
     // Block selection
-    for (let i = 0; i < 9; i++) {
-      if (this.input.hit(`Digit${i + 1}`)) this.selectSlot(i);
+    const N = HOTBAR.length;
+    for (let i = 0; i < N; i++) {
+      if (this.input.hit(`Digit${(i + 1) % 10}`)) this.selectSlot(i);   // 1-9, then 0 for the tenth
     }
-    if (this.input.wheel) this.selectSlot((this.slot + (this.input.wheel > 0 ? 1 : -1) + 9) % 9);
-    if (this.input.gpHit(4)) this.selectSlot((this.slot + 8) % 9);
-    if (this.input.gpHit(5)) this.selectSlot((this.slot + 1) % 9);
+    if (this.input.wheel) this.selectSlot((this.slot + (this.input.wheel > 0 ? 1 : -1) + N) % N);
+    if (this.input.gpHit(4)) this.selectSlot((this.slot + N - 1) % N);
+    if (this.input.gpHit(5)) this.selectSlot((this.slot + 1) % N);
 
     const hit = this.raycast();
     this.highlight.visible = !!hit;
@@ -1070,21 +1126,27 @@ export default class Blockcraft extends Game {
       if (slot >= 0) this.selectSlot(slot);
     }
 
-    // In PvP, a swing at the player under the crosshair hits them instead of
-    // digging; everything else falls through to mining as normal.
+    // Holding the sword, the attack button swings it (and hits whoever is under
+    // the crosshair); it never digs or places. Without it, a swing at a player
+    // in PvP still lands, just as a weak punch, and otherwise digs as normal.
+    const sword = HOTBAR[this.slot] === SWORD;
     this.atkCool -= dt;
     const target = this.pvp && this.net ? this.pickPlayer(hit) : null;
-    if (target) {
+    if (target || sword) {
       this.mine(dt, null);
       const swinging = (this.input.button(0) && this.input.locked) || this.input.gpButton(7) || this.touch.mine;
-      if (swinging && this.atkCool <= 0 && this.net.readyState === 1) {
+      if (swinging && this.atkCool <= 0) {
         this.atkCool = ATTACK_COOLDOWN;
-        this.net.send(JSON.stringify({ t: 'hit', target }));
-        this.audio.tone(200, 0.06, { type: 'square', gain: 0.09 });
+        if (sword) this.swingT = 0.001;
+        if (target && this.net.readyState === 1) {
+          this.net.send(JSON.stringify(sword ? { t: 'hit', target, w: SWORD } : { t: 'hit', target }));
+        }
+        this.audio.tone(sword ? 320 : 200, 0.06, { type: 'square', gain: 0.09 });
       }
     } else {
       this.mine(dt, hit);
     }
+    if (sword) return;   // nothing to place with a sword in hand
 
     if (!hit || this.cool > 0) return;
     const placing = this.input.button(2) || this.input.gpButton(6) || this.touch.place;
@@ -1953,7 +2015,7 @@ export default class Blockcraft extends Game {
       s.classList.toggle('on', i === this.slot);
     });
     const label = this.hud.$panel.querySelector('.bc-name');
-    if (label) label.textContent = BLOCKS[HOTBAR[this.slot]].name;
+    if (label) label.textContent = HOTBAR[this.slot] === SWORD ? 'Sword' : BLOCKS[HOTBAR[this.slot]].name;
   }
 
   dispose() {
@@ -2557,11 +2619,17 @@ function buildAtlas() {
 
 /* -------------------------------------------------------------- hotbar UI */
 
+const SWORD_ICON = `<svg class="bc-sword-icon" viewBox="0 0 32 32" width="30" height="30" aria-label="Sword">
+  <path d="M27 3 L29 5 L14 20 L12 18 Z" fill="#dfe8f5" stroke="#8ea0b8" stroke-width="1"/>
+  <path d="M8 16 L16 24 L14 26 L6 18 Z" fill="#d4a72c" stroke="#8a6a12" stroke-width="1"/>
+  <path d="M9 19 L13 23 L5 29 L3 27 Z" fill="#6b4423" stroke="#3d2610" stroke-width="1"/>
+</svg>`;
+
 function hotbarHtml() {
   const slots = HOTBAR.map((id, i) => `
-    <div class="bc-slot${i === 0 ? ' on' : ''}">
-      <span class="bc-key">${i + 1}</span>
-      <span class="bc-swatch" style="background:${SWATCH[id]}"></span>
+    <div class="bc-slot${i === 1 ? ' on' : ''}">
+      <span class="bc-key">${(i + 1) % 10}</span>
+      ${id === SWORD ? SWORD_ICON : `<span class="bc-swatch" style="background:${SWATCH[id]}"></span>`}
     </div>`).join('');
   return `
     <style>

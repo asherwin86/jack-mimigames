@@ -226,6 +226,35 @@ if (dig) {
   input.locked = false;
 }
 
+// --- the sword ---
+{
+  const at = game.raycast();
+  const before = { mined: game.mined, placed: game.placed };
+  game.selectSlot(0);
+    game.update(1 / 60);
+  check('the sword is shown while selected', game.sword.visible);
+  input.locked = true;
+  input.held = 0;
+  const blockBefore = at && game.get(at.x, at.y, at.z);
+  for (let i = 0; i < 5; i++) game.update(1 / 60);
+  check('holding attack swings the sword', game.swingT > 0, `swingT ${game.swingT.toFixed(2)}`);
+  const swingPose = game.sword.userData.model.rotation.x;
+  check('the swing moves the blade', swingPose < -0.3, `rotation.x ${swingPose.toFixed(2)}`);
+  for (let i = 0; i < 115; i++) game.update(1 / 60);
+  check('a sword in hand never digs', !at || game.get(at.x, at.y, at.z) === blockBefore, `mined ${game.mined - before.mined}`);
+  input.held = null;
+  for (let i = 0; i < 60; i++) game.update(1 / 60);
+  check('the swing finishes and rests', game.swingT === 0);
+  input.held = 2;   // right click would place a block with any other slot
+  for (let i = 0; i < 30; i++) game.update(1 / 60);
+  check('a sword in hand never places', game.placed === before.placed);
+  input.held = null;
+  input.locked = false;
+  game.selectSlot(1);
+  game.update(1 / 60);
+  check('the sword hides when another slot is selected', !game.sword.visible);
+}
+
 // --- can't place a block inside yourself ---
 check('placement is blocked inside the player',
   game.intersectsPlayer(Math.floor(game.pos.x), Math.floor(game.pos.y), Math.floor(game.pos.z)));
