@@ -78,3 +78,5 @@ hide the button. Anyone can also paste any address into the Multiplayer panel.
 | `PVP` | off | `1` turns on hearts, hitting, death and scoring (same as `--pvp`) |
 | `DATA_FILE` | none | JSON file the world (seed + block edits) is saved to every 30s and on shutdown |
 | `MAX_PLAYERS` | `32` | Connections beyond this are refused |
+| `BOT_FILL` | `4` (PvP) | The arena tops itself up with AI bots until this many fighters are in it. Bots step aside as people join and none run while it's empty. `0` turns them off (also `--bots=N`) |
+| `BOT_LEVEL` | `medium` | Default AI level for players who haven't picked one (`supereasy`, `easy`, `medium`, `hard`, `extreme`) — players choose their own in the Multiplayer panel |

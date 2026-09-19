@@ -11,6 +11,7 @@ import { WebSocket } from 'ws';
 import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs';
+import { calibrateHeight, heightAt } from '../src/engine/terrainHeight.js';
 
 const PORT = 9931 + ((Math.random() * 500) | 0);
 const DATA_FILE = path.join(os.tmpdir(), `bc-pvp-check-${process.pid}.json`);
@@ -21,10 +22,10 @@ const ok = (label, cond, detail = '') => {
 };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-function startServer(extra = []) {
-  const child = spawn(process.execPath, ['server/blockcraft-server.mjs', String(PORT), 'pvpseed', ...extra], {
+function startServer(extra = [], port = PORT, dataFile = DATA_FILE) {
+  const child = spawn(process.execPath, ['server/blockcraft-server.mjs', String(port), 'pvpseed', ...extra], {
     cwd: new URL('..', import.meta.url).pathname,
-    env: { ...process.env, DATA_FILE },
+    env: { ...process.env, DATA_FILE: dataFile },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   child.log = '';
@@ -34,8 +35,8 @@ function startServer(extra = []) {
 }
 
 /** A client that records everything it's sent, with wait-for-predicate. */
-async function client(name) {
-  const ws = new WebSocket(`ws://127.0.0.1:${PORT}`);
+async function client(name, port = PORT, extraHello = {}) {
+  const ws = new WebSocket(`ws://127.0.0.1:${port}`);
   const all = [];
   const waiters = [];
   ws.on('message', (raw) => {
@@ -53,12 +54,12 @@ async function client(name) {
     });
   };
   const send = (o) => ws.send(JSON.stringify(o));
-  send({ t: 'hello', name });
+  send({ t: 'hello', name, ...extraHello });
   const welcome = await wait((m) => m.t === 'welcome');
   return { ws, all, wait, send, welcome, id: welcome.id, count: (t) => all.filter((m) => m.t === t).length };
 }
 
-let server = startServer(['--pvp']);
+let server = startServer(['--pvp', '--bots=0']);   // bots off here: these checks are about two people fighting
 try {
   await sleep(500);
 
@@ -147,7 +148,7 @@ try {
   await new Promise((r) => server.once('exit', r));
   ok('SIGTERM writes the data file', fs.existsSync(DATA_FILE));
 
-  server = startServer(['--pvp']);   // note: no seed word this time … but same positional one is fine
+  server = startServer(['--pvp', '--bots=0']);
   await sleep(600);
   const c = await client('Cy');
   ok('after a restart the same world is served', c.welcome.seed === seed1);
@@ -159,6 +160,82 @@ try {
 } finally {
   server.kill();
   try { fs.unlinkSync(DATA_FILE); } catch { /* not created */ }
+}
+
+// ------------------------------------------------------------------ AI bots
+{
+  const BPORT = PORT + 1;
+  const bots = startServer(['--pvp', '--bots=3'], BPORT, '');
+  try {
+    await sleep(700);
+    const hp = await (await fetch(`http://127.0.0.1:${BPORT}/health`)).json();
+    ok('no bots run while the arena is empty', hp.bots === 0, JSON.stringify(hp));
+
+    const me = await client('Human', BPORT, { level: 'extreme' });
+    ok('welcome says the server has bots and echoes the level', me.welcome.bots === true && me.welcome.level === 'extreme');
+    await sleep(400);
+    const joins = me.all.filter((m) => m.t === 'join' && /\[bot\]/.test(m.name));
+    ok('bots top the arena up to 3 fighters (2 bots + you)', joins.length === 2, `${joins.length} bots joined`);
+    ok('bots look like players (id, name, colour)', joins.every((j) => /^bot\d+$/.test(j.id) && j.color));
+
+    // Stand on land at spawn; the bots should walk to us and start swinging.
+    const groundAtSpawn = heightAt(0, 0, me.welcome.seed, calibrateHeight(me.welcome.seed)) + 1;   // the same ground the server's bots walk on
+    const stand = () => me.send({ t: 'move', x: 0.5, y: groundAtSpawn, z: 0.5, yaw: 0, pitch: 0 });
+    stand();
+    const iv = setInterval(stand, 200);
+    const first = () => me.all.find((m) => m.t === 'move' && m.id === joins[0].id);
+    await sleep(600);
+    const d0 = Math.hypot(first().x - 0.5, first().z - 0.5);
+    ok('bots move (they are broadcast like any player)', me.all.filter((m) => m.t === 'move' && /^bot/.test(m.id)).length > 3);
+
+    const hurt1 = await me.wait((m) => m.t === 'hurt' && m.id === me.id && /^bot/.test(m.by), 25000).catch(() => null);
+    ok('a bot walks up and hits the human', !!hurt1, hurt1 ? `hp ${hurt1.hp}` : 'never hit');
+    ok('an EXTREME bot hits hard (3 hearts)', hurt1?.hp === 14, `hp ${hurt1?.hp}`);
+    const lastB = [...me.all].reverse().find((m) => m.t === 'move' && m.id === joins[0].id);
+    ok('the bot closed the distance', Math.hypot(lastB.x - 0.5, lastB.z - 0.5) < d0, `${d0.toFixed(1)} → ${Math.hypot(lastB.x - 0.5, lastB.z - 0.5).toFixed(1)}`);
+
+    // Drop to super easy: hits now do one half-heart.
+    me.send({ t: 'level', level: 'supereasy' });
+    await sleep(300);
+    const before = me.all.filter((m) => m.t === 'hurt' && m.id === me.id).length;
+    const heal = await me.wait((m) => m.t === 'respawn' && m.id === me.id, 30000).catch(() => null);   // if the extreme bots finish us off, we respawn first
+    let sample = null;
+    for (let i = 0; i < 120 && !sample; i++) {
+      await sleep(250);
+      const hits = me.all.filter((m) => m.t === 'hurt' && m.id === me.id);
+      if (hits.length > before + 1) {
+        const [a, b] = hits.slice(-2);
+        if (a.hp - b.hp > 0) sample = a.hp - b.hp;
+      }
+    }
+    ok('super easy bots only take half a heart', sample === 1, `hit for ${sample}`);
+    clearInterval(iv);
+
+    // Humans hit bots too: swing at the nearest one until it drops.
+    const nearestBot = () => {
+      const last = (id) => [...me.all].reverse().find((m) => m.t === 'move' && m.id === id);
+      return joins.map((j) => ({ id: j.id, m: last(j.id) })).filter((b) => b.m)
+        .sort((a, b) => Math.hypot(a.m.x - 0.5, a.m.z - 0.5) - Math.hypot(b.m.x - 0.5, b.m.z - 0.5))[0]?.id;
+    };
+    let killed = null;
+    for (let i = 0; i < 14 && !killed; i++) {
+      me.send({ t: 'hit', target: nearestBot(), w: 'sword' });
+      await sleep(520);
+      killed = me.all.find((m) => m.t === 'died' && /^bot/.test(m.id) && m.by === me.id);
+    }
+    ok('a human can kill a bot (and is credited)', !!killed && killed.byKills >= 1, killed ? `${killed.name} died` : 'no kill');
+    const back = await me.wait((m) => m.t === 'respawn' && /^bot/.test(m.id), 6000).catch(() => null);
+    ok('a killed bot respawns', !!back);
+    me.ws.close();
+    await sleep(400);
+    const hp2 = await (await fetch(`http://127.0.0.1:${BPORT}/health`)).json();
+    ok('bots leave when the last human does', hp2.bots === 0, JSON.stringify(hp2));
+  } catch (e) {
+    ok(e.message, false);
+    console.log(bots.log);
+  } finally {
+    bots.kill();
+  }
 }
 
 console.log(failures ? `\n\x1b[31m${failures} check(s) failed.\x1b[0m` : '\n\x1b[32mAll PvP server checks passed.\x1b[0m');

@@ -3,6 +3,7 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 COPY server ./server
+COPY src/engine/terrainHeight.js ./src/engine/terrainHeight.js
 ENV PVP=1 PORT=7443 DATA_FILE=/data/world.json
 VOLUME /data
 EXPOSE 7443

@@ -2,6 +2,10 @@
  *  menu, under the trailer. Keep entries brief; this isn't a commit log. */
 export const CHANGELOG = [
   {
+    title: 'PvP: AI opponents',
+    detail: 'The PvP arena now fills up with AI bots so there is always someone to fight — pick Super easy, Easy, Medium, Hard or Extreme. They step aside as real players join, so it is AI or people, your call.',
+  },
+  {
     title: 'Tidier menu',
     detail: 'Background props, Music, Black sky, Stop spinning, High contrast and Compact now live in one Settings box (the ⚙ button by the search bar) instead of a row across the screen.',
   },

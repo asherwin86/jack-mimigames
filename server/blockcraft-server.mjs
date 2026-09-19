@@ -24,6 +24,16 @@
  * client only ever says "I swung at player X"; the server checks reach,
  * cooldown and spawn protection and decides what that did.
  *
+ * Bots (PvP only): so there's always someone to fight, the arena tops itself
+ * up with AI fighters until BOT_FILL (default 4) fighters are present — bots
+ * step aside as real players join, and none run while the arena is empty.
+ * `--bots=N` / BOT_FILL=N sets the target; 0 turns them off. Each player picks
+ * their own AI level (super easy / easy / medium / hard / extreme) and bots use the level of
+ * whoever they're fighting; BOT_LEVEL sets the default for players who don't. Bots walk the
+ * real terrain (it's generated from the seed by the same code the game uses),
+ * chase the nearest human, and swing at them through the same hit rules as
+ * everyone else — reach, cooldown, spawn protection.
+ *
  * Built to be left running: it answers plain HTTP on the same port (GET / or
  * /health, which is what hosting platforms poll), drops connections that stop
  * answering pings, survives stray errors instead of exiting, shuts down
@@ -41,6 +51,7 @@
 import http from 'node:http';
 import fs from 'node:fs';
 import { WebSocketServer } from 'ws';
+import { H as TERRAIN_H, SEA as SEA_LEVEL, calibrateHeight, heightAt } from '../src/engine/terrainHeight.js';
 
 const args = process.argv.slice(2);
 const flags = new Set(args.filter((a) => a.startsWith('--')));
@@ -48,8 +59,10 @@ const positional = args.filter((a) => !a.startsWith('--'));
 
 const PORT = Number(positional[0]) || Number(process.env.PORT) || 7443;
 const PVP = flags.has('--pvp') || /^(1|true|yes)$/i.test(process.env.PVP || '');
+const botsFlag = args.find((a) => a.startsWith('--bots='));
+const BOT_FILL = PVP ? Math.max(0, Math.min(16, Number(botsFlag ? botsFlag.slice(7) : process.env.BOT_FILL ?? 4) || 0)) : 0;
 const DATA_FILE = process.env.DATA_FILE || '';
-const BUILD_HEIGHT = 40;   // must match H in src/games/blockcraft.js
+const BUILD_HEIGHT = TERRAIN_H;   // shared with the game via src/engine/terrainHeight.js
 const MAX_BLOCK_ID = 16;   // BLOCKS there has 17 entries, indices 0-16 — id 17 is out of range and would crash a client's mesher
 const MAX_SKIN_CHARS = 30000;   // must match Skin.js — a 64x64 PNG data URL is well under this
 const MAX_PLAYERS = Number(process.env.MAX_PLAYERS) || 32;
@@ -67,18 +80,43 @@ const REGEN_AFTER_MS = 6000;     // hearts creep back once you've gone this long
 const REGEN_EVERY_MS = 2000;     // …one half-heart per this
 const KNOCKBACK = 7;
 
+// Bot tuning. A bot fights at the level chosen by the human it's currently
+// chasing, so one server can serve a beginner and a veteran at once.
+//   speed    blocks/second (a player walks at 5.2, sprints at ~8)
+//   damage   half-hearts per hit (a sword does 6)
+//   swing    [min, max] ms between swings (the hit cooldown itself is 450)
+//   reach    how close it gets before swinging
+//   accuracy chance a swing actually lands
+//   weave    how hard it strafes while closing in (harder to hit)
+//   sight    how far away it notices you
+//   kb       how much knockback it takes (1 = normal)
+const BOT_TICK_MS = 100;
+const LEVELS = {
+  supereasy: { speed: 1.6, damage: 1, swing: [2500, 3500], reach: 2.2, accuracy: 0.35, weave: 0.0, sight: 25, kb: 1.8 },
+  easy:    { speed: 2.4, damage: 2, swing: [1500, 2300], reach: 2.6, accuracy: 0.55, weave: 0.0, sight: 35, kb: 1.4 },
+  medium:  { speed: 3.6, damage: 4, swing: [900, 1500],  reach: 3.0, accuracy: 0.85, weave: 0.55, sight: 60, kb: 1.0 },
+  hard:    { speed: 4.8, damage: 5, swing: [650, 1000],  reach: 3.2, accuracy: 0.95, weave: 0.8, sight: 80, kb: 0.7 },
+  extreme: { speed: 6.0, damage: 6, swing: [470, 620],   reach: 3.5, accuracy: 1.0,  weave: 1.0, sight: 100, kb: 0.35 },
+};
+const DEFAULT_LEVEL = Object.hasOwn(LEVELS, process.env.BOT_LEVEL) ? process.env.BOT_LEVEL : 'medium';
+const validLevel = (l) => (typeof l === 'string' && Object.hasOwn(LEVELS, l) ? l : null);
+const BOT_NAMES = ['Blaze', 'Creeper', 'Zed', 'Pixel', 'Nova', 'Ghost', 'Rusty', 'Bolt', 'Mango', 'Pip', 'Onyx', 'Twig', 'Echo', 'Moss', 'Ember', 'Fizz'];
+
 const COLORS = ['#ff5a50', '#5ad1ff', '#ffd83f', '#7fd94a', '#c77dff', '#ff9ecb', '#66ffcf', '#ffa64d'];
 
-const players = new Map();   // id -> { ws, name, color, skin, x, y, z, yaw, pitch, hp, dead, kills, deaths, ... }
+const players = new Map();   // id -> { ws (null for a bot), name, color, skin, x, y, z, yaw, pitch, hp, dead, kills, deaths, isBot, ... }
 const edits = new Map();     // "x,y,z" -> block id, every edit anyone has ever made this session
 let nextId = 1;
 let editsDirty = false;
+
+const humanCount = () => { let n = 0; for (const p of players.values()) if (!p.isBot) n++; return n; };
 
 const saved = loadData();
 const SEED = positional[1] ? hashSeed(positional[1]) : (saved?.seed ?? ((Math.random() * 0x7fffffff) | 0));
 if (saved && saved.seed === SEED) {
   for (const [k, b] of saved.edits) edits.set(k, b);
 }
+const TERRAIN = calibrateHeight(SEED);   // once: the height curve this seed's ground is fitted to
 
 /* ------------------------------------------------- public server list */
 
@@ -166,14 +204,14 @@ const httpServer = http.createServer((req, res) => {
     return;
   }
 
-  const body = JSON.stringify({ ok: true, game: 'blockcraft', mode: PVP ? 'pvp' : 'coop', players: players.size, maxPlayers: MAX_PLAYERS, listed: listings.size, uptime: Math.round(process.uptime()) });
+  const body = JSON.stringify({ ok: true, game: 'blockcraft', mode: PVP ? 'pvp' : 'coop', players: humanCount(), bots: players.size - humanCount(), maxPlayers: MAX_PLAYERS, listed: listings.size, uptime: Math.round(process.uptime()) });
   res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
   res.end(req.method === 'HEAD' ? undefined : body);
 });
 const wss = new WebSocketServer({ server: httpServer, maxPayload: MAX_PAYLOAD });
 
 wss.on('connection', (ws) => {
-  if (players.size >= MAX_PLAYERS) { ws.close(1013, 'server full'); return; }
+  if (humanCount() >= MAX_PLAYERS) { ws.close(1013, 'server full'); return; }
   const id = String(nextId++);
   let joined = false;
   ws.isAlive = true;
@@ -193,6 +231,7 @@ wss.on('connection', (ws) => {
       players.set(id, {
         ws, name, color, skin: validSkin(msg.skin), x: 0, y: 0, z: 0, yaw: 0, pitch: 0,
         hp: MAX_HP, dead: false, kills: 0, deaths: 0,
+        level: validLevel(msg.level) || DEFAULT_LEVEL,
         lastHitAt: 0, lastHurtAt: 0, protectUntil: Date.now() + SPAWN_PROTECT_MS, respawnTimer: null,
       });
 
@@ -201,6 +240,8 @@ wss.on('connection', (ws) => {
         id,
         seed: SEED,
         pvp: PVP,
+        bots: BOT_FILL > 0,
+        level: players.get(id).level,
         maxHp: MAX_HP,
         hp: MAX_HP,
         edits: [...edits.entries()].map(([key, b]) => [...key.split(',').map(Number), b]),
@@ -212,7 +253,8 @@ wss.on('connection', (ws) => {
           })),
       });
       broadcast(id, { t: 'join', id, name, color, skin: players.get(id).skin });
-      log(`${name} joined (${players.size} online)`);
+      log(`${name} joined (${humanCount()} online)`);
+      syncBots();
       return;
     }
 
@@ -229,6 +271,8 @@ wss.on('connection', (ws) => {
     } else if (msg.t === 'skin') {
       player.skin = validSkin(msg.skin);
       broadcast(id, { t: 'skin', id, skin: player.skin });
+    } else if (msg.t === 'level') {
+      player.level = validLevel(msg.level) || player.level;
     } else if (msg.t === 'hit') {
       if (PVP) handleHit(id, player, String(msg.target), msg.w === 'sword' ? SWORD_DAMAGE : FIST_DAMAGE);
     } else if (msg.t === 'edit') {
@@ -253,7 +297,8 @@ wss.on('connection', (ws) => {
     if (player?.respawnTimer) clearTimeout(player.respawnTimer);
     players.delete(id);
     broadcast(id, { t: 'leave', id });
-    log(`${player?.name ?? id} left (${players.size} online)`);
+    log(`${player?.name ?? id} left (${humanCount()} online)`);
+    syncBots();
   });
 
   ws.on('error', () => { /* 'close' still follows; nothing extra to do here */ });
@@ -280,6 +325,7 @@ function handleHit(attackerId, attacker, targetId, damage) {
   victim.hp = Math.max(0, victim.hp - damage);
   victim.lastHurtAt = now;
   const horiz = Math.hypot(dx, dz) || 1;
+  if (victim.isBot) { victim.kx = (dx / horiz) * KNOCKBACK * (LEVELS[victim.fightLevel]?.kb ?? 1); victim.kz = (dz / horiz) * KNOCKBACK * (LEVELS[victim.fightLevel]?.kb ?? 1); }
   broadcastAll({
     t: 'hurt', id: targetId, by: attackerId, hp: victim.hp,
     kx: (dx / horiz) * KNOCKBACK, kz: (dz / horiz) * KNOCKBACK,
@@ -300,6 +346,7 @@ function handleHit(attackerId, attacker, targetId, damage) {
     victim.dead = false;
     victim.hp = MAX_HP;
     victim.protectUntil = Date.now() + SPAWN_PROTECT_MS;
+    if (victim.isBot) Object.assign(victim, botSpawnPoint(), { kx: 0, kz: 0 });
     broadcastAll({ t: 'respawn', id: targetId, hp: MAX_HP });
   }, RESPAWN_MS);
 }
@@ -314,6 +361,128 @@ function regenTick() {
   }
 }
 if (PVP) setInterval(regenTick, REGEN_EVERY_MS).unref();
+
+/* ------------------------------------------------------------------ bots */
+
+let nextBotId = 1;
+
+/** Ground level a bot stands at for a world column: the top of the terrain. */
+const groundY = (x, z) => heightAt(Math.floor(x), Math.floor(z), SEED, TERRAIN) + 1;
+
+/** A random point on a ring around world spawn — where bots start and reappear. */
+function botSpawnPoint() {
+  for (let i = 0; i < 40; i++) {   // keep trying until it lands on dry ground
+    const a = Math.random() * Math.PI * 2;
+    const r = 12 + Math.random() * 14;
+    const x = 0.5 + Math.cos(a) * r;
+    const z = 0.5 + Math.sin(a) * r;
+    if (groundY(x, z) - 1 >= SEA_LEVEL) return { x, z, y: groundY(x, z) };
+  }
+  return { x: 0.5, z: 0.5, y: groundY(0.5, 0.5) };
+}
+
+function addBot() {
+  const id = `bot${nextBotId++}`;
+  const used = new Set([...players.values()].map((p) => p.name));
+  const base = BOT_NAMES.find((n) => !used.has(`${n} [bot]`)) || `Bot${nextBotId}`;
+  const name = `${base} [bot]`;
+  const color = COLORS[(nextBotId - 1) % COLORS.length];
+  const at = botSpawnPoint();
+  players.set(id, {
+    ws: null, isBot: true, name, color, skin: null, x: at.x, y: at.y, z: at.z, yaw: 0, pitch: 0,
+    hp: MAX_HP, dead: false, kills: 0, deaths: 0, kx: 0, kz: 0, phase: Math.random() * 6.28, fightLevel: DEFAULT_LEVEL,
+    lastHitAt: 0, lastHurtAt: 0, nextSwingIn: 0, protectUntil: Date.now() + SPAWN_PROTECT_MS, respawnTimer: null,
+  });
+  broadcast(id, { t: 'join', id, name, color, skin: null });
+  return id;
+}
+
+function removeBot(id) {
+  const bot = players.get(id);
+  if (!bot?.isBot) return;
+  if (bot.respawnTimer) clearTimeout(bot.respawnTimer);
+  players.delete(id);
+  broadcast(id, { t: 'leave', id });
+}
+
+/** Keeps the arena stocked: bots fill in up to BOT_FILL fighters, step aside
+ *  as people join, and all leave when the last person does. */
+function syncBots() {
+  const humans = humanCount();
+  const want = humans === 0 ? 0 : Math.max(0, BOT_FILL - humans);
+  const bots = [...players].filter(([, p]) => p.isBot).map(([id]) => id);
+  while (bots.length > want) removeBot(bots.pop());
+  for (let i = bots.length; i < want; i++) addBot();
+}
+
+/** Whether a bot can step to (nx, nz): dry land, and not a wall. */
+function canStep(bot, nx, nz) {
+  const gy = groundY(nx, nz);
+  return gy - 1 >= SEA_LEVEL && gy - groundY(bot.x, bot.z) <= 2;
+}
+
+function botTick() {
+  const dt = BOT_TICK_MS / 1000;
+  const now = Date.now();
+  for (const [id, bot] of players) {
+    if (!bot.isBot || bot.dead) continue;
+
+    // Nearest living human is the target; how it fights depends on that human's level.
+    let target = null;
+    let best = Infinity;
+    for (const [pid, p] of players) {
+      if (p.isBot || p.dead) continue;
+      const d = Math.hypot(p.x - bot.x, p.z - bot.z);
+      if (d < best && d <= LEVELS[p.level].sight) { best = d; target = { id: pid, p, d }; }
+    }
+    const L = LEVELS[target ? target.p.level : DEFAULT_LEVEL];
+    bot.fightLevel = target ? target.p.level : DEFAULT_LEVEL;
+
+    let vx = bot.kx;   // knockback carries on and fades
+    let vz = bot.kz;
+    bot.kx *= 0.7;
+    bot.kz *= 0.7;
+
+    let heading = null;   // direction the bot wants to walk in (radians in the x/z plane)
+    if (target) {
+      const dx = target.p.x - bot.x;
+      const dz = target.p.z - bot.z;
+      const dist = target.d || 1;
+      bot.yaw = Math.atan2(-dx, -dz);
+      bot.pitch = Math.max(-1, Math.min(1, Math.atan2((target.p.y + 1.2) - (bot.y + 1.62), dist)));
+      const base = Math.atan2(dz, dx);
+      if (dist > L.reach - 0.8) {
+        // Close in, weaving so it isn't a straight line (harder levels weave more).
+        heading = base + (dist < 10 ? Math.sin(now / 420 + bot.phase) * 0.7 * L.weave : 0);
+      } else if (dist < 1.2) {
+        heading = base + Math.PI;   // too close: back off a step
+      }
+      bot.nextSwingIn -= BOT_TICK_MS;
+      if (dist <= L.reach && bot.nextSwingIn <= 0) {
+        bot.nextSwingIn = L.swing[0] + Math.random() * (L.swing[1] - L.swing[0]);
+        if (Math.random() < L.accuracy) handleHit(id, bot, target.id, L.damage);
+      }
+    }
+
+    // Walk, but never into the sea and never up a wall — and if the straight
+    // way is blocked, try sidestepping around it.
+    if (heading !== null) {
+      for (const turn of [0, 0.6, -0.6, 1.2, -1.2, 1.9, -1.9]) {
+        const h = heading + turn;
+        const nx = bot.x + Math.cos(h) * L.speed * dt;
+        const nz = bot.z + Math.sin(h) * L.speed * dt;
+        if (canStep(bot, nx, nz)) { vx += Math.cos(h) * L.speed; vz += Math.sin(h) * L.speed; break; }
+      }
+    }
+    const nx = bot.x + vx * dt;
+    const nz = bot.z + vz * dt;
+    if (canStep(bot, nx, nz)) { bot.x = nx; bot.z = nz; }
+    bot.y += (groundY(bot.x, bot.z) - bot.y) * Math.min(1, dt * 12);
+
+    broadcastAll({ t: 'move', id, x: bot.x, y: bot.y, z: bot.z, yaw: bot.yaw, pitch: bot.pitch });
+  }
+}
+if (BOT_FILL > 0) setInterval(botTick, BOT_TICK_MS).unref();
 
 /* ------------------------------------------------------------ upkeep */
 
@@ -346,6 +515,7 @@ process.on('SIGINT', () => shutdown('SIGINT'));
 httpServer.listen(PORT, '0.0.0.0', () => {
   log(`Blockcraft ${PVP ? 'PvP ' : ''}server listening on ws://0.0.0.0:${PORT} (health check: http://localhost:${PORT}/health)`);
   log(`World seed: ${SEED}`);
+  if (BOT_FILL > 0) log(`AI bots: topping the arena up to ${BOT_FILL} fighters whenever someone is in it`);
   if (DATA_FILE) log(`Saving to ${DATA_FILE} (${edits.size} block edits loaded)`);
   else log('No DATA_FILE set — the world resets whenever this restarts.');
   log(`Share ws://<this machine's address>:${PORT} with whoever you want to play with.`);
@@ -361,6 +531,7 @@ function broadcast(fromId, msg) {
   const json = JSON.stringify(msg);
   for (const [pid, p] of players) {
     if (pid === fromId) continue;
+    if (!p.ws) continue;   // a bot: nothing to send to
     try { p.ws.send(json); } catch { /* ignore, its own close handler will clean it up */ }
   }
 }

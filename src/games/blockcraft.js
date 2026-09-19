@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { Game } from '../engine/Game.js';
 import { sky, clamp, damp, seeded, lerp, invLerp, rand, Burst } from '../engine/utils.js';
+import { H, SEA, hash2, calibrateHeight, heightAt } from '../engine/terrainHeight.js';
 import {
   isValidSkinData, importSkinFile, skinToDataURL, skinFromDataURL, defaultSkinCanvas, buildSkinnedPlayer, drawSkinPreview,
 } from '../engine/Skin.js';
@@ -8,8 +9,6 @@ import {
 /* ------------------------------------------------------------------ world */
 
 const CHUNK = 16;
-const H = 40;                     // build height
-const SEA = 12;
 const REACH = 6;                  // how far you can break / place
 
 // The world has no edge: chunks generate on demand as the player walks and
@@ -50,6 +49,10 @@ const PVP_SERVER_URL = (import.meta.env && import.meta.env.VITE_PVP_SERVER) ?? '
 // hosts announce a join code there, everyone else reads the list back.
 const REGISTRY_URL = PVP_SERVER_URL.replace(/^ws/i, 'http').replace(/\/+$/, '');
 const MP_LIST_KEY = 'mg.blockcraft.listPublic';
+const MP_LEVEL_KEY = 'mg.blockcraft.aiLevel';
+// How hard the PvP arena's AI bots fight *you* — each player picks their own,
+// and the server applies it to whichever bots are chasing that player.
+const AI_LEVELS = [['supereasy', 'Super easy'], ['easy', 'Easy'], ['medium', 'Medium'], ['hard', 'Hard'], ['extreme', 'Extreme']];
 const ANNOUNCE_EVERY_MS = 25000;
 const ATTACK_REACH = 3.6;         // how far a swing at another player reaches
 const ATTACK_COOLDOWN = 0.45;     // seconds between swings (the server enforces its own)
@@ -195,6 +198,8 @@ export default class Blockcraft extends Game {
     this.hostPeer = null;
     this.hostConns = new Map();
     this.hostCode = null;
+    this.aiLevel = loadAiLevel();       // 'supereasy' … 'extreme'
+    this.hasBots = false;               // does the PvP server we're on run AI bots?
     this.listPublic = loadListPublic();   // announce a browser/desktop-hosted game on the public list?
     this.announceTimer = null;
     // 'client' / 'host' / null — set the instant Connect/Host is clicked,
@@ -1317,7 +1322,7 @@ export default class Blockcraft extends Game {
     this.net = link;
 
     link.addEventListener('open', () => {
-      link.send(JSON.stringify({ t: 'hello', name: this.playerName, skin: this.skinData }));
+      link.send(JSON.stringify({ t: 'hello', name: this.playerName, skin: this.skinData, level: this.aiLevel }));
     });
     link.addEventListener('message', (e) => this.handleNetMessage(e.data));
     link.addEventListener('close', () => this.handleNetClose());
@@ -1654,6 +1659,7 @@ export default class Blockcraft extends Game {
       for (const [x, y, z, id] of msg.edits) {
         if (y >= 0 && y < H && id >= 0 && id < BLOCKS.length) this.applyRemoteEdit(x, y, z, id);
       }
+      this.hasBots = !!msg.bots;
       this.pvp = !!msg.pvp;   // before the players are added, so their name tags know whether to show health
       this.flying = false;    // no flying in the arena — you drop to the ground on joining
       this.setFlyButton();
@@ -1905,6 +1911,7 @@ export default class Blockcraft extends Game {
 
   resetPvp() {
     this.pvp = false;
+    this.hasBots = false;
     this.setFlyButton();
     this.dead = false;
     this.hp = this.maxHp = 20;
@@ -2013,6 +2020,18 @@ export default class Blockcraft extends Game {
         }
       });
     }
+    const levelSel = panel.querySelector('.bc-level');
+    levelSel?.addEventListener('pointerdown', (e) => e.stopPropagation());
+    levelSel?.addEventListener('keydown', (e) => e.stopPropagation());
+    if (levelSel) {
+      levelSel.value = this.aiLevel;
+      levelSel.addEventListener('change', () => {
+        this.aiLevel = levelSel.value;
+        saveAiLevel(this.aiLevel);
+        if (this.net && this.net.readyState === 1) this.net.send(JSON.stringify({ t: 'level', level: this.aiLevel }));
+        this.hud.toast(`AI level: ${AI_LEVELS.find(([v]) => v === this.aiLevel)?.[1] ?? this.aiLevel}`, 1200);
+      });
+    }
     srvRefresh?.addEventListener('click', () => this.refreshServerList());
     srvList?.addEventListener('click', (e) => {
       const target = e.target.closest?.('button[data-join]');
@@ -2094,6 +2113,8 @@ export default class Blockcraft extends Game {
     const hostCode = panel.querySelector('.bc-host-code');
     const status = panel.querySelector('.bc-mp-status');
     const list = panel.querySelector('.bc-mp-players');
+    const levelRow = panel.querySelector('.bc-level-row');
+    if (levelRow) levelRow.hidden = !(this.pvp && this.hasBots && this.net);
     if (connectBtn) {
       connectBtn.textContent = this.net ? 'Disconnect' : 'Connect';
       connectBtn.classList.toggle('on', !!this.net);
@@ -2242,57 +2263,6 @@ function pvpHtml() {
 
 /* ------------------------------------------------------------- generation */
 
-/** Layered value noise for elevation. A stationary field — statistically the
- *  same everywhere — which is exactly what makes chunk-at-a-time generation
- *  possible: any column can be evaluated on its own, in any order. */
-function fieldAt(x, z, seed) {
-  let e = 0;
-  let amp = 1;
-  let freq = 0.012;
-  let sum = 0;
-  for (let o = 0; o < 4; o++) {
-    e += noise2(x * freq, z * freq, seed + o * 71) * amp;
-    sum += amp;
-    amp *= 0.5;
-    freq *= 2.1;
-  }
-  return e / sum;
-}
-
-/**
- * Fits the height curve to this seed's own spread rather than to fixed
- * constants — a flat mapping left some seeds with no sea at all and others
- * half drowned. Pinning the 30th percentile to the waterline gives every
- * seed a coast. There's no whole world to scan any more, so this samples a
- * large, sparse, deterministic spread of columns instead: since the field is
- * stationary, that sample's percentiles match the true (infinite) field's.
- */
-function calibrateHeight(seed) {
-  const N = 96;
-  const STRIDE = 37;   // no relation to the noise's own frequencies, so it can't alias with them
-  const samples = new Float32Array(N * N);
-  let i = 0;
-  for (let sz = 0; sz < N; sz++) {
-    for (let sx = 0; sx < N; sx++) {
-      samples[i++] = fieldAt((sx - N / 2) * STRIDE, (sz - N / 2) * STRIDE, seed);
-    }
-  }
-  const sorted = Float32Array.from(samples).sort();
-  return {
-    low: sorted[0],
-    shore: sorted[Math.floor(sorted.length * 0.3)],
-    peak: sorted[Math.floor(sorted.length * 0.995)],
-  };
-}
-
-function heightAt(x, z, seed, cal) {
-  const e = fieldAt(x, z, seed);
-  const h = e <= cal.shore
-    ? Math.round(lerp(2, SEA, invLerp(cal.low, cal.shore, e)))
-    : Math.round(lerp(SEA, H - 6, clamp(invLerp(cal.shore, cal.peak, e), 0, 1) ** 1.15));
-  return clamp(h, 1, H - 6);
-}
-
 /** Whether world column (x,z) roots a tree, and if so its trunk height — a
  *  pure function of the column, so it comes out the same regardless of
  *  which chunk asks (needed since a canopy can cross into a neighbour). */
@@ -2416,16 +2386,6 @@ function generateChunk(cx, cz, seed, cal) {
   return data;
 }
 
-function hash2(x, z, seed) {
-  // Math.imul throughout: this hash relies on 32-bit wraparound, and plain `*`
-  // silently loses the low bits once the product passes 2^53.
-  let n = (Math.imul(x | 0, 1619) + Math.imul(z | 0, 31337) + Math.imul(seed | 0, 1013)) | 0;
-  n = (n << 13) ^ n;
-  const m = (Math.imul(Math.imul(n, n), 15731) + 789221) | 0;
-  n = (Math.imul(n, m) + 1376312589) | 0;
-  return (n & 0x7fffffff) / 0x7fffffff;
-}
-
 function hash3(x, y, z, seed) {
   let n = (Math.imul(x | 0, 1619) + Math.imul(y | 0, 6971)
     + Math.imul(z | 0, 31337) + Math.imul(seed | 0, 1013)) | 0;
@@ -2448,20 +2408,6 @@ function noise3(x, y, z, seed) {
   const x01 = lerp(c(0, 0, 1), c(1, 0, 1), u);
   const x11 = lerp(c(0, 1, 1), c(1, 1, 1), u);
   return lerp(lerp(x00, x10, v), lerp(x01, x11, v), w);
-}
-
-function noise2(x, z, seed) {
-  const xi = Math.floor(x);
-  const zi = Math.floor(z);
-  const xf = x - xi;
-  const zf = z - zi;
-  const u = xf * xf * (3 - 2 * xf);
-  const v = zf * zf * (3 - 2 * zf);
-  return lerp(
-    lerp(hash2(xi, zi, seed), hash2(xi + 1, zi, seed), u),
-    lerp(hash2(xi, zi + 1, seed), hash2(xi + 1, zi + 1, seed), u),
-    v,
-  );
 }
 
 /* ------------------------------------------------------------------- save */
@@ -2543,6 +2489,17 @@ function saveSkin(data) {
     if (data) localStorage.setItem(MP_SKIN_KEY, data);
     else localStorage.removeItem(MP_SKIN_KEY);
   } catch { /* ignore */ }
+}
+
+function loadAiLevel() {
+  try {
+    const v = localStorage.getItem(MP_LEVEL_KEY);
+    return AI_LEVELS.some(([k]) => k === v) ? v : 'medium';
+  } catch { return 'medium'; }
+}
+
+function saveAiLevel(v) {
+  try { localStorage.setItem(MP_LEVEL_KEY, v); } catch { /* ignore */ }
 }
 
 function loadListPublic() {
@@ -2917,6 +2874,11 @@ function multiplayerHtml() {
       .bc-mp .bc-pvp-join { padding:6px 0; border-radius:5px; border:1px solid rgba(255,120,110,.6);
         background:rgba(255,90,80,.28); color:#fff; cursor:pointer; font:800 12px inherit; }
       .bc-mp .bc-net-row { display:flex; gap:4px; }
+      .bc-mp .bc-level-row { display:flex; align-items:center; justify-content:space-between; gap:8px; font-size:11px; }
+      .bc-mp .bc-level-row label { color:rgba(255,255,255,.8); }
+      .bc-mp .bc-level { background:rgba(255,255,255,.1); color:#fff; border:1px solid rgba(255,255,255,.25);
+        border-radius:5px; padding:3px 6px; font:600 11px inherit; }
+      .bc-mp .bc-level option { color:#000; }
       .bc-mp .bc-list-row { display:flex; align-items:center; gap:6px; font-size:11px; color:rgba(255,255,255,.8); cursor:pointer; }
       .bc-mp .bc-list-row input { width:auto; margin:0; }
       .bc-mp .bc-srv-head { display:flex; align-items:center; justify-content:space-between; }
@@ -2976,6 +2938,10 @@ function multiplayerHtml() {
         <button class="bc-host">Host</button>
       </div>
       ${REGISTRY_URL ? '<label class="bc-list-row"><input type="checkbox" class="bc-list-public" /> List my hosted game publicly</label>' : ''}
+      <div class="bc-level-row" hidden>
+        <label>AI level</label>
+        <select class="bc-level">${AI_LEVELS.map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select>
+      </div>
       <div class="bc-host-code" hidden><code></code><button class="bc-copy-code">Copy</button></div>
       ${REGISTRY_URL ? '<div class="bc-label bc-srv-head">Public servers <button class="bc-srv-refresh" title="Refresh">↻</button></div><div class="bc-srv-list"></div>' : ''}
       <div class="bc-mp-status">Offline — playing solo</div>
