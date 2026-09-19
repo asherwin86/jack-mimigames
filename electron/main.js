@@ -1,8 +1,9 @@
 import { app, BrowserWindow, dialog, shell } from 'electron';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import { autoUpdater } from 'electron-updater';
+import electronUpdater from 'electron-updater';   // CommonJS package: no named exports under ESM
 
+const { autoUpdater } = electronUpdater;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const UPDATE_CHECK_EVERY_MS = 4 * 60 * 60 * 1000;
 
