@@ -1,0 +1,18 @@
+# Free-tier variant of render.yaml — no card needed, but with two catches:
+#   1. Free web services sleep after ~15 minutes without traffic, so keep it awake
+#      by having an uptime monitor (e.g. UptimeRobot, free) request /health every 5 minutes.
+#   2. No persistent disk on the free plan, so the world (block edits) resets whenever
+#      the service restarts or redeploys. Players' own skins/worlds are unaffected.
+# Render: New → Blueprint → this repo → blueprint path "deploy/render-free.yaml".
+services:
+  - type: web
+    name: blockcraft-pvp
+    runtime: node
+    plan: free
+    buildCommand: npm ci --omit=dev
+    startCommand: node server/blockcraft-server.mjs --pvp
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: PVP
+        value: "1"

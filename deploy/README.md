@@ -26,9 +26,15 @@ the machine reboots**, and a **machine that is always on**. Pick one recipe.
    `deploy/render.yaml`.
 2. Note the service URL it gets (e.g. `https://blockcraft-pvp.onrender.com`).
    Your server address is the same with `wss://`.
-3. **Use a paid plan** (the blueprint asks for `starter`). Render's free web
+3. **The paid plan (`starter`, a few dollars a month) is what makes it truly always on.** Render's free web
    services go to sleep when idle, which is the opposite of always running. The
    persistent disk that keeps the world across restarts needs a paid plan too.
+
+**No card? Use the free variant:** blueprint path `deploy/render-free.yaml`. It runs
+on Render's free plan, with two catches: it sleeps after ~15 minutes idle (point a
+free uptime monitor such as UptimeRobot at `https://<your-service>/health` every
+5 minutes to keep it awake), and it has no disk, so block edits reset whenever the
+service restarts.
 
 ## Docker on a VPS
 
