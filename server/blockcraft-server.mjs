@@ -9,42 +9,85 @@
  * position to everyone else, and remembers every block placed or mined so
  * it can catch up anyone who joins later.
  *
- * It deliberately keeps no save file of its own — closing it ends the
- * session. Each player's own Blockcraft client still autosaves its *solo*
- * worlds exactly as before; joining a server just borrows the screen for a
- * shared one while connected.
+ *   node server/blockcraft-server.mjs [port] [seed] [--pvp]
  *
- *   node server/blockcraft-server.mjs [port] [seed]
- *
- * `port` defaults to 7443. `seed` can be any word (hashed the same way the
- * game itself hashes a typed seed) or omitted for a random one. Whoever
+ * `port` defaults to $PORT, then 7443. `seed` can be any word (hashed the
+ * same way the game itself hashes a typed seed) or omitted for a random one
+ * (or, if a data file exists, the seed it was last run with). Whoever
  * connects enters `ws://<this-machine's-address>:<port>` in the game's
  * Multiplayer panel — on the same Wi-Fi, that's usually a `192.168.x.x`
  * LAN address; reaching it over the internet means forwarding that port
  * (or tunnelling it) yourself, the same as hosting any other small server.
+ *
+ * PvP mode (`--pvp`, or PVP=1): players get hearts, can hit each other, die,
+ * respawn and are scored. The server is authoritative for all of it — a
+ * client only ever says "I swung at player X"; the server checks reach,
+ * cooldown and spawn protection and decides what that did.
+ *
+ * Built to be left running: it answers plain HTTP on the same port (GET / or
+ * /health, which is what hosting platforms poll), drops connections that stop
+ * answering pings, survives stray errors instead of exiting, shuts down
+ * cleanly on SIGTERM, and — when DATA_FILE is set — saves the world's seed
+ * and every block edit so a restart picks up where it left off.
+ * Deployment recipes live in deploy/.
  */
+import http from 'node:http';
+import fs from 'node:fs';
 import { WebSocketServer } from 'ws';
 
-const PORT = Number(process.argv[2]) || 7443;
-const SEED = process.argv[3] ? hashSeed(process.argv[3]) : (Math.random() * 0x7fffffff) | 0;
+const args = process.argv.slice(2);
+const flags = new Set(args.filter((a) => a.startsWith('--')));
+const positional = args.filter((a) => !a.startsWith('--'));
+
+const PORT = Number(positional[0]) || Number(process.env.PORT) || 7443;
+const PVP = flags.has('--pvp') || /^(1|true|yes)$/i.test(process.env.PVP || '');
+const DATA_FILE = process.env.DATA_FILE || '';
 const BUILD_HEIGHT = 40;   // must match H in src/games/blockcraft.js
 const MAX_BLOCK_ID = 16;   // BLOCKS there has 17 entries, indices 0-16 — id 17 is out of range and would crash a client's mesher
-
 const MAX_SKIN_CHARS = 30000;   // must match Skin.js — a 64x64 PNG data URL is well under this
+const MAX_PLAYERS = Number(process.env.MAX_PLAYERS) || 32;
+const MAX_PAYLOAD = 64 * 1024;  // one skin plus JSON framing fits with plenty of room; nothing legit is bigger
+
+// PvP tuning. Health is in half-hearts: 20 = ten hearts.
+const MAX_HP = 20;
+const HIT_DAMAGE = 4;            // two hearts a hit → five hits to kill
+const HIT_COOLDOWN_MS = 450;     // per attacker
+const HIT_REACH = 5.0;           // client reach is 3.6; the extra allows for lag in the last-known positions
+const RESPAWN_MS = 3000;
+const SPAWN_PROTECT_MS = 3000;   // can't be hit just after (re)spawning; attacking ends it early
+const REGEN_AFTER_MS = 6000;     // hearts creep back once you've gone this long without being hit…
+const REGEN_EVERY_MS = 2000;     // …one half-heart per this
+const KNOCKBACK = 7;
 
 const COLORS = ['#ff5a50', '#5ad1ff', '#ffd83f', '#7fd94a', '#c77dff', '#ff9ecb', '#66ffcf', '#ffa64d'];
 
-const players = new Map();   // id -> { ws, name, color, x, y, z, yaw, pitch }
+const players = new Map();   // id -> { ws, name, color, skin, x, y, z, yaw, pitch, hp, dead, kills, deaths, ... }
 const edits = new Map();     // "x,y,z" -> block id, every edit anyone has ever made this session
 let nextId = 1;
+let editsDirty = false;
 
-const wss = new WebSocketServer({ port: PORT });
+const saved = loadData();
+const SEED = positional[1] ? hashSeed(positional[1]) : (saved?.seed ?? ((Math.random() * 0x7fffffff) | 0));
+if (saved && saved.seed === SEED) {
+  for (const [k, b] of saved.edits) edits.set(k, b);
+}
+
+const httpServer = http.createServer((req, res) => {
+  const body = JSON.stringify({ ok: true, game: 'blockcraft', mode: PVP ? 'pvp' : 'coop', players: players.size, maxPlayers: MAX_PLAYERS, uptime: Math.round(process.uptime()) });
+  res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+  res.end(req.method === 'HEAD' ? undefined : body);
+});
+const wss = new WebSocketServer({ server: httpServer, maxPayload: MAX_PAYLOAD });
 
 wss.on('connection', (ws) => {
+  if (players.size >= MAX_PLAYERS) { ws.close(1013, 'server full'); return; }
   const id = String(nextId++);
   let joined = false;
+  ws.isAlive = true;
+  ws.on('pong', () => { ws.isAlive = true; });
 
   ws.on('message', (raw) => {
+    ws.isAlive = true;
     let msg;
     try { msg = JSON.parse(raw); } catch { return; }
     if (!msg || typeof msg !== 'object') return;
@@ -54,16 +97,26 @@ wss.on('connection', (ws) => {
       joined = true;
       const color = COLORS[(Number(id) - 1) % COLORS.length];
       const name = String(msg.name || `Player${id}`).trim().slice(0, 16) || `Player${id}`;
-      players.set(id, { ws, name, color, skin: validSkin(msg.skin), x: 0, y: 0, z: 0, yaw: 0, pitch: 0 });
+      players.set(id, {
+        ws, name, color, skin: validSkin(msg.skin), x: 0, y: 0, z: 0, yaw: 0, pitch: 0,
+        hp: MAX_HP, dead: false, kills: 0, deaths: 0,
+        lastHitAt: 0, lastHurtAt: 0, protectUntil: Date.now() + SPAWN_PROTECT_MS, respawnTimer: null,
+      });
 
       send(ws, {
         t: 'welcome',
         id,
         seed: SEED,
+        pvp: PVP,
+        maxHp: MAX_HP,
+        hp: MAX_HP,
         edits: [...edits.entries()].map(([key, b]) => [...key.split(',').map(Number), b]),
         players: [...players.entries()]
           .filter(([pid]) => pid !== id)
-          .map(([pid, p]) => ({ id: pid, name: p.name, color: p.color, skin: p.skin, x: p.x, y: p.y, z: p.z, yaw: p.yaw })),
+          .map(([pid, p]) => ({
+            id: pid, name: p.name, color: p.color, skin: p.skin, x: p.x, y: p.y, z: p.z, yaw: p.yaw,
+            hp: p.hp, dead: p.dead, kills: p.kills, deaths: p.deaths,
+          })),
       });
       broadcast(id, { t: 'join', id, name, color, skin: players.get(id).skin });
       log(`${name} joined (${players.size} online)`);
@@ -83,13 +136,17 @@ wss.on('connection', (ws) => {
     } else if (msg.t === 'skin') {
       player.skin = validSkin(msg.skin);
       broadcast(id, { t: 'skin', id, skin: player.skin });
+    } else if (msg.t === 'hit') {
+      if (PVP) handleHit(id, player, String(msg.target));
     } else if (msg.t === 'edit') {
+      if (player.dead) return;
       const x = msg.x | 0;
       const y = msg.y | 0;
       const z = msg.z | 0;
       const b = msg.b | 0;
       if (y < 0 || y >= BUILD_HEIGHT || b < 0 || b > MAX_BLOCK_ID) return;
       edits.set(`${x},${y},${z}`, b);
+      editsDirty = true;
       broadcast(id, { t: 'edit', x, y, z, b });
     } else if (msg.t === 'chat') {
       const text = String(msg.text || '').trim().slice(0, 140);
@@ -100,6 +157,7 @@ wss.on('connection', (ws) => {
   ws.on('close', () => {
     if (!joined) return;
     const player = players.get(id);
+    if (player?.respawnTimer) clearTimeout(player.respawnTimer);
     players.delete(id);
     broadcast(id, { t: 'leave', id });
     log(`${player?.name ?? id} left (${players.size} online)`);
@@ -108,10 +166,99 @@ wss.on('connection', (ws) => {
   ws.on('error', () => { /* 'close' still follows; nothing extra to do here */ });
 });
 
-log(`Blockcraft server listening on ws://0.0.0.0:${PORT}`);
-log(`World seed: ${SEED}`);
-log(`Share ws://<this machine's address>:${PORT} with whoever you want to play with.`);
-log('Press Ctrl+C to stop — nothing here is saved, so that ends the session for everyone.');
+/* ------------------------------------------------------------------- PvP */
+
+function handleHit(attackerId, attacker, targetId) {
+  const now = Date.now();
+  const victim = players.get(targetId);
+  if (!victim || targetId === attackerId || attacker.dead || victim.dead) return;
+  if (now - attacker.lastHitAt < HIT_COOLDOWN_MS) return;
+  attacker.lastHitAt = now;
+  attacker.protectUntil = 0;   // swinging at someone forfeits your own spawn protection
+
+  // Reach, from the attacker's eye to the middle of the victim, using the
+  // positions each client last reported.
+  const dx = victim.x - attacker.x;
+  const dy = victim.y + 0.9 - (attacker.y + 1.62);
+  const dz = victim.z - attacker.z;
+  if (Math.hypot(dx, dy, dz) > HIT_REACH) return;
+  if (now < victim.protectUntil) return;
+
+  victim.hp = Math.max(0, victim.hp - HIT_DAMAGE);
+  victim.lastHurtAt = now;
+  const horiz = Math.hypot(dx, dz) || 1;
+  broadcastAll({
+    t: 'hurt', id: targetId, by: attackerId, hp: victim.hp,
+    kx: (dx / horiz) * KNOCKBACK, kz: (dz / horiz) * KNOCKBACK,
+  });
+
+  if (victim.hp > 0) return;
+  victim.dead = true;
+  victim.deaths++;
+  attacker.kills++;
+  broadcastAll({
+    t: 'died', id: targetId, by: attackerId, name: victim.name, byName: attacker.name,
+    deaths: victim.deaths, byKills: attacker.kills,
+  });
+  log(`${attacker.name} killed ${victim.name}`);
+  victim.respawnTimer = setTimeout(() => {
+    victim.respawnTimer = null;
+    if (!players.has(targetId)) return;
+    victim.dead = false;
+    victim.hp = MAX_HP;
+    victim.protectUntil = Date.now() + SPAWN_PROTECT_MS;
+    broadcastAll({ t: 'respawn', id: targetId, hp: MAX_HP });
+  }, RESPAWN_MS);
+}
+
+/** Hearts creep back for anyone who hasn't been hit lately. */
+function regenTick() {
+  const now = Date.now();
+  for (const [id, p] of players) {
+    if (p.dead || p.hp >= MAX_HP || now - p.lastHurtAt < REGEN_AFTER_MS) continue;
+    p.hp++;
+    broadcastAll({ t: 'health', id, hp: p.hp });
+  }
+}
+if (PVP) setInterval(regenTick, REGEN_EVERY_MS).unref();
+
+/* ------------------------------------------------------------ upkeep */
+
+// Dead-connection sweep: a client that vanished without a proper close (lid
+// shut, wifi dropped) would otherwise keep a ghost avatar forever.
+setInterval(() => {
+  for (const ws of wss.clients) {
+    if (!ws.isAlive) { ws.terminate(); continue; }
+    ws.isAlive = false;
+    try { ws.ping(); } catch { /* already gone */ }
+  }
+}, 30000).unref();
+
+setInterval(saveData, 30000).unref();
+
+// A long-running server shouldn't die to one bad message from one bad client.
+process.on('uncaughtException', (err) => log(`uncaught error (continuing): ${err?.stack || err}`));
+process.on('unhandledRejection', (err) => log(`unhandled rejection (continuing): ${err?.stack || err}`));
+
+function shutdown(signal) {
+  log(`${signal} — saving and shutting down`);
+  saveData();
+  for (const ws of wss.clients) { try { ws.close(1001, 'server restarting'); } catch { /* ignore */ } }
+  httpServer.close(() => process.exit(0));
+  setTimeout(() => process.exit(0), 2000).unref();
+}
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
+
+httpServer.listen(PORT, '0.0.0.0', () => {
+  log(`Blockcraft ${PVP ? 'PvP ' : ''}server listening on ws://0.0.0.0:${PORT} (health check: http://localhost:${PORT}/health)`);
+  log(`World seed: ${SEED}`);
+  if (DATA_FILE) log(`Saving to ${DATA_FILE} (${edits.size} block edits loaded)`);
+  else log('No DATA_FILE set — the world resets whenever this restarts.');
+  log(`Share ws://<this machine's address>:${PORT} with whoever you want to play with.`);
+});
+
+/* ------------------------------------------------------------ helpers */
 
 function send(ws, msg) {
   try { ws.send(JSON.stringify(msg)); } catch { /* socket already gone */ }
@@ -125,6 +272,11 @@ function broadcast(fromId, msg) {
   }
 }
 
+/** Like broadcast(), but to everyone — the player a message is about needs it too. */
+function broadcastAll(msg) {
+  broadcast(null, msg);
+}
+
 /** Only a small PNG data URL is ever relayed as a skin; anything else is
  *  dropped (null = the default look) rather than passed on to other players. */
 function validSkin(s) {
@@ -136,6 +288,29 @@ function validSkin(s) {
 function finite(n) {
   const v = Number(n);
   return Number.isFinite(v) ? v : 0;
+}
+
+function loadData() {
+  if (!DATA_FILE) return null;
+  try {
+    const d = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+    if (typeof d.seed === 'number' && Array.isArray(d.edits)) return d;
+  } catch { /* first run, or unreadable — start fresh */ }
+  return null;
+}
+
+/** Written to a temp file then renamed, so a crash mid-write can't leave a
+ *  half-written world behind. */
+function saveData() {
+  if (!DATA_FILE || !editsDirty) return;
+  try {
+    const tmp = `${DATA_FILE}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify({ seed: SEED, edits: [...edits.entries()] }));
+    fs.renameSync(tmp, DATA_FILE);
+    editsDirty = false;
+  } catch (err) {
+    log(`could not save ${DATA_FILE}: ${err.message}`);
+  }
 }
 
 function log(msg) {

@@ -42,6 +42,11 @@ const MP_NAME_KEY = 'mg.blockcraft.playerName';
 const MP_SERVER_KEY = 'mg.blockcraft.lastServer';
 const MP_SKIN_KEY = 'mg.blockcraft.skin';   // the player's imported skin, as a small PNG data URL
 const NET_MOVE_INTERVAL = 0.1;    // seconds between position updates sent to the server
+// An always-on public PvP server can be baked into a build (VITE_PVP_SERVER=wss://…);
+// when set, the Multiplayer panel gets a one-click "Join PvP Arena" button.
+const PVP_SERVER_URL = (import.meta.env && import.meta.env.VITE_PVP_SERVER) || '';
+const ATTACK_REACH = 3.6;         // how far a swing at another player reaches
+const ATTACK_COOLDOWN = 0.45;     // seconds between swings (the server enforces its own)
 
 // id -> { name, tiles: [top, side, bottom], solid, alpha }
 const BLOCKS = [
@@ -166,6 +171,15 @@ export default class Blockcraft extends Game {
     this.skinData = loadSkin();     // validated PNG data URL, or null for the default look
     this.skinCanvas = null;         // decoded 64x64 canvas of it (for the preview), filled in async
     this.chatLog = [];
+    // PvP (only ever on when the server says so in its welcome — see resetPvp()).
+    this.pvp = false;
+    this.maxHp = 20;
+    this.hp = 20;
+    this.dead = false;
+    this.kills = 0;
+    this.deaths = 0;
+    this.atkCool = 0;
+    this.heartsShown = -1;
     // Browser hosting (see hostMultiplayer()): this tab acting as the server
     // itself, over WebRTC, rather than connecting out to one.
     this.hostPeer = null;
@@ -231,7 +245,7 @@ export default class Blockcraft extends Game {
   beginPlay() {
     if (this.playing) return;
     this.playing = true;
-    this.hud.panel(hotbarHtml() + touchHtml() + worldHtml() + multiplayerHtml());
+    this.hud.panel(hotbarHtml() + pvpHtml() + touchHtml() + worldHtml() + multiplayerHtml());
     this.refreshHotbar();
     this.bindTouch();
     this.bindWorldPanel();
@@ -776,7 +790,7 @@ export default class Blockcraft extends Game {
     // Chunks keep streaming in and the world stays visible behind the landing
     // screen, but nothing reads player input (and pointer lock never gets
     // requested) until the player has actually chosen a world or server.
-    if (this.playing) {
+    if (this.playing && !this.dead) {
       this.look(dt);
       this.move(dt);
       this.interact(dt);
@@ -998,6 +1012,42 @@ export default class Blockcraft extends Game {
     return null;
   }
 
+  /** The id of the nearest living player the view ray hits within reach and
+   *  before any block in the way, or null. Each player is a 0.6 x 1.8 x 0.6
+   *  box, tested with the standard slab method. */
+  pickPlayer(blockHit) {
+    const dir = new THREE.Vector3(0, 0, -1).applyEuler(new THREE.Euler(this.pitch, this.yaw, 0, 'YXZ'));
+    const ox = this.pos.x, oy = this.pos.y + 1.62, oz = this.pos.z;
+    let maxT = ATTACK_REACH;
+    if (blockHit) {
+      const bt = Math.hypot(blockHit.x + 0.5 - ox, blockHit.y + 0.5 - oy, blockHit.z + 0.5 - oz) - 0.5;
+      if (bt < maxT) maxT = bt;
+    }
+    let best = null;
+    let bestT = maxT;
+    for (const [id, peer] of this.netPeers) {
+      if (peer.dead) continue;
+      const lo = [peer.x - 0.3, peer.y, peer.z - 0.3];
+      const hi = [peer.x + 0.3, peer.y + 1.8, peer.z + 0.3];
+      const o = [ox, oy, oz];
+      const d = [dir.x, dir.y, dir.z];
+      let t0 = 0, t1 = bestT;
+      for (let i = 0; i < 3 && t0 <= t1; i++) {
+        if (Math.abs(d[i]) < 1e-9) {
+          if (o[i] < lo[i] || o[i] > hi[i]) t1 = -1;
+        } else {
+          let a = (lo[i] - o[i]) / d[i];
+          let b = (hi[i] - o[i]) / d[i];
+          if (a > b) [a, b] = [b, a];
+          t0 = Math.max(t0, a);
+          t1 = Math.min(t1, b);
+        }
+      }
+      if (t0 <= t1) { best = id; bestT = t0; }
+    }
+    return best;
+  }
+
   interact(dt) {
     this.cool -= dt;
 
@@ -1019,7 +1069,21 @@ export default class Blockcraft extends Game {
       if (slot >= 0) this.selectSlot(slot);
     }
 
-    this.mine(dt, hit);
+    // In PvP, a swing at the player under the crosshair hits them instead of
+    // digging; everything else falls through to mining as normal.
+    this.atkCool -= dt;
+    const target = this.pvp && this.net ? this.pickPlayer(hit) : null;
+    if (target) {
+      this.mine(dt, null);
+      const swinging = (this.input.button(0) && this.input.locked) || this.input.gpButton(7) || this.touch.mine;
+      if (swinging && this.atkCool <= 0 && this.net.readyState === 1) {
+        this.atkCool = ATTACK_COOLDOWN;
+        this.net.send(JSON.stringify({ t: 'hit', target }));
+        this.audio.tone(200, 0.06, { type: 'square', gain: 0.09 });
+      }
+    } else {
+      this.mine(dt, hit);
+    }
 
     if (!hit || this.cool > 0) return;
     const placing = this.input.button(2) || this.input.gpButton(6) || this.touch.place;
@@ -1133,6 +1197,7 @@ export default class Blockcraft extends Game {
       head.rotation.x = clamp(-peer.pitch, -1.2, 1.2);
       peer.avatar.group.position.set(peer.x, peer.y, peer.z);
       peer.avatar.group.rotation.y = peer.yaw;
+      peer.tag.sprite.position.set(peer.x, peer.y + 2.2, peer.z);
     }
   }
 
@@ -1392,6 +1457,7 @@ export default class Blockcraft extends Game {
     this.netStatus = 'offline';
     this.netMode = null;
     this.clearNetPeers();
+    this.resetPvp();
     this.refreshMultiplayerPanel();
   }
 
@@ -1431,10 +1497,17 @@ export default class Blockcraft extends Game {
       for (const [x, y, z, id] of msg.edits) {
         if (y >= 0 && y < H && id >= 0 && id < BLOCKS.length) this.applyRemoteEdit(x, y, z, id);
       }
+      this.pvp = !!msg.pvp;   // before the players are added, so their name tags know whether to show health
+      this.maxHp = Number(msg.maxHp) || 20;
+      this.hp = clamp(Number(msg.hp) || this.maxHp, 0, this.maxHp);
+      this.dead = false;
+      this.kills = 0;
+      this.deaths = 0;
       for (const p of msg.players) this.addNetPeer(p.id, p);
       this.hud.toast(`CONNECTED · seed ${msg.seed}`, 1600);
       this.beginPlay();   // connecting successfully is enough to jump straight into playing
-      this.hud.hint(`Multiplayer, seed ${msg.seed} · ` + this.controlsHint());
+      this.hud.hint(`${this.pvp ? 'PvP arena' : 'Multiplayer'}, seed ${msg.seed} · ` + this.controlsHint());
+      this.refreshHearts(true);
       this.refreshMultiplayerPanel();
     } else if (msg.t === 'join') {
       this.addNetPeer(msg.id, {
@@ -1452,6 +1525,8 @@ export default class Blockcraft extends Game {
       if (peer) { peer.tx = msg.x; peer.ty = msg.y; peer.tz = msg.z; peer.tyaw = msg.yaw; peer.tpitch = Number(msg.pitch) || 0; }
     } else if (msg.t === 'skin') {
       this.setPeerSkin(msg.id, isValidSkinData(msg.skin) ? msg.skin : null);
+    } else if (this.pvp && (msg.t === 'hurt' || msg.t === 'health' || msg.t === 'died' || msg.t === 'respawn')) {
+      this.handlePvpMessage(msg);
     } else if (msg.t === 'edit') {
       const y = msg.y | 0;
       const b = msg.b | 0;
@@ -1467,13 +1542,23 @@ export default class Blockcraft extends Game {
     const avatar = buildSkinnedPlayer(defaultSkinCanvas(info.color));
     avatar.group.position.set(info.x, info.y, info.z);
     this.scene.add(avatar.group);
+    const tag = makeNameTag();
+    this.scene.add(tag.sprite);
     this.netPeers.set(id, {
-      avatar, name: info.name, color: info.color, skinToken: 0,
+      avatar, tag, name: info.name, color: info.color, skinToken: 0,
+      hp: Number(info.hp) || this.maxHp, dead: !!info.dead, kills: info.kills | 0, deaths: info.deaths | 0,
       x: info.x, y: info.y, z: info.z, yaw: info.yaw || 0,
       tx: info.x, ty: info.y, tz: info.z, tyaw: info.yaw || 0,
       pitch: 0, tpitch: 0, walk: 0, phase: 0,
     });
     this.setPeerSkin(id, isValidSkinData(info.skin) ? info.skin : null);
+    this.drawPeerTag(this.netPeers.get(id));
+  }
+
+  drawPeerTag(peer) {
+    peer.tag.draw(peer.name, this.pvp ? peer.hp / this.maxHp : null);
+    peer.tag.sprite.visible = !peer.dead;
+    peer.avatar.group.visible = !peer.dead;
   }
 
   removeNetPeer(id) {
@@ -1481,6 +1566,8 @@ export default class Blockcraft extends Game {
     if (!peer) return;
     this.scene.remove(peer.avatar.group);
     peer.avatar.dispose();
+    this.scene.remove(peer.tag.sprite);
+    peer.tag.dispose();
     this.netPeers.delete(id);
   }
 
@@ -1509,6 +1596,7 @@ export default class Blockcraft extends Game {
     this.scene.remove(peer.avatar.group);
     peer.avatar.dispose();
     peer.avatar = next;
+    next.group.visible = !peer.dead;
     this.scene.add(next.group);
   }
 
@@ -1546,6 +1634,118 @@ export default class Blockcraft extends Game {
     } catch (err) {
       this.hud.toast(err?.message || 'Could not read that skin', 2600);
     }
+  }
+
+  /* ------------------------------------------------------------------ PvP */
+
+  /** hurt / health / died / respawn from a PvP server. The server decides all
+   *  of it; this just shows the result — hearts, knockback, the kill feed,
+   *  the death screen and the scoreboard. */
+  handlePvpMessage(msg) {
+    const me = msg.id === this.netId;
+    const peer = this.netPeers.get(msg.id);
+
+    if (msg.t === 'hurt') {
+      if (me) {
+        this.setHp(msg.hp);
+        this.vel.x += Number(msg.kx) || 0;
+        this.vel.z += Number(msg.kz) || 0;
+        this.vel.y = Math.max(this.vel.y, 5);
+        this.flashHurt();
+        this.audio.tone(140, 0.12, { type: 'sawtooth', gain: 0.12 });
+      } else if (peer) {
+        peer.hp = msg.hp;
+        this.drawPeerTag(peer);
+      }
+    } else if (msg.t === 'health') {
+      if (me) this.setHp(msg.hp);
+      else if (peer) { peer.hp = msg.hp; this.drawPeerTag(peer); }
+    } else if (msg.t === 'died') {
+      const killerIsMe = msg.by === this.netId;
+      if (me) {
+        this.dead = true;
+        this.deaths = msg.deaths | 0;
+        this.setHp(0);
+        this.showDeath(`Killed by ${String(msg.byName).slice(0, 16)}`);
+      } else if (peer) {
+        peer.dead = true;
+        peer.deaths = msg.deaths | 0;
+        peer.hp = 0;
+        this.drawPeerTag(peer);
+      }
+      if (killerIsMe) { this.kills = msg.byKills | 0; this.audio.good(); }
+      else if (this.netPeers.has(msg.by)) this.netPeers.get(msg.by).kills = msg.byKills | 0;
+      const line = `${String(msg.byName).slice(0, 16)} killed ${String(msg.name).slice(0, 16)}`;
+      this.pushChat('⚔', line, false);
+      this.hud.toast(killerIsMe ? `You killed ${String(msg.name).slice(0, 16)}` : line, 1800);
+      this.refreshMultiplayerPanel();
+    } else if (msg.t === 'respawn') {
+      if (me) {
+        this.dead = false;
+        this.pos.copy(this.spawnPos);
+        this.vel.set(0, 0, 0);
+        this.updateStreaming(true);
+        this.setHp(msg.hp);
+        this.showDeath(null);
+      } else if (peer) {
+        peer.dead = false;
+        peer.hp = msg.hp;
+        peer.x = peer.tx = this.spawnPos.x; peer.y = peer.ty = this.spawnPos.y; peer.z = peer.tz = this.spawnPos.z;
+        this.drawPeerTag(peer);
+      }
+    }
+  }
+
+  setHp(hp) {
+    this.hp = clamp(Number(hp) || 0, 0, this.maxHp);
+    this.refreshHearts();
+  }
+
+  /** Redraws the row of hearts (10 of them; each is 2 hp, so half hearts
+   *  show) — only when the number actually changed, or when forced. */
+  refreshHearts(force = false) {
+    const el = this.hud.$panel?.querySelector('.bc-hearts');
+    if (!el) return;
+    el.hidden = !this.pvp;
+    if (!this.pvp) { this.heartsShown = -1; return; }
+    if (!force && this.heartsShown === this.hp) return;
+    this.heartsShown = this.hp;
+    const n = Math.ceil(this.maxHp / 2);
+    let html = '';
+    for (let i = 0; i < n; i++) {
+      const cls = this.hp >= 2 * (i + 1) ? 'full' : this.hp === 2 * i + 1 ? 'half' : 'empty';
+      html += `<span class="bc-heart ${cls}">♥</span>`;
+    }
+    el.innerHTML = html;
+    el.classList.toggle('low', this.hp > 0 && this.hp <= 6);
+  }
+
+  flashHurt() {
+    const el = this.hud.$panel?.querySelector('.bc-hurt');
+    if (!el) return;
+    el.style.transition = 'none';
+    el.style.opacity = '0.55';
+    void el.offsetWidth;   // restart the transition
+    el.style.transition = 'opacity .5s ease-out';
+    el.style.opacity = '0';
+  }
+
+  showDeath(text) {
+    const el = this.hud.$panel?.querySelector('.bc-death');
+    if (!el) return;
+    el.hidden = !text;
+    if (text) el.querySelector('.bc-death-by').textContent = text;
+  }
+
+  /** Back to ordinary (non-PvP) play: no hearts, no death screen. */
+  resetPvp() {
+    this.pvp = false;
+    this.dead = false;
+    this.hp = this.maxHp = 20;
+    this.kills = 0;
+    this.deaths = 0;
+    this.refreshHearts(true);
+    this.showDeath(null);
   }
 
   /** Wires the Multiplayer panel: name field, server address field, and the
@@ -1621,6 +1821,15 @@ export default class Blockcraft extends Game {
       }
       if (this.net) return;   // Connect is the active mode; Host is disabled, but guard anyway
       this.hostMultiplayer();
+    });
+
+    const pvpBtn = panel.querySelector('.bc-pvp-join');
+    pvpBtn?.addEventListener('pointerdown', (e) => e.stopPropagation());
+    pvpBtn?.addEventListener('click', () => {
+      if (this.hostPeer) return;   // hosting your own game is the active mode
+      if (serverInput) serverInput.value = PVP_SERVER_URL;
+      saveLastServer(PVP_SERVER_URL);
+      this.connectMultiplayer(PVP_SERVER_URL);
     });
 
     copyBtn?.addEventListener('click', () => {
@@ -1714,8 +1923,11 @@ export default class Blockcraft extends Game {
             : 'Offline — playing solo';
     }
     if (list) {
-      list.innerHTML = [...this.netPeers.values()].map((p) => (
-        `<div class="bc-mp-player"><span class="bc-mp-dot" style="background:${escapeHtml(p.color)}"></span>${escapeHtml(p.name)}</div>`
+      const score = (k, d) => (this.pvp ? `<span class="bc-mp-score">⚔${k} ☠${d}</span>` : '');
+      const me = this.pvp && this.net
+        ? `<div class="bc-mp-player"><span class="bc-mp-dot" style="background:#fff"></span>You${score(this.kills, this.deaths)}</div>` : '';
+      list.innerHTML = me + [...this.netPeers.values()].map((p) => (
+        `<div class="bc-mp-player"><span class="bc-mp-dot" style="background:${escapeHtml(p.color)}"></span>${escapeHtml(p.name)}${score(p.kills, p.deaths)}</div>`
       )).join('');
     }
   }
@@ -1770,6 +1982,69 @@ function buildClouds() {
     group.add(cloud);
   }
   return group;
+}
+
+/** A floating name (and, in PvP, health bar) above another player — a sprite
+ *  that always faces the camera. draw(name, frac) repaints it; frac is 0..1
+ *  health, or null to leave the bar off. */
+function makeNameTag() {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256; canvas.height = 64;
+  const ctx = canvas.getContext('2d');
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  const material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false });
+  const sprite = new THREE.Sprite(material);
+  sprite.scale.set(1.6, 0.4, 1);
+  return {
+    sprite,
+    draw(name, frac) {
+      if (typeof ctx.fillText !== 'function') return;   // a stub 2D context (tests) can't draw text
+      ctx.clearRect(0, 0, 256, 64);
+      ctx.font = '700 26px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.lineWidth = 5;
+      ctx.strokeStyle = 'rgba(0,0,0,.75)';
+      ctx.strokeText(name, 128, 28);
+      ctx.fillStyle = '#fff';
+      ctx.fillText(name, 128, 28);
+      if (frac !== null) {
+        ctx.fillStyle = 'rgba(0,0,0,.65)';
+        ctx.fillRect(48, 40, 160, 14);
+        ctx.fillStyle = frac > 0.3 ? '#ff4d5e' : '#ffb020';
+        ctx.fillRect(50, 42, 156 * Math.max(0, Math.min(1, frac)), 10);
+      }
+      texture.needsUpdate = true;
+    },
+    dispose() { texture.dispose(); material.dispose(); },
+  };
+}
+
+/** PvP overlays: the row of hearts, the red damage flash, and the "you died"
+ *  screen. All hidden until a PvP server's welcome turns them on. */
+function pvpHtml() {
+  return `
+    <style>
+      .bc-hearts { position:absolute; left:50%; bottom:132px; transform:translateX(-50%);
+        display:flex; gap:2px; pointer-events:none; }
+      .bc-hearts[hidden] { display:none; }
+      .bc-heart { font:400 24px/1 system-ui; color:#ff4d5e; text-shadow:0 2px 4px rgba(0,0,0,.7); }
+      .bc-heart.empty { color:rgba(255,255,255,.28); }
+      .bc-heart.half { background:linear-gradient(90deg,#ff4d5e 50%,rgba(255,255,255,.28) 50%);
+        -webkit-background-clip:text; background-clip:text; color:transparent; text-shadow:none; }
+      .bc-hearts.low .bc-heart.full, .bc-hearts.low .bc-heart.half { animation:bc-pulse .7s ease-in-out infinite alternate; }
+      @keyframes bc-pulse { to { transform:scale(1.18); } }
+      .bc-hurt { position:absolute; inset:0; pointer-events:none; opacity:0;
+        background:radial-gradient(ellipse at center, rgba(255,0,0,0) 35%, rgba(200,0,0,.85) 100%); }
+      .bc-death { position:absolute; inset:0; display:grid; place-content:center; text-align:center;
+        background:rgba(120,0,0,.5); pointer-events:none; color:#fff; }
+      .bc-death[hidden] { display:none; }
+      .bc-death h2 { margin:0 0 6px; font:800 44px system-ui; text-shadow:0 4px 14px rgba(0,0,0,.6); }
+      .bc-death p { margin:0; font:600 16px system-ui; opacity:.9; }
+    </style>
+    <div class="bc-hurt"></div>
+    <div class="bc-hearts" hidden></div>
+    <div class="bc-death" hidden><h2>You died</h2><p class="bc-death-by"></p><p>Respawning…</p></div>`;
 }
 
 /* ------------------------------------------------------------- generation */
@@ -2432,6 +2707,8 @@ function multiplayerHtml() {
       .bc-mp .bc-skin-btns button { padding:4px 0; border-radius:5px; border:1px solid rgba(255,255,255,.25);
         background:rgba(255,255,255,.1); color:#fff; cursor:pointer; font:700 11px inherit; }
       .bc-mp .bc-skin-hint { font-size:10px; line-height:1.3; color:rgba(255,255,255,.5); }
+      .bc-mp .bc-pvp-join { padding:6px 0; border-radius:5px; border:1px solid rgba(255,120,110,.6);
+        background:rgba(255,90,80,.28); color:#fff; cursor:pointer; font:800 12px inherit; }
       .bc-mp .bc-net-row { display:flex; gap:4px; }
       .bc-mp .bc-net-row button { flex:1; padding:5px 0; border-radius:5px; border:1px solid rgba(255,255,255,.25);
         background:rgba(110,231,255,.22); color:#fff; cursor:pointer; font:700 12px inherit; }
@@ -2447,6 +2724,7 @@ function multiplayerHtml() {
       .bc-mp-player { display:flex; align-items:center; gap:5px; font-size:11px;
         overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
       .bc-mp-dot { width:8px; height:8px; border-radius:50%; flex:none; }
+      .bc-mp-score { margin-left:auto; color:rgba(255,255,255,.65); font-size:10px; }
       .bc-mp .bc-mp-chat { display:flex; flex-direction:column; gap:2px; max-height:96px;
         overflow-y:auto; font-size:11px; line-height:1.35; }
       .bc-mp-msg { overflow-wrap:anywhere; }
@@ -2472,6 +2750,7 @@ function multiplayerHtml() {
       <input class="bc-skin-file" type="file" accept="image/png" hidden />
       <div class="bc-label">Server address or host code</div>
       <input class="bc-server-input" type="text" placeholder="ws://host:7443 or a code" maxlength="80" />
+      ${PVP_SERVER_URL ? '<button class="bc-pvp-join">⚔ Join PvP Arena</button>' : ''}
       <div class="bc-net-row">
         <button class="bc-connect">Connect</button>
         <button class="bc-host">Host</button>

@@ -1,0 +1,20 @@
+# Render Blueprint for an always-on Blockcraft PvP server.
+# Render: New → Blueprint → this repo → blueprint path "deploy/render.yaml".
+services:
+  - type: web
+    name: blockcraft-pvp
+    runtime: node
+    plan: starter            # paid: free plans sleep when idle, which defeats "always running"
+    buildCommand: npm ci --omit=dev
+    startCommand: node server/blockcraft-server.mjs --pvp
+    healthCheckPath: /health # Render restarts the service if this stops answering
+    autoDeploy: true
+    envVars:
+      - key: PVP
+        value: "1"
+      - key: DATA_FILE
+        value: /data/world.json
+    disk:
+      name: world
+      mountPath: /data       # survives restarts and redeploys, so builds aren't lost
+      sizeGB: 1

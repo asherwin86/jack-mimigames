@@ -141,6 +141,14 @@ try {
   ok('block id 17 (one past the last real block) is rejected', !edits17vs16.some((m) => m.b === 17));
   ok('block id 16 (the actual highest valid block) is accepted', edits17vs16.some((m) => m.b === 16));
 
+  // Outside --pvp there are no hearts: a "hit" must do nothing at all.
+  a.send(JSON.stringify({ t: 'move', x: 0, y: 0, z: 0, yaw: 0, pitch: 0 }));
+  b.send(JSON.stringify({ t: 'move', x: 1, y: 0, z: 0, yaw: 0, pitch: 0 }));
+  a.send(JSON.stringify({ t: 'hit', target: welcomeB.id }));
+  b.send(JSON.stringify({ t: 'move', x: 1, y: 0, z: 1, yaw: 0, pitch: 0 }));   // sentinel
+  await readA.expect('move');
+  ok('a non-PvP server ignores hits and reports pvp:false', !readB.all.some((m) => m.t === 'hurt') && welcomeA.pvp === false);
+
   // Skins: a small PNG data URL is relayed (in join, in later welcomes, and on
   // live changes); anything else is dropped to null rather than passed along.
   const GOOD_SKIN = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==';

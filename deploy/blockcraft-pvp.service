@@ -1,0 +1,22 @@
+# systemd unit for an always-on Blockcraft PvP server.
+# Edit User and the two paths, then see deploy/README.md.
+[Unit]
+Description=Blockcraft PvP server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=blockcraft
+WorkingDirectory=/opt/mini-games
+Environment=PVP=1 PORT=7443 DATA_FILE=/var/lib/blockcraft/world.json
+ExecStart=/usr/bin/node server/blockcraft-server.mjs
+Restart=always
+RestartSec=3
+StateDirectory=blockcraft
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

@@ -121,6 +121,11 @@ the surface, that ore is layered by depth, that all 36 chunks mesh, that the
 player lands on solid ground, that mining a buried pocket exposes the cavity
 walls, and that holding to dig respects each block's hardness.
 
+`npm run check:pvp` starts the real server in `--pvp` mode and checks hearts,
+reach and cooldown, spawn protection, knockback, death/scoring/respawn, health
+regeneration, and that the world survives a restart. To run a PvP server that
+stays up, see [`deploy/`](deploy/README.md).
+
 `npm run check:backdrop` covers the menu backdrop: that hovering a flying
 creeper lights its fuse, that the fuse detonates it and it respawns, and that
 bombs and Claude marks fall from the sky while the flock flies past. The flock

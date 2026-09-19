@@ -1,0 +1,13 @@
+# From this folder:  docker compose up -d --build
+services:
+  blockcraft-pvp:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    restart: unless-stopped    # comes back after a crash and after the machine reboots
+    ports:
+      - "7443:7443"
+    volumes:
+      - world:/data
+volumes:
+  world:
