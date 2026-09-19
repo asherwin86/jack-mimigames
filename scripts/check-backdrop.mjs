@@ -320,6 +320,22 @@ check('creepers all still in play', creepers.every((c) => Number.isFinite(c.posi
 check('the flock stays in its lane',
   flock.every((o) => o.position.z <= 17 && o.position.z >= -71));
 check('marks keep cycling', marks.every((m) => m.position.y <= 36 && m.position.y > -23));
+// --- shooting stars ---------------------------------------------------------
+{
+  const { shootingStars } = bd;
+  check('there is a pool of shooting stars', shootingStars.length === 5);
+  let peak = 0;
+  let sawMove = false;
+  for (let i = 0; i < 600; i++) {   // 10 simulated seconds
+    const before = shootingStars.map((s) => s.group.position.x);
+    bd.update(DT);
+    const live = shootingStars.filter((s) => s.group.visible);
+    peak = Math.max(peak, live.length);
+    if (live.some((s) => s.group.position.x !== before[shootingStars.indexOf(s)])) sawMove = true;
+  }
+  check('stars streak across the sky', peak > 0 && sawMove, `peak ${peak} at once`);
+  check('stars stay in a small pool and fade out', peak <= 5 && shootingStars.every((s) => s.headMat.opacity >= 0 && s.headMat.opacity <= 1));
+}
 // --- the props toggle -----------------------------------------------------
 // The 30 simulated seconds just above ran bombs loose, which can legitimately
 // arm a creeper's fuse from a nearby blast. Clear that leftover state first,

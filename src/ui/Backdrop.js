@@ -178,6 +178,62 @@ function makeBomb(bodyMat, fuseMat, sparkMat, scale) {
 }
 
 /** Creepers flying over slowly tumbling cubes and a cycling rainbow sky. */
+/** Shooting stars: a few bright streaks that flash across the far sky every
+ *  second or two. A small fixed pool of head + trail meshes, recycled — nothing
+ *  is created after this runs. Returns { stars, update(dt) }. */
+function buildShootingStars(parent) {
+  const stars = [];
+  for (let i = 0; i < 5; i++) {
+    const group = new THREE.Group();
+    const headMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, fog: false });
+    const trailMat = new THREE.MeshBasicMaterial({ color: 0xffe9a8, transparent: true, opacity: 0, fog: false });
+    // A dark halo behind the bright streak keeps it readable against the light
+    // parts of the rainbow, where white alone would wash out.
+    const haloMat = new THREE.MeshBasicMaterial({ color: 0x10131c, transparent: true, opacity: 0, fog: false, depthWrite: false });
+    const head = new THREE.Mesh(new THREE.BoxGeometry(1.5, 1.5, 1.5), headMat);
+    const trail = new THREE.Mesh(new THREE.BoxGeometry(15, 0.5, 0.5), trailMat);
+    trail.position.x = -8;   // streams out behind the head
+    const halo = new THREE.Mesh(new THREE.BoxGeometry(17, 1.1, 0.4), haloMat);
+    halo.position.set(-8, 0, -0.6);
+    group.add(halo, trail, head);
+    group.visible = false;
+    parent.add(group);
+    stars.push({ group, headMat, trailMat, haloMat, vx: 0, vy: 0, life: 0, max: 1 });
+  }
+  let wait = 0.3;
+  const launch = (s) => {
+    s.group.position.set(rand(-75, -10), rand(10, 38), rand(-75, -45));
+    s.vx = rand(38, 58);
+    s.vy = rand(-16, -6);
+    s.group.rotation.z = Math.atan2(s.vy, s.vx);
+    s.life = s.max = rand(1.3, 1.9);
+    s.group.visible = true;
+  };
+  return {
+    stars,
+    update(dt) {
+      wait -= dt;
+      if (wait <= 0) {
+        const idle = stars.find((s) => s.life <= 0);
+        if (idle) launch(idle);
+        wait = rand(0.5, 1.3);
+      }
+      for (const s of stars) {
+        if (s.life <= 0) continue;
+        s.life -= dt;
+        if (s.life <= 0) { s.group.visible = false; continue; }
+        s.group.position.x += s.vx * dt;
+        s.group.position.y += s.vy * dt;
+        const k = s.life / s.max;
+        const fade = Math.min(1, k * 4, (1 - k) * 6 + 0.15);   // quick in, long fade out
+        s.headMat.opacity = fade;
+        s.trailMat.opacity = fade * 0.9;
+        s.haloMat.opacity = fade * 0.45;
+      }
+    },
+  };
+}
+
 export function buildBackdrop(size, audio) {
   const scene = new THREE.Scene();
 
@@ -388,6 +444,7 @@ export function buildBackdrop(size, audio) {
 
   // One of everything, flying the same lane as the creepers.
   const flock = buildFlock(props);
+  const shooting = buildShootingStars(props);
 
   /** A bomb going off: fire, smoke, and a shockwave that lights nearby fuses. */
   const blast = (pos) => {
@@ -466,6 +523,7 @@ export function buildBackdrop(size, audio) {
     shards.update(dt);
 
     flock.update(dt, t);
+    shooting.update(dt);
     if (meowLooping) {
       meowT -= dt;
       if (meowT <= 0) { audio.meow(); meowT = JINGLE_LEN; }
@@ -552,5 +610,5 @@ export function buildBackdrop(size, audio) {
   const setMusic = (on) => { musicOn = !!on; };
   setMusic(Settings.get('music', true));
 
-  return { scene, camera, update, dispose, setProps, setBlack, setMusic };
+  return { scene, camera, update, dispose, setProps, setBlack, setMusic, shootingStars: shooting.stars };
 }

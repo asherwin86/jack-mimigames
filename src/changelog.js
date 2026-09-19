@@ -2,6 +2,10 @@
  *  menu, under the trailer. Keep entries brief; this isn't a commit log. */
 export const CHANGELOG = [
   {
+    title: 'Shooting stars',
+    detail: 'The menu sky now has shooting stars streaking across it (they go away with the "Background props" toggle).',
+  },
+  {
     title: 'Blockcraft: PvP arena',
     detail: 'A PvP server adds hearts, knockback, respawns and a kill scoreboard. Grab the sword from your hotbar (key 1) and hit the player under your crosshair. Always-on servers can be joined in one click.',
   },
