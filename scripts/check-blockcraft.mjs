@@ -255,6 +255,24 @@ if (dig) {
   check('the sword hides when another slot is selected', !game.sword.visible);
 }
 
+// --- no flying in PvP ---
+{
+  const hitF = input.hit;
+  game.pvp = false;
+  game.flying = false;
+  input.hit = (k) => k === 'KeyF';
+  game.update(1 / 60);
+  check('F toggles flying outside PvP', game.flying === true);
+  game.pvp = true;
+  game.update(1 / 60);
+  check('flying is switched off the moment PvP is on', game.flying === false);
+  for (let i = 0; i < 10; i++) game.update(1 / 60);   // F "pressed" every frame
+  check('F cannot turn flying on in PvP', game.flying === false);
+  input.hit = hitF;
+  game.pvp = false;
+  game.flying = false;
+}
+
 // --- can't place a block inside yourself ---
 check('placement is blocked inside the player',
   game.intersectsPlayer(Math.floor(game.pos.x), Math.floor(game.pos.y), Math.floor(game.pos.z)));

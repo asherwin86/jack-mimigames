@@ -269,6 +269,11 @@ export default class Blockcraft extends Game {
    *  New World button, which both need to restate the current seed too. */
   controlsHint() {
     const touchDevice = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+    if (this.pvp) {
+      return touchDevice
+        ? 'Left stick to move · drag the right side to look · MINE swings your sword · flying is off in PvP'
+        : 'Click to capture the mouse · WASD + Space · left click swings the sword (1) · flying is off in PvP';
+    }
     return touchDevice
       ? 'Left stick to move · drag the right side to look · MINE / PLACE / UP · tap FLY to toggle flying'
       : 'Click to capture the mouse · WASD + Space · hold left click to mine, right click places · middle click copies a block · 1-0 or scroll (1 is the sword) · F to fly · or plug in a controller';
@@ -574,10 +579,9 @@ export default class Blockcraft extends Game {
     const flyBtn = panel.querySelector('.bc-btn-fly');
     flyBtn?.addEventListener('pointerdown', (e) => {
       e.stopPropagation();
-      this.flying = !this.flying;
-      this.vel.y = 0;
-      this.hud.toast(this.flying ? 'FLYING' : 'WALKING', 700);
+      this.toggleFly();
     });
+    if (flyBtn) flyBtn.style.display = this.pvp ? 'none' : '';
   }
 
   /* ----------------------------------------------------------- voxel access */
@@ -896,12 +900,24 @@ export default class Blockcraft extends Game {
     }
   }
 
-  move(dt) {
-    if (this.input.hit('KeyF') || this.input.gpHit(3)) {
-      this.flying = !this.flying;
-      this.vel.y = 0;
-      this.hud.toast(this.flying ? 'FLYING' : 'WALKING', 700);
+  /** Flying is a creative-mode convenience, so it's switched off on PvP
+   *  servers — otherwise nobody could ever be caught. (Movement is decided by
+   *  each player's own game, so this is a rule of the client, not something
+   *  the server can enforce.) */
+  toggleFly() {
+    if (this.pvp) {
+      this.flying = false;
+      this.hud.toast('Flying is off in PvP', 900);
+      return;
     }
+    this.flying = !this.flying;
+    this.vel.y = 0;
+    this.hud.toast(this.flying ? 'FLYING' : 'WALKING', 700);
+  }
+
+  move(dt) {
+    if (this.input.hit('KeyF') || this.input.gpHit(3)) this.toggleFly();
+    if (this.pvp) this.flying = false;   // belt and braces: nothing may leave you flying in a PvP arena
 
     // Space/A/the jump button all mean "up"; shift/B all mean "down" — each
     // pair does the same double duty (jump vs. fly-up, sprint vs. fly-down).
@@ -1639,6 +1655,8 @@ export default class Blockcraft extends Game {
         if (y >= 0 && y < H && id >= 0 && id < BLOCKS.length) this.applyRemoteEdit(x, y, z, id);
       }
       this.pvp = !!msg.pvp;   // before the players are added, so their name tags know whether to show health
+      this.flying = false;    // no flying in the arena — you drop to the ground on joining
+      this.setFlyButton();
       this.maxHp = Number(msg.maxHp) || 20;
       this.hp = clamp(Number(msg.hp) || this.maxHp, 0, this.maxHp);
       this.dead = false;
@@ -1879,8 +1897,15 @@ export default class Blockcraft extends Game {
   }
 
   /** Back to ordinary (non-PvP) play: no hearts, no death screen. */
+  /** The touch FLY button is hidden while PvP is on. */
+  setFlyButton() {
+    const btn = this.hud.$panel?.querySelector('.bc-btn-fly');
+    if (btn) btn.style.display = this.pvp ? 'none' : '';
+  }
+
   resetPvp() {
     this.pvp = false;
+    this.setFlyButton();
     this.dead = false;
     this.hp = this.maxHp = 20;
     this.kills = 0;
