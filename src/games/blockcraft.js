@@ -46,6 +46,11 @@ const NET_MOVE_INTERVAL = 0.1;    // seconds between position updates sent to th
 // one-click "Join PvP Arena" button for it; a build can point elsewhere with
 // VITE_PVP_SERVER=wss://… (an empty value hides the button).
 const PVP_SERVER_URL = (import.meta.env && import.meta.env.VITE_PVP_SERVER) ?? 'wss://blockcraft-pvp.onrender.com';
+// The public server list lives on the same always-on server (see server/blockcraft-server.mjs):
+// hosts announce a join code there, everyone else reads the list back.
+const REGISTRY_URL = PVP_SERVER_URL.replace(/^ws/i, 'http').replace(/\/+$/, '');
+const MP_LIST_KEY = 'mg.blockcraft.listPublic';
+const ANNOUNCE_EVERY_MS = 25000;
 const ATTACK_REACH = 3.6;         // how far a swing at another player reaches
 const ATTACK_COOLDOWN = 0.45;     // seconds between swings (the server enforces its own)
 
@@ -190,6 +195,8 @@ export default class Blockcraft extends Game {
     this.hostPeer = null;
     this.hostConns = new Map();
     this.hostCode = null;
+    this.listPublic = loadListPublic();   // announce a browser/desktop-hosted game on the public list?
+    this.announceTimer = null;
     // 'client' / 'host' / null — set the instant Connect/Host is clicked,
     // before either async attempt has actually produced this.net/hostPeer,
     // so the two buttons can't race each other while one is still loading.
@@ -1376,6 +1383,7 @@ export default class Blockcraft extends Game {
     peer.on('open', () => {
       this.hostCode = code;
       this.netStatus = 'online';
+      this.startAnnounce();
       this.hud.toast(`HOSTING · code ${code}`, 2200);
       this.beginPlay();
       this.refreshMultiplayerPanel();
@@ -1418,6 +1426,7 @@ export default class Blockcraft extends Game {
       this.hostBroadcast({ t: 'join', id: pid, name, color, skin }, pid);
       this.hud.toast(`${name} joined`, 1200);
       this.refreshMultiplayerPanel();
+      this.announceNow();
       return;
     }
 
@@ -1454,6 +1463,74 @@ export default class Blockcraft extends Game {
     this.hud.toast(`${entry.name} left`, 1200);
     this.hostBroadcast({ t: 'leave', id: pid }, pid);
     this.refreshMultiplayerPanel();
+    this.announceNow();
+  }
+
+  /* --------------------------------------------------- public server list */
+
+  /** Posts this hosted game to the public list (if the player opted in), and
+   *  keeps re-posting so the entry doesn't expire. The listing is only a join
+   *  code, a name and a headcount — the game itself still runs peer-to-peer
+   *  between the host and each joiner. */
+  startAnnounce() {
+    this.stopAnnounce(false);
+    if (!REGISTRY_URL || !this.listPublic || !this.hostCode) return;
+    this.announceNow();
+    this.announceTimer = setInterval(() => this.announceNow(), ANNOUNCE_EVERY_MS);
+  }
+
+  announceNow() {
+    if (!REGISTRY_URL || !this.listPublic || !this.hostPeer || !this.hostCode || typeof fetch !== 'function') return;
+    fetch(`${REGISTRY_URL}/servers`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        code: this.hostCode, name: `${this.playerName}'s world`, players: this.hostConns.size + 1, max: 8,
+      }),
+      keepalive: true,
+    }).catch(() => { /* the list being unreachable must never affect the game itself */ });
+  }
+
+  /** Stops re-announcing and (unless told not to) takes the listing down now
+   *  rather than waiting for it to expire. */
+  stopAnnounce(remove = true) {
+    if (this.announceTimer) { clearInterval(this.announceTimer); this.announceTimer = null; }
+    if (remove && REGISTRY_URL && this.hostCode && typeof fetch === 'function') {
+      fetch(`${REGISTRY_URL}/servers/remove`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: this.hostCode }), keepalive: true,
+      }).catch(() => { /* it expires by itself in a minute anyway */ });
+    }
+  }
+
+  /** Fills the "Public servers" list: the official always-on PvP arena first,
+   *  then whatever games people are hosting right now. */
+  async refreshServerList() {
+    const box = this.mpPanel?.querySelector('.bc-srv-list');
+    if (!box || !REGISTRY_URL) return;
+    box.innerHTML = '<div class="bc-srv-note">Loading…</div>';
+    const get = async (path) => (await fetch(REGISTRY_URL + path, { signal: AbortSignal.timeout(12000) })).json();
+    const [arena, hosted] = await Promise.allSettled([get('/health'), get('/servers')]);
+    if (!this.mpPanel?.querySelector('.bc-srv-list')) return;   // panel was rebuilt while we waited
+    let html = '';
+    if (PVP_SERVER_URL) {
+      const a = arena.status === 'fulfilled' ? arena.value : null;
+      html += `<div class="bc-srv"><span class="bc-srv-name">⚔ Arena (PvP)</span>`
+        + `<span class="bc-srv-count">${a ? `${a.players | 0}/${a.maxPlayers | 0}` : 'waking…'}</span>`
+        + `<button data-join="${escapeHtml(PVP_SERVER_URL)}">Join</button></div>`;
+    }
+    if (hosted.status === 'fulfilled' && Array.isArray(hosted.value)) {
+      for (const h of hosted.value) {
+        if (h.code === this.hostCode || !/^bc-[a-z0-9]{3,12}$/.test(String(h.code))) continue;   // not our own, and only well-formed codes
+        html += `<div class="bc-srv"><span class="bc-srv-name">${escapeHtml(String(h.name).slice(0, 28))}</span>`
+          + `<span class="bc-srv-count">${h.players | 0}/${h.max | 0}</span>`
+          + `<button data-join="${escapeHtml(h.code)}">Join</button></div>`;
+      }
+      if (!hosted.value.some((h) => h.code !== this.hostCode)) html += '<div class="bc-srv-note">No player-hosted games right now.</div>';
+    } else {
+      html += '<div class="bc-srv-note">Couldn\'t reach the server list.</div>';
+    }
+    box.innerHTML = html;
   }
 
   /** this.edits holds whole edited-chunk arrays — a chunk touched once looks
@@ -1495,6 +1572,7 @@ export default class Blockcraft extends Game {
    *  every joined player's avatar — the mirror image of disconnectMultiplayer(). */
   stopHosting() {
     if (!this.hostPeer) return;
+    this.stopAnnounce();
     for (const entry of this.hostConns.values()) { try { entry.conn.close(); } catch { /* already closed */ } }
     this.hostConns.clear();
     this.clearNetPeers();
@@ -1894,6 +1972,33 @@ export default class Blockcraft extends Game {
       saveLastServer(PVP_SERVER_URL);
       this.connectMultiplayer(PVP_SERVER_URL);
     });
+
+    const listBox = panel.querySelector('.bc-list-public');
+    const srvRefresh = panel.querySelector('.bc-srv-refresh');
+    const srvList = panel.querySelector('.bc-srv-list');
+    for (const el of [listBox, srvRefresh, srvList]) el?.addEventListener('pointerdown', (e) => e.stopPropagation());
+    if (listBox) {
+      listBox.checked = this.listPublic;
+      listBox.addEventListener('change', () => {
+        this.listPublic = listBox.checked;
+        saveListPublic(this.listPublic);
+        if (this.hostPeer) {
+          if (this.listPublic) this.startAnnounce();
+          else { this.stopAnnounce(); }
+        }
+      });
+    }
+    srvRefresh?.addEventListener('click', () => this.refreshServerList());
+    srvList?.addEventListener('click', (e) => {
+      const target = e.target.closest?.('button[data-join]');
+      if (!target) return;
+      if (this.hostPeer) { this.hud.toast('Stop hosting before joining another game', 1800); return; }
+      const addr = target.dataset.join;
+      if (serverInput) serverInput.value = addr;
+      saveLastServer(addr);
+      this.connectMultiplayer(addr);
+    });
+    this.refreshServerList();
 
     copyBtn?.addEventListener('click', () => {
       if (!this.hostCode) return;
@@ -2415,6 +2520,14 @@ function saveSkin(data) {
   } catch { /* ignore */ }
 }
 
+function loadListPublic() {
+  try { return localStorage.getItem(MP_LIST_KEY) === '1'; } catch { return false; }
+}
+
+function saveListPublic(on) {
+  try { localStorage.setItem(MP_LIST_KEY, on ? '1' : '0'); } catch { /* ignore */ }
+}
+
 function loadLastServer() {
   try { return localStorage.getItem(MP_SERVER_KEY) || ''; } catch { return ''; }
 }
@@ -2759,7 +2872,7 @@ function worldHtml() {
 function multiplayerHtml() {
   return `
     <style>
-      .bc-mp { position:absolute; right:16px; top:64px; pointer-events:auto;
+      .bc-mp { position:absolute; right:16px; top:64px; pointer-events:auto; max-height:calc(100vh - 80px); overflow-y:auto;
         background:rgba(10,14,24,.6); border:1px solid rgba(255,255,255,.15);
         border-radius:8px; padding:8px; display:flex; flex-direction:column; gap:6px;
         font:600 12px system-ui; color:#fff; width:180px; }
@@ -2779,6 +2892,19 @@ function multiplayerHtml() {
       .bc-mp .bc-pvp-join { padding:6px 0; border-radius:5px; border:1px solid rgba(255,120,110,.6);
         background:rgba(255,90,80,.28); color:#fff; cursor:pointer; font:800 12px inherit; }
       .bc-mp .bc-net-row { display:flex; gap:4px; }
+      .bc-mp .bc-list-row { display:flex; align-items:center; gap:6px; font-size:11px; color:rgba(255,255,255,.8); cursor:pointer; }
+      .bc-mp .bc-list-row input { width:auto; margin:0; }
+      .bc-mp .bc-srv-head { display:flex; align-items:center; justify-content:space-between; }
+      .bc-mp .bc-srv-refresh { border:none; background:rgba(255,255,255,.14); color:#fff; border-radius:4px;
+        cursor:pointer; font:700 12px inherit; padding:0 6px; }
+      .bc-mp .bc-srv-list { display:flex; flex-direction:column; gap:3px; max-height:104px; overflow-y:auto; }
+      .bc-mp .bc-srv { display:flex; align-items:center; gap:6px; font-size:11px; padding:3px 4px;
+        background:rgba(255,255,255,.06); border-radius:5px; }
+      .bc-mp .bc-srv-name { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+      .bc-mp .bc-srv-count { color:rgba(255,255,255,.6); font-size:10px; }
+      .bc-mp .bc-srv button { border:1px solid rgba(255,255,255,.25); background:rgba(110,231,255,.22); color:#fff;
+        border-radius:4px; cursor:pointer; font:700 10px inherit; padding:2px 7px; }
+      .bc-mp .bc-srv-note { font-size:10px; color:rgba(255,255,255,.5); }
       .bc-mp .bc-net-row button { flex:1; padding:5px 0; border-radius:5px; border:1px solid rgba(255,255,255,.25);
         background:rgba(110,231,255,.22); color:#fff; cursor:pointer; font:700 12px inherit; }
       .bc-mp .bc-connect.on, .bc-mp .bc-host.on { background:rgba(255,90,80,.25); }
@@ -2824,7 +2950,9 @@ function multiplayerHtml() {
         <button class="bc-connect">Connect</button>
         <button class="bc-host">Host</button>
       </div>
+      ${REGISTRY_URL ? '<label class="bc-list-row"><input type="checkbox" class="bc-list-public" /> List my hosted game publicly</label>' : ''}
       <div class="bc-host-code" hidden><code></code><button class="bc-copy-code">Copy</button></div>
+      ${REGISTRY_URL ? '<div class="bc-label bc-srv-head">Public servers <button class="bc-srv-refresh" title="Refresh">↻</button></div><div class="bc-srv-list"></div>' : ''}
       <div class="bc-mp-status">Offline — playing solo</div>
       <div class="bc-mp-players"></div>
       <div class="bc-label">Chat</div>

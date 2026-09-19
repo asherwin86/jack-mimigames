@@ -116,6 +116,10 @@ git tag v1.0.1 && git push origin v1.0.1
 
 Or build and publish by hand with `npm run release:win` (needs `GH_TOKEN`), or just build locally with `npm run dist:win` (output in `release/`).
 
+## Public server list
+
+Anyone can host a Blockcraft game straight from the desktop app or a browser tab (Multiplayer panel → **Host**) — no port forwarding, it runs peer-to-peer over WebRTC. Tick **List my hosted game publicly** and it shows up under **Public servers** for everyone playing on the website or the app; they click **Join**. The list itself lives on the always-on server (`GET/POST /servers`, see `server/blockcraft-server.mjs`) and only holds a join code, a name and a headcount — entries expire after a minute unless the host keeps announcing. The desktop app disables background throttling, so a game hosted from a minimised window keeps running. (Hosted games are co-op; PvP with hearts runs on the Node server — see [`deploy/`](deploy/README.md).)
+
 ## Testing
 
 `npm run smoke` boots every catalogued game with stubbed input, audio and HUD,

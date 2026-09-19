@@ -30,6 +30,13 @@
  * cleanly on SIGTERM, and — when DATA_FILE is set — saves the world's seed
  * and every block edit so a restart picks up where it left off.
  * Deployment recipes live in deploy/.
+ *
+ * It also doubles as the public server *list*: people who host a game from
+ * their browser tab or the desktop app can announce it here (POST /servers),
+ * and the website reads the list back (GET /servers). Entries are just a
+ * join code plus a name and player count, expire unless refreshed every
+ * minute, and are capped per IP. The games themselves never pass through
+ * this process — joiners connect straight to the host over WebRTC.
  */
 import http from 'node:http';
 import fs from 'node:fs';
@@ -73,8 +80,93 @@ if (saved && saved.seed === SEED) {
   for (const [k, b] of saved.edits) edits.set(k, b);
 }
 
+/* ------------------------------------------------- public server list */
+
+const LISTING_TTL_MS = 75000;     // hosts re-announce about every 25s; miss a few and they drop off
+const MAX_LISTINGS = 200;
+const MAX_LISTINGS_PER_IP = 3;
+const listings = new Map();       // join code -> { code, name, players, max, ip, seenAt }
+
+function cleanName(s) {
+  // eslint-disable-next-line no-control-regex
+  return String(s ?? '').replace(/[\u0000-\u001f\u007f<>]/g, '').trim().slice(0, 28);
+}
+
+function pruneListings() {
+  const now = Date.now();
+  for (const [code, l] of listings) if (now - l.seenAt > LISTING_TTL_MS) listings.delete(code);
+}
+setInterval(pruneListings, 15000).unref();
+
+function clientIp(req) {
+  return String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
+}
+
+/** Reads a small JSON body (2 KB max), then calls back with the parsed object or null. */
+function readJson(req, cb) {
+  let raw = '';
+  let dead = false;
+  req.on('data', (d) => {
+    raw += d;
+    if (raw.length > 2048 && !dead) { dead = true; req.destroy(); cb(null); }
+  });
+  req.on('end', () => { if (dead) return; try { cb(JSON.parse(raw)); } catch { cb(null); } });
+  req.on('error', () => { if (!dead) { dead = true; cb(null); } });
+}
+
+function reply(res, status, obj) {
+  res.writeHead(status, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+  res.end(JSON.stringify(obj));
+}
+
 const httpServer = http.createServer((req, res) => {
-  const body = JSON.stringify({ ok: true, game: 'blockcraft', mode: PVP ? 'pvp' : 'coop', players: players.size, maxPlayers: MAX_PLAYERS, uptime: Math.round(process.uptime()) });
+  const path = (req.url || '/').split('?')[0];
+
+  if (req.method === 'OPTIONS') {   // CORS preflight for the website's fetch() calls
+    res.writeHead(204, {
+      'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type', 'Access-Control-Max-Age': '86400',
+    });
+    res.end();
+    return;
+  }
+
+  if (path === '/servers' && req.method === 'GET') {
+    pruneListings();
+    reply(res, 200, [...listings.values()]
+      .sort((a, b) => b.players - a.players || b.seenAt - a.seenAt)
+      .map(({ code, name, players, max }) => ({ code, name, players, max })));
+    return;
+  }
+
+  if ((path === '/servers' || path === '/servers/remove') && req.method === 'POST') {
+    const ip = clientIp(req);
+    readJson(req, (body) => {
+      const code = body && typeof body.code === 'string' ? body.code : '';
+      if (!/^bc-[a-z0-9]{3,12}$/.test(code)) { reply(res, 400, { ok: false, error: 'bad code' }); return; }
+      if (path === '/servers/remove') {
+        if (listings.get(code)?.ip === ip) listings.delete(code);
+        reply(res, 200, { ok: true });
+        return;
+      }
+      const name = cleanName(body.name) || 'Blockcraft world';
+      const max = Math.min(99, Math.max(1, Number(body.max) | 0 || 8));
+      const playersNow = Math.min(max, Math.max(0, Number(body.players) | 0));
+      pruneListings();
+      const existing = listings.get(code);
+      if (existing && existing.ip !== ip) { reply(res, 409, { ok: false, error: 'code in use' }); return; }
+      const fromIp = [...listings.values()].filter((l) => l.ip === ip && l.code !== code).length;
+      if (!existing && (fromIp >= MAX_LISTINGS_PER_IP || listings.size >= MAX_LISTINGS)) {
+        reply(res, 429, { ok: false, error: 'too many listings' });
+        return;
+      }
+      listings.set(code, { code, name, players: playersNow, max, ip, seenAt: Date.now() });
+      reply(res, 200, { ok: true });
+    });
+    return;
+  }
+
+  const body = JSON.stringify({ ok: true, game: 'blockcraft', mode: PVP ? 'pvp' : 'coop', players: players.size, maxPlayers: MAX_PLAYERS, listed: listings.size, uptime: Math.round(process.uptime()) });
   res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
   res.end(req.method === 'HEAD' ? undefined : body);
 });

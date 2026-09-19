@@ -172,6 +172,30 @@ try {
   ok('an oversized skin change becomes null', (await readC.expect('skin')).skin === null);
   c.close(); d.close();
 
+  // Public server list: hosts announce a join code, the website lists them.
+  {
+    const base = `http://127.0.0.1:${PORT}`;
+    const post = (path, body) => fetch(base + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const list = async () => (await fetch(base + '/servers')).json();
+    ok('the list starts empty', (await list()).length === 0);
+    ok('announcing a game is accepted', (await post('/servers', { code: 'bc-abc123', name: "Owen's <b>world</b>", players: 2, max: 8 })).status === 200);
+    let l = await list();
+    ok('it then shows up in the list', l.length === 1 && l[0].code === 'bc-abc123' && l[0].players === 2 && l[0].max === 8, JSON.stringify(l));
+    ok('names are stripped of markup characters', !/[<>]/.test(l[0].name), l[0].name);
+    await post('/servers', { code: 'bc-abc123', name: 'Renamed', players: 3, max: 8 });
+    l = await list();
+    ok('re-announcing updates rather than duplicates', l.length === 1 && l[0].players === 3 && l[0].name === 'Renamed');
+    ok('a malformed join code is rejected', (await post('/servers', { code: '../etc', name: 'x' })).status === 400);
+    ok('player count is capped at max', ((await post('/servers', { code: 'bc-abc123', name: 'Renamed', players: 500, max: 4 })), (await list())[0].players === 4));
+    await post('/servers', { code: 'bc-two222', name: 'Two' });
+    await post('/servers', { code: 'bc-three3', name: 'Three' });
+    ok('one address may only list a few games', (await post('/servers', { code: 'bc-four44', name: 'Four' })).status === 429);
+    ok('the CORS preflight the website needs is answered', (await fetch(base + '/servers', { method: 'OPTIONS' })).headers.get('access-control-allow-origin') === '*');
+    await post('/servers/remove', { code: 'bc-abc123' });
+    ok('removing a game takes it off the list', !(await list()).some((x) => x.code === 'bc-abc123'));
+    ok('/health still works and counts listings', (await (await fetch(base + '/health')).json()).listed === 2);
+  }
+
   // Bob leaves; Alice should be told.
   b.close();
   let leave = await readA.expect('leave');

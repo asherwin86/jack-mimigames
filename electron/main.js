@@ -20,7 +20,10 @@ function createWindow() {
     backgroundColor: '#10131c',
     autoHideMenuBar: true,
     title: '100 Mimi Games',
-    webPreferences: { contextIsolation: true, sandbox: true },
+    // Keep running at full speed when minimised or behind another window, so a
+    // game hosted from this window keeps serving its players (a browser tab
+    // would be throttled to a crawl in the background).
+    webPreferences: { contextIsolation: true, sandbox: true, backgroundThrottling: false },
   });
   // The built app is a static bundle (base: './' in vite.config.js) so it
   // loads straight off disk — no server, no internet required to play.

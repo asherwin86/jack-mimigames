@@ -2,6 +2,10 @@
  *  menu, under the trailer. Keep entries brief; this isn't a commit log. */
 export const CHANGELOG = [
   {
+    title: 'Public server list',
+    detail: 'Host a Blockcraft game from the desktop app (or a browser tab), tick "List my hosted game publicly", and it appears in everyone\'s Public servers list on the website. The desktop app keeps serving even when minimised.',
+  },
+  {
     title: 'Shooting stars',
     detail: 'The menu sky now has shooting stars streaking across it (they go away with the "Background props" toggle).',
   },
