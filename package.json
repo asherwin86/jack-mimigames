@@ -52,7 +52,8 @@
     "publish": {
       "provider": "github",
       "owner": "asherwin86",
-      "repo": "jack-mimigames"
+      "repo": "jack-mimigames",
+      "releaseType": "release"
     }
   }
 }
