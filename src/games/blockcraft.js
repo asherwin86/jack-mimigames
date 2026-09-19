@@ -42,9 +42,10 @@ const MP_NAME_KEY = 'mg.blockcraft.playerName';
 const MP_SERVER_KEY = 'mg.blockcraft.lastServer';
 const MP_SKIN_KEY = 'mg.blockcraft.skin';   // the player's imported skin, as a small PNG data URL
 const NET_MOVE_INTERVAL = 0.1;    // seconds between position updates sent to the server
-// An always-on public PvP server can be baked into a build (VITE_PVP_SERVER=wss://…);
-// when set, the Multiplayer panel gets a one-click "Join PvP Arena" button.
-const PVP_SERVER_URL = (import.meta.env && import.meta.env.VITE_PVP_SERVER) || '';
+// The always-on public PvP server (see deploy/). The Multiplayer panel gets a
+// one-click "Join PvP Arena" button for it; a build can point elsewhere with
+// VITE_PVP_SERVER=wss://… (an empty value hides the button).
+const PVP_SERVER_URL = (import.meta.env && import.meta.env.VITE_PVP_SERVER) ?? 'wss://blockcraft-pvp.onrender.com';
 const ATTACK_REACH = 3.6;         // how far a swing at another player reaches
 const ATTACK_COOLDOWN = 0.45;     // seconds between swings (the server enforces its own)
 

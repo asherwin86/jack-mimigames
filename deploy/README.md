@@ -63,17 +63,12 @@ sudo systemctl enable --now blockcraft-pvp
 journalctl -u blockcraft-pvp -f          # logs
 ```
 
-## Showing a one-click "Join PvP Arena" button on the website
+## The one-click "Join PvP Arena" button
 
-Build the site with the server's address in `VITE_PVP_SERVER`:
-
-```bash
-VITE_PVP_SERVER=wss://blockcraft-pvp.onrender.com npm run build
-```
-
-(On Render's static site, add it as an environment variable and redeploy.)
-Leave it unset and the button simply doesn't appear; anyone can still paste the
-address into the Multiplayer panel.
+The game already points at `wss://blockcraft-pvp.onrender.com` (set in
+`src/games/blockcraft.js`). To use a different server, build with
+`VITE_PVP_SERVER=wss://your-server npm run build`; set it to an empty value to
+hide the button. Anyone can also paste any address into the Multiplayer panel.
 
 ## Settings (environment variables)
 
