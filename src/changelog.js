@@ -2,6 +2,10 @@
  *  menu, under the trailer. Keep entries brief; this isn't a commit log. */
 export const CHANGELOG = [
   {
+    title: 'Tidier menu',
+    detail: 'Background props, Music, Black sky, Stop spinning, High contrast and Compact now live in one Settings box (the ⚙ button by the search bar) instead of a row across the screen.',
+  },
+  {
     title: 'Public server list',
     detail: 'Host a Blockcraft game from the desktop app (or a browser tab), tick "List my hosted game publicly", and it appears in everyone\'s Public servers list on the website. The desktop app keeps serving even when minimised.',
   },

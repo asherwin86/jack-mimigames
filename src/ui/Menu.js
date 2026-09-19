@@ -26,6 +26,7 @@ export class Menu {
       'high-contrast': Settings.get('highContrast', false),
       compact: Settings.get('compact', false),
     };
+    const settingsOpen = Settings.get('settingsOpen', false);
     const prefClasses = Object.entries(prefs).filter(([, on]) => on).map(([c]) => ` ${c}`).join('');
     this.root.innerHTML = `
       <div class="menu${prefClasses}">
@@ -48,24 +49,31 @@ export class Menu {
 
           <div class="menu-tools">
             <input type="search" placeholder="Search games…" autocomplete="off" />
-            <button class="toggle" data-setting="bgProps" data-default="1" aria-pressed="${Settings.get('bgProps', true)}">
-              <span class="dot"></span>Background props <kbd>Shift</kbd>
+            <button class="settings-btn" aria-expanded="${settingsOpen}" aria-controls="settings-box">
+              <span class="gear" aria-hidden="true">&#9881;</span>Settings
             </button>
-            <button class="toggle" data-setting="music" data-default="1" aria-pressed="${Settings.get('music', true)}">
-              <span class="dot"></span>Music
-            </button>
-            <button class="toggle" data-setting="bgBlack" data-default="0" aria-pressed="${Settings.get('bgBlack', false)}">
-              <span class="dot"></span>Black sky
-            </button>
-            <button class="toggle" data-setting="noSpin" data-default="0" aria-pressed="${prefs['no-spin']}">
-              <span class="dot"></span>Stop spinning
-            </button>
-            <button class="toggle" data-setting="highContrast" data-default="0" aria-pressed="${prefs['high-contrast']}">
-              <span class="dot"></span>High contrast
-            </button>
-            <button class="toggle" data-setting="compact" data-default="0" aria-pressed="${prefs.compact}">
-              <span class="dot"></span>Compact
-            </button>
+            <div class="tools-break"></div>
+            <div class="settings-box" id="settings-box"${settingsOpen ? '' : ' hidden'}>
+              <h3>Display &amp; sound</h3>
+              <button class="toggle" data-setting="bgProps" data-default="1" aria-pressed="${Settings.get('bgProps', true)}">
+                <span class="dot"></span>Background props <kbd>Shift</kbd>
+              </button>
+              <button class="toggle" data-setting="music" data-default="1" aria-pressed="${Settings.get('music', true)}">
+                <span class="dot"></span>Music
+              </button>
+              <button class="toggle" data-setting="bgBlack" data-default="0" aria-pressed="${Settings.get('bgBlack', false)}">
+                <span class="dot"></span>Black sky
+              </button>
+              <button class="toggle" data-setting="noSpin" data-default="0" aria-pressed="${prefs['no-spin']}">
+                <span class="dot"></span>Stop spinning
+              </button>
+              <button class="toggle" data-setting="highContrast" data-default="0" aria-pressed="${prefs['high-contrast']}">
+                <span class="dot"></span>High contrast
+              </button>
+              <button class="toggle" data-setting="compact" data-default="0" aria-pressed="${prefs.compact}">
+                <span class="dot"></span>Compact
+              </button>
+            </div>
           </div>
           <div class="chips"></div>
         </div>
@@ -93,6 +101,14 @@ export class Menu {
     // One delegated handler for every display-preference toggle — each just
     // flips its own Settings key and applies the matching effect.
     this.root.querySelector('.menu-tools').addEventListener('click', (e) => {
+      const opener = e.target.closest('.settings-btn');
+      if (opener) {
+        const box = this.root.querySelector('.settings-box');
+        box.hidden = !box.hidden;
+        opener.setAttribute('aria-expanded', String(!box.hidden));
+        Settings.set('settingsOpen', !box.hidden);   // remembered, so it stays how you left it
+        return;
+      }
       const btn = e.target.closest('.toggle');
       if (!btn) return;
       const key = btn.dataset.setting;
@@ -203,7 +219,7 @@ export class Menu {
    *  thing to a real `:hover` a script can drive — CSS :hover only follows
    *  the actual mouse, never something moved by JS. */
   _setHover(el) {
-    const target = el?.closest?.('.tile, .toggle, .chip') ?? null;
+    const target = el?.closest?.('.tile, .toggle, .chip, .settings-btn') ?? null;
     if (target === this._hoverEl) return;
     this._hoverEl?.classList.remove('gp-hover');
     this._hoverEl = target;
