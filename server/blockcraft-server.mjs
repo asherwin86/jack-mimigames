@@ -33,10 +33,14 @@
  * players can't ask for more than the machine can run; BOT_LEVEL sets the default
  * level. Bots walk the real terrain (generated from the seed by the same code the
  * game uses) and swing through the same hit rules as everyone else — reach,
- * cooldown, spawn protection. They start at least 40 blocks from their player and
+ * cooldown, spawn protection. They start 28+ blocks from their player and
  * just wander until you get close (how close depends on the level), so you have to
  * go and find them; once they've spotted you they charge, shoot arrows from range
  * (aim and rate depend on the level) and swing when they reach you.
+ *
+ * Loot: kill a bot and it may drop armour (each piece cuts 10% off damage taken, up
+ * to four), a golden apple (full heal + two absorption hearts) or, rarely, an
+ * enchanted golden apple (+eight). Walk over a drop to take it; it's all lost on death.
  *
  * Built to be left running: it answers plain HTTP on the same port (GET / or
  * /health, which is what hosting platforms poll), drops connections that stop
@@ -86,6 +90,25 @@ const SPAWN_PROTECT_MS = 3000;   // can't be hit just after (re)spawning; attack
 const REGEN_AFTER_MS = 6000;     // hearts creep back once you've gone this long without being hit…
 const REGEN_EVERY_MS = 2000;     // …one half-heart per this
 const KNOCKBACK = 7;
+
+// Loot: killing a bot can drop something to pick up (walk over it). Armour cuts
+// the damage you take (10% per piece, up to four); golden apples heal and add
+// "absorption" hearts that soak damage first; enchanted ones add far more.
+// Absorption and armour are lost on death. LOOT_FORCE=armor|golden|enchanted
+// (or a comma-separated list to cycle through) makes every kill drop that
+// kind (used by the tests).
+const ARMOR_MAX = 4;
+const ARMOR_REDUCTION = 0.1;
+const ABSORB_MAX = 20;
+const GOLDEN_ABSORB = 4;         // two extra hearts
+const ENCHANTED_ABSORB = 16;     // eight extra hearts
+const DROP_CHANCES = [['armor', 0.35], ['golden', 0.30], ['enchanted', 0.06]];   // the rest of the time: nothing
+const DROP_LIFE_MS = 90000;
+const MAX_DROPS = 80;
+const PICKUP_RADIUS = 1.7;
+const LOOT_FORCE = (process.env.LOOT_FORCE || '').split(',').filter((k) => ['armor', 'golden', 'enchanted'].includes(k));   // e.g. "armor,golden" cycles through them
+let forcedIndex = 0;
+const ARMOR_PIECES = ['Helmet', 'Chestplate', 'Leggings', 'Boots'];
 // The bow: damage scales with how far it was drawn (2 half-hearts at a quick
 // snap, 6 — same as the sword — at full draw). It reaches much further than a
 // swing, but fires slower, and shoots less of a shove.
@@ -114,14 +137,14 @@ const BOT_TICK_MS = 100;
 const BOT_BOW_MIN_RANGE = 6;      // closer than this a bot puts the bow away and swings
 const BOT_BOW_MAX_RANGE = 55;
 const BOT_BOW = { reach: 90, key: 'lastBowAt', cooldown: 0, kb: 0.5 };   // bots pace their own shots; handleHit still applies protection and scoring
-const BOT_SPAWN_MIN = 40;         // bots appear at least this far from their player
+const BOT_SPAWN_MIN = 28;         // bots appear at least this far from their player (just outside the furthest they can notice you)
 const BOT_WANDER_SPEED = 1.3;    // an unaware bot just strolls around
 const LEVELS = {
-  supereasy: { speed: 1.6, damage: 1, swing: [2500, 3500], reach: 2.2, accuracy: 0.35, weave: 0.0, bow: { every: [7000, 10000], charge: 0.35, spread: 4.0 }, notice: 12, kb: 1.8 },
-  easy:    { speed: 2.4, damage: 2, swing: [1500, 2300], reach: 2.6, accuracy: 0.55, weave: 0.0, bow: { every: [5000, 7500], charge: 0.5, spread: 2.5 }, notice: 16, kb: 1.4 },
-  medium:  { speed: 3.6, damage: 4, swing: [900, 1500],  reach: 3.0, accuracy: 0.85, weave: 0.55, bow: { every: [3200, 5000], charge: 0.7, spread: 1.4 }, notice: 22, kb: 1.0 },
-  hard:    { speed: 4.8, damage: 5, swing: [650, 1000],  reach: 3.2, accuracy: 0.95, weave: 0.8, bow: { every: [2200, 3200], charge: 0.9, spread: 0.7 }, notice: 30, kb: 0.7 },
-  extreme: { speed: 6.0, damage: 6, swing: [470, 620],   reach: 3.5, accuracy: 1.0,  weave: 1.0, bow: { every: [1300, 1900], charge: 1.0, spread: 0.2 }, notice: 40, kb: 0.35 },
+  supereasy: { speed: 1.6, damage: 1, swing: [2500, 3500], reach: 2.2, accuracy: 0.35, weave: 0.0, bow: { every: [7000, 10000], charge: 0.35, spread: 4.0 }, notice: 10, kb: 1.8 },
+  easy:    { speed: 2.4, damage: 2, swing: [1500, 2300], reach: 2.6, accuracy: 0.55, weave: 0.0, bow: { every: [5000, 7500], charge: 0.5, spread: 2.5 }, notice: 14, kb: 1.4 },
+  medium:  { speed: 3.6, damage: 4, swing: [900, 1500],  reach: 3.0, accuracy: 0.85, weave: 0.55, bow: { every: [3200, 5000], charge: 0.7, spread: 1.4 }, notice: 18, kb: 1.0 },
+  hard:    { speed: 4.8, damage: 5, swing: [650, 1000],  reach: 3.2, accuracy: 0.95, weave: 0.8, bow: { every: [2200, 3200], charge: 0.9, spread: 0.7 }, notice: 22, kb: 0.7 },
+  extreme: { speed: 6.0, damage: 6, swing: [470, 620],   reach: 3.5, accuracy: 1.0,  weave: 1.0, bow: { every: [1300, 1900], charge: 1.0, spread: 0.2 }, notice: 26, kb: 0.35 },
 };
 const DEFAULT_LEVEL = Object.hasOwn(LEVELS, process.env.BOT_LEVEL) ? process.env.BOT_LEVEL : 'medium';
 const validLevel = (l) => (typeof l === 'string' && Object.hasOwn(LEVELS, l) ? l : null);
@@ -258,7 +281,7 @@ wss.on('connection', (ws) => {
         hp: MAX_HP, dead: false, kills: 0, deaths: 0,
         level: validLevel(msg.level) || DEFAULT_LEVEL,
         wantBots: msg.bots === undefined ? BOTS_DEFAULT : clampBots(msg.bots),
-        botsHave: 0,
+        botsHave: 0, armor: 0, absorb: 0,
         lastHitAt: 0, lastHurtAt: 0, protectUntil: Date.now() + SPAWN_PROTECT_MS, respawnTimer: null,
       });
 
@@ -274,6 +297,7 @@ wss.on('connection', (ws) => {
         maxHp: MAX_HP,
         hp: MAX_HP,
         edits: [...edits.entries()].map(([key, b]) => [...key.split(',').map(Number), b]),
+        drops: [...drops.values()].map(({ id, kind, x, y, z }) => ({ id, kind, x, y, z })),
         players: [...players.entries()]
           .filter(([pid]) => pid !== id)
           .map(([pid, p]) => ({
@@ -376,12 +400,16 @@ function handleHit(attackerId, attacker, targetId, damage, kind = MELEE) {
   if (Math.hypot(dx, dy, dz) > kind.reach) return;
   if (now < victim.protectUntil) return;
 
-  victim.hp = Math.max(0, victim.hp - damage);
+  // Armour trims the hit, then absorption hearts soak up what's left before real hearts do.
+  const dealt = Math.max(1, Math.round(damage * (1 - ARMOR_REDUCTION * (victim.armor || 0))));
+  const soaked = Math.min(victim.absorb || 0, dealt);
+  victim.absorb = (victim.absorb || 0) - soaked;
+  victim.hp = Math.max(0, victim.hp - (dealt - soaked));
   victim.lastHurtAt = now;
   const horiz = Math.hypot(dx, dz) || 1;
   if (victim.isBot) { victim.kx = (dx / horiz) * KNOCKBACK * kind.kb * (LEVELS[victim.fightLevel]?.kb ?? 1); victim.kz = (dz / horiz) * KNOCKBACK * kind.kb * (LEVELS[victim.fightLevel]?.kb ?? 1); }
   broadcastAll({
-    t: 'hurt', id: targetId, by: attackerId, hp: victim.hp,
+    t: 'hurt', id: targetId, by: attackerId, hp: victim.hp, ab: victim.absorb || 0, ar: victim.armor || 0,
     kx: (dx / horiz) * KNOCKBACK * kind.kb, kz: (dz / horiz) * KNOCKBACK * kind.kb,
   });
 
@@ -394,14 +422,17 @@ function handleHit(attackerId, attacker, targetId, damage, kind = MELEE) {
     deaths: victim.deaths, byKills: attacker.kills,
   });
   log(`${attacker.name} killed ${victim.name}`);
+  if (victim.isBot && !attacker.isBot) maybeDrop(victim);
   victim.respawnTimer = setTimeout(() => {
     victim.respawnTimer = null;
     if (!players.has(targetId)) return;
     victim.dead = false;
     victim.hp = MAX_HP;
+    victim.armor = 0;      // gear and absorption are lost on death
+    victim.absorb = 0;
     victim.protectUntil = Date.now() + SPAWN_PROTECT_MS;
     if (victim.isBot) Object.assign(victim, botSpawnPoint(players.get(victim.owner)), { kx: 0, kz: 0 });
-    broadcastAll({ t: 'respawn', id: targetId, hp: MAX_HP });
+    broadcastAll({ t: 'respawn', id: targetId, hp: MAX_HP, ab: 0, ar: 0 });
   }, RESPAWN_MS);
 }
 
@@ -415,6 +446,56 @@ function regenTick() {
   }
 }
 if (PVP) setInterval(regenTick, REGEN_EVERY_MS).unref();
+
+/* ------------------------------------------------------------------ loot */
+
+const drops = new Map();   // id -> { id, kind, x, y, z, expires }
+let nextDropId = 1;
+
+function maybeDrop(bot) {
+  let kind = LOOT_FORCE.length ? LOOT_FORCE[forcedIndex++ % LOOT_FORCE.length] : null;
+  if (!kind && !LOOT_FORCE.length) {
+    let r = Math.random();
+    for (const [k, p] of DROP_CHANCES) { if (r < p) { kind = k; break; } r -= p; }
+  }
+  if (!kind) return;
+  const id = `d${nextDropId++}`;
+  const drop = { id, kind, x: bot.x, y: bot.y, z: bot.z, expires: Date.now() + DROP_LIFE_MS };
+  drops.set(id, drop);
+  while (drops.size > MAX_DROPS) {   // oldest goes first
+    const oldest = drops.keys().next().value;
+    drops.delete(oldest);
+    broadcastAll({ t: 'pickup', id: oldest, by: null });
+  }
+  broadcastAll({ t: 'drop', id, kind, x: drop.x, y: drop.y, z: drop.z });
+}
+
+/** Anyone alive who walks over a drop picks it up (armour only if they have
+ *  room for another piece; apples always). */
+function checkPickups() {
+  const now = Date.now();
+  for (const [id, d] of drops) {
+    if (now > d.expires) { drops.delete(id); broadcastAll({ t: 'pickup', id, by: null }); continue; }
+    for (const [pid, p] of players) {
+      if (p.isBot || p.dead) continue;
+      if (Math.hypot(p.x - d.x, p.z - d.z) > PICKUP_RADIUS || Math.abs(p.y - d.y) > 2.5) continue;
+      let piece = null;
+      if (d.kind === 'armor') {
+        if ((p.armor || 0) >= ARMOR_MAX) continue;   // full set already: leave it for someone else
+        piece = ARMOR_PIECES[p.armor || 0];
+        p.armor = (p.armor || 0) + 1;
+      } else {
+        p.hp = MAX_HP;
+        p.absorb = Math.min(ABSORB_MAX, (p.absorb || 0) + (d.kind === 'enchanted' ? ENCHANTED_ABSORB : GOLDEN_ABSORB));
+      }
+      drops.delete(id);
+      broadcastAll({ t: 'pickup', id, by: pid, kind: d.kind, piece });
+      if (p.ws) send(p.ws, { t: 'gear', hp: p.hp, ab: p.absorb || 0, ar: p.armor || 0 });
+      log(`${p.name} picked up ${piece ?? d.kind}`);
+      break;
+    }
+  }
+}
 
 /* ------------------------------------------------------------------ bots */
 
@@ -431,7 +512,7 @@ const groundY = (x, z) => heightAt(Math.floor(x), Math.floor(z), SEED, TERRAIN) 
 function botSpawnPoint(near) {
   const cx = near ? near.x : 0.5;
   const cz = near ? near.z : 0.5;
-  const spread = 25 + Math.min(30, (near?.botsHave || 0) * 0.6);
+  const spread = 12 + Math.min(30, (near?.botsHave || 0) * 0.6);
   for (let i = 0; i < 40; i++) {   // keep trying until it lands on dry ground
     const a = Math.random() * Math.PI * 2;
     const r = BOT_SPAWN_MIN + Math.random() * spread;
@@ -567,6 +648,7 @@ function botTick() {
   const dt = BOT_TICK_MS / 1000;
   const now = Date.now();
   stepBotArrows(dt);
+  checkPickups();
   for (const [id, bot] of players) {
     if (!bot.isBot || bot.dead) continue;
 
@@ -582,6 +664,7 @@ function botTick() {
       if (!bot.alerted && d <= L.notice) {
         bot.alerted = true;
         bot.nextSwingIn = Math.max(bot.nextSwingIn, 700);   // a moment of surprise before the first swing
+        bot.nextShotIn = Math.min(bot.nextShotIn, 300 + Math.random() * 500);   // ...but it draws its bow almost at once
       } else if (bot.alerted && d > L.notice * 1.8) {
         bot.alerted = false;
       }

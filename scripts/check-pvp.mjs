@@ -247,7 +247,7 @@ try {
     ok('bots are broadcast like any player (each reports a position)', botMoves().length >= 2);
     const firsts = joinsOf(me).map((j) => botMoves().find((m) => m.id === j.id)).filter(Boolean);
     const nearest = Math.min(...firsts.map((m) => Math.hypot(m.x - 0.5, m.z - 0.5)));
-    ok('bots start a good way off, so you have to go and find them', firsts.length === 2 && nearest >= 35, `nearest ${nearest.toFixed(0)} blocks`);
+    ok('bots start a fair way off, so you have to go and find them', firsts.length === 2 && nearest >= 24, `nearest ${nearest.toFixed(0)} blocks`);
 
     await sleep(5000);
     ok('...and leave you alone while you are far away', !me.all.some((m) => m.t === 'hurt' && m.id === me.id), `${me.count('hurt')} hits`);
@@ -371,7 +371,7 @@ try {
     await sleep(400);
     const botId = me.all.find((m) => m.t === 'join' && /\[bot\]/.test(m.name)).id;
     const b = [...me.all].reverse().find((m) => m.t === 'move' && m.id === botId);
-    // Find spots 26-40 blocks from the bot on dry ground that it can actually see:
+    // Find spots 16-24 blocks from the bot (inside an extreme bot's 26-block notice range) on dry ground it can see:
     // the same straight-line test the server applies before it lets a bot shoot.
     const canSee = (bot, to) => {
       const ey = groundAt(bot.x, bot.z) + 1.62;
@@ -384,7 +384,7 @@ try {
       return true;
     };
     const spots = [];
-    for (const r of [34, 30, 38, 26, 40]) {
+    for (const r of [22, 20, 24, 18, 16]) {
       for (let a = 0; a < 6.28; a += 0.25) {
         const x = b.x + Math.cos(a) * r;
         const z = b.z + Math.sin(a) * r;
@@ -404,6 +404,108 @@ try {
     ok('...and its arrows can hit you (extreme: 5 half-hearts, a sword hit is 6)', dmgs.includes(5), `damage per hit: ${dmgs.join(', ')}`);
     clearInterval(iv);
     me.ws.close();
+  } catch (e) {
+    ok(e.message, false);
+    console.log(srv.log);
+  } finally {
+    srv.kill();
+  }
+}
+
+// ------------------------------------------------------- loot from bots
+{
+  const LPORT = PORT + 3;
+  const srv = startServer(['--pvp', '--bots=1'], LPORT, '', { LOOT_FORCE: 'armor,golden,enchanted' });
+  try {
+    await sleep(700);
+    const me = await client('Looter', LPORT, { level: 'supereasy' });
+    const two = await client('Hitter', LPORT, { bots: 0 });
+    const seed = me.welcome.seed;
+    const cal = calibrateHeight(seed);
+    const groundAt = (x, z) => heightAt(Math.floor(x), Math.floor(z), seed, cal) + 1;
+    await sleep(400);
+    const botId = me.all.find((m) => m.t === 'join' && /\[bot\]/.test(m.name)).id;
+    let pos = { x: 0.5, z: 0.5 };
+    const put = (c, dx = 0) => c.send({ t: 'move', x: pos.x + dx, y: groundAt(pos.x, pos.z), z: pos.z, yaw: 0, pitch: 0 });
+    const iv = setInterval(() => { put(me); put(two, 0.1); }, 150);
+    const botNow = () => [...me.all].reverse().find((m) => m.t === 'move' && m.id === botId);
+    const spotBeside = (b, d) => {
+      const here = groundAt(b.x, b.z);
+      for (let a = 0; a < 6.28; a += 0.5) {
+        const x = b.x + Math.cos(a) * d;
+        const z = b.z + Math.sin(a) * d;
+        if (groundAt(x, z) - 1 >= 12 && Math.abs(groundAt(x, z) - here) <= 1) return { x, z };
+      }
+      return { x: b.x + d, z: b.z };
+    };
+
+    /** Walk up to the bot and cut it down; resolves with the drop it left. */
+    const killBot = async () => {
+      await sleep(600);
+      const start = me.all.length;
+      pos = spotBeside(botNow(), 2.5);
+      let died = null;
+      for (let i = 0; i < 16 && !died; i++) {
+        pos = spotBeside(botNow(), 2.5);   // each hit knocks it back, so keep walking up to it
+        await sleep(200);
+        me.send({ t: 'hit', target: botId, w: 'sword' });
+        await sleep(400);
+        died = me.all.slice(start).find((m) => m.t === 'died' && m.id === botId);
+      }
+      if (!died) throw new Error('could not kill the bot');
+      for (let i = 0; i < 20; i++) {   // the drop for THIS kill (not an earlier one)
+        const drop = me.all.slice(start).find((m) => m.t === 'drop');
+        if (drop) return drop;
+        await sleep(100);
+      }
+      throw new Error('no drop after the kill');
+    };
+    /** Stand on a drop to pick it up. */
+    const collect = async (drop) => {
+      pos = { x: drop.x, z: drop.z };
+      return me.wait((m) => m.t === 'pickup' && m.id === drop.id && m.by === me.id, 4000);
+    };
+    /** The other player hits the looter with a sword (6 damage before armour). */
+    const swordHit = async () => {
+      const mine = () => me.all.filter((m) => m.t === 'hurt' && m.id === me.id);
+      const before = mine().length;
+      two.send({ t: 'hit', target: me.id, w: 'sword' });
+      await sleep(700);
+      return mine()[before] ?? null;
+    };
+    await sleep(3300);   // spawn protection over for both
+
+    const d1 = await killBot();
+    ok('killing a bot can drop loot (here: armour)', d1.kind === 'armor', JSON.stringify(d1));
+    ok('everyone is told about the drop', two.all.some((m) => m.t === 'drop' && m.id === d1.id));
+    const got1 = await collect(d1);
+    const gear1 = await me.wait((m) => m.t === 'gear' && m.ar === 1);
+    ok('walking over armour picks it up and names the piece', got1.piece === 'Helmet' && gear1.ar === 1, got1.piece);
+    const h1 = await swordHit();
+    ok('one piece of armour trims a sword hit (6 → 5)', h1 && h1.hp === 15 && h1.ar === 1, `hp ${h1?.hp}`);
+
+    await sleep(500);
+    const d2 = await killBot();
+    ok('the next kill drops a golden apple', d2.kind === 'golden');
+    await collect(d2);
+    const gear2 = await me.wait((m) => m.t === 'gear' && m.ab === 4);
+    ok('a golden apple heals fully and adds two absorption hearts', gear2.hp === 20 && gear2.ab === 4, JSON.stringify(gear2));
+    await sleep(700);
+    const h2 = await swordHit();
+    ok('absorption soaks damage before hearts (5 damage: 4 absorbed, 1 heart lost)', h2 && h2.ab === 0 && h2.hp === 19, `hp ${h2?.hp}, absorb ${h2?.ab}`);
+
+    await sleep(500);
+    const d3 = await killBot();
+    ok('the rare one: an enchanted golden apple', d3.kind === 'enchanted');
+    await collect(d3);
+    const gear3 = await me.wait((m) => m.t === 'gear' && m.ab === 16);
+    ok('an enchanted golden apple adds eight absorption hearts', gear3.ab === 16 && gear3.hp === 20, JSON.stringify(gear3));
+    await sleep(700);
+    const h3 = await swordHit();
+    ok('...which soak whole hits (16 → 11, no real hearts lost)', h3 && h3.ab === 11 && h3.hp === 20, `hp ${h3?.hp}, absorb ${h3?.ab}`);
+    ok('everyone else sees pickups vanish', two.all.some((m) => m.t === 'pickup' && m.id === d1.id && m.by === me.id));
+    clearInterval(iv);
+    me.ws.close(); two.ws.close();
   } catch (e) {
     ok(e.message, false);
     console.log(srv.log);

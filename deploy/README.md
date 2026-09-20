@@ -80,4 +80,5 @@ hide the button. Anyone can also paste any address into the Multiplayer panel.
 | `MAX_PLAYERS` | `32` | Connections beyond this are refused |
 | `BOTS` | `3` (PvP) | Default number of AI bots each player fights. Every player chooses their own, 0–50, in the Multiplayer panel; their bots chase only them and leave with them (also `--bots=N`) |
 | `MAX_BOTS` | `60` | Ceiling on bots across the whole server — a few players can't ask for more than the machine can run. Later players are given what's left. `0` turns bots off entirely |
+| `LOOT_FORCE` | off | Testing only: makes every bot kill drop the given kind(s) — `armor`, `golden`, `enchanted`, or a comma list to cycle. Normally drops are random (35% armour, 30% golden apple, 6% enchanted) |
 | `BOT_LEVEL` | `medium` | Default AI level for players who haven't picked one (`supereasy`, `easy`, `medium`, `hard`, `extreme`) — players choose their own in the Multiplayer panel |

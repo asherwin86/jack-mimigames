@@ -324,6 +324,37 @@ if (dig) {
   check('the bow hides when another slot is selected', !game.bow.visible);
 }
 
+// --- loot: armour and golden apples (PvP) ---
+{
+  game.pvp = true;
+  game.netId = 'me';
+  game.handleNetMessage(JSON.stringify({ t: 'drop', id: 'd1', kind: 'golden', x: 4, y: 20, z: 4 }));
+  game.handleNetMessage(JSON.stringify({ t: 'drop', id: 'd2', kind: 'enchanted', x: 6, y: 20, z: 4 }));
+  game.handleNetMessage(JSON.stringify({ t: 'drop', id: 'd3', kind: 'armor', x: 8, y: 20, z: 4 }));
+  check('drops appear in the world', game.drops.size === 3);
+  game.handleNetMessage(JSON.stringify({ t: 'drop', id: 'd1', kind: 'golden', x: 4, y: 20, z: 4 }));
+  check('the same drop is not added twice', game.drops.size === 3);
+  game.handleNetMessage(JSON.stringify({ t: 'drop', id: 'bad', kind: 'armor', x: 'NaN', y: 1, z: 1 }));
+  check('a malformed drop is ignored', game.drops.size === 3);
+  const y0 = game.drops.get('d1').item.position.y;
+  for (let i = 0; i < 30; i++) game.update(1 / 60);
+  check('drops bob and spin', game.drops.get('d1').item.position.y !== y0 && game.drops.get('d1').item.rotation.y > 0);
+  game.handleNetMessage(JSON.stringify({ t: 'gear', hp: 20, ab: 4, ar: 2 }));
+  check('gear updates armour and absorption', game.armor === 2 && game.absorb === 4);
+  game.handleNetMessage(JSON.stringify({ t: 'gear', hp: 20, ab: 999, ar: 99 }));
+  check('gear values are clamped to their maximums', game.armor === 4 && game.absorb === 20);
+  game.handleNetMessage(JSON.stringify({ t: 'hurt', id: 'me', by: 'x', hp: 18, ab: 3, ar: 1, kx: 0, kz: 0 }));
+  check('a hit reports the new absorption and armour', game.absorb === 3 && game.armor === 1 && game.hp === 18);
+  game.handleNetMessage(JSON.stringify({ t: 'pickup', id: 'd1', by: 'me', kind: 'golden' }));
+  check('a picked-up drop vanishes', !game.drops.has('d1') && game.drops.size === 2);
+  game.handleNetMessage(JSON.stringify({ t: 'respawn', id: 'me', hp: 20, ab: 0, ar: 0 }));
+  check('dying loses armour and absorption', game.armor === 0 && game.absorb === 0);
+  game.resetPvp();
+  check('leaving PvP clears the loot', game.drops.size === 0);
+  game.pvp = false;
+  game.netId = undefined;
+}
+
 // --- no flying in PvP ---
 {
   const hitF = input.hit;

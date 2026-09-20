@@ -214,6 +214,9 @@ export default class Blockcraft extends Game {
     this.hostPeer = null;
     this.hostConns = new Map();
     this.hostCode = null;
+    this.armor = 0;                     // pieces of armour worn (0-4): each trims 10% off a hit
+    this.absorb = 0;                    // absorption hp from golden apples (2 per golden heart)
+    this.drops = new Map();             // loot lying in the world, by id
     this.aiLevel = loadAiLevel();       // 'supereasy' … 'extreme'
     this.hasBots = false;               // does the PvP server we're on run AI bots?
     this.botCount = loadBotCount();     // how many bots you want to fight (0-50)
@@ -868,6 +871,7 @@ export default class Blockcraft extends Game {
     this.updateSword(dt);
     this.updateBow(dt);
     this.updateArrows(dt);
+    this.updateDrops(dt);
 
     // A little FOV kick while sprinting; the speed reads better than the number.
     const wantFov = this.sprinting ? 82 : 75;
@@ -1913,6 +1917,10 @@ export default class Blockcraft extends Game {
       this.kills = 0;
       this.deaths = 0;
       for (const p of msg.players) this.addNetPeer(p.id, p);
+      this.armor = 0;
+      this.absorb = 0;
+      this.clearDrops();
+      if (Array.isArray(msg.drops)) for (const d of msg.drops) this.addDrop(d);
       this.hud.toast(`CONNECTED · seed ${msg.seed}`, 1600);
       this.beginPlay();   // connecting successfully is enough to jump straight into playing
       this.hud.hint(`${this.pvp ? 'PvP arena' : 'Multiplayer'}, seed ${msg.seed} · ` + this.controlsHint());
@@ -1939,7 +1947,7 @@ export default class Blockcraft extends Game {
       this.spawnRemoteArrow(msg);
     } else if (msg.t === 'skin') {
       this.setPeerSkin(msg.id, isValidSkinData(msg.skin) ? msg.skin : null);
-    } else if (this.pvp && (msg.t === 'hurt' || msg.t === 'health' || msg.t === 'died' || msg.t === 'respawn')) {
+    } else if (this.pvp && (msg.t === 'hurt' || msg.t === 'health' || msg.t === 'died' || msg.t === 'respawn' || msg.t === 'drop' || msg.t === 'pickup' || msg.t === 'gear')) {
       this.handlePvpMessage(msg);
     } else if (msg.t === 'edit') {
       const y = msg.y | 0;
@@ -2059,8 +2067,37 @@ export default class Blockcraft extends Game {
     const me = msg.id === this.netId;
     const peer = this.netPeers.get(msg.id);
 
+    if (msg.t === 'drop') {
+      this.addDrop(msg);
+      return;
+    }
+    if (msg.t === 'pickup') {
+      const d = this.drops.get(msg.id);
+      this.removeDrop(msg.id);
+      if (msg.by && msg.by === this.netId) {
+        const what = msg.kind === 'armor' ? `Armour: ${String(msg.piece || 'piece').slice(0, 20)}`
+          : msg.kind === 'enchanted' ? 'Enchanted golden apple' : 'Golden apple';
+        this.hud.toast(`PICKED UP · ${what}`, 1800);
+        this.audio.good();
+      } else if (d && msg.by) {
+        const who = this.netPeers.get(msg.by)?.name;
+        if (who) this.pushChat('★', `${who} picked up ${msg.kind === 'armor' ? 'armour' : msg.kind === 'enchanted' ? 'an enchanted golden apple' : 'a golden apple'}`, false);
+      }
+      return;
+    }
+    if (msg.t === 'gear') {
+      this.armor = clamp(msg.ar | 0, 0, 4);
+      this.absorb = clamp(msg.ab | 0, 0, 20);
+      this.setHp(msg.hp);
+      this.refreshGear();
+      return;
+    }
+
     if (msg.t === 'hurt') {
       if (me) {
+        this.armor = clamp(msg.ar | 0, 0, 4);
+        this.absorb = clamp(msg.ab | 0, 0, 20);
+        this.refreshGear();
         this.setHp(msg.hp);
         this.vel.x += Number(msg.kx) || 0;
         this.vel.z += Number(msg.kz) || 0;
@@ -2095,6 +2132,9 @@ export default class Blockcraft extends Game {
       this.refreshMultiplayerPanel();
     } else if (msg.t === 'respawn') {
       if (me) {
+        this.armor = 0;
+        this.absorb = 0;
+        this.refreshGear();
         this.dead = false;
         this.pos.copy(this.spawnPos);
         this.vel.set(0, 0, 0);
@@ -2107,6 +2147,92 @@ export default class Blockcraft extends Game {
         peer.x = peer.tx = this.spawnPos.x; peer.y = peer.ty = this.spawnPos.y; peer.z = peer.tz = this.spawnPos.z;
         this.drawPeerTag(peer);
       }
+    }
+  }
+
+  /* ------------------------------------------------------------------ loot */
+
+  /** Draws the armour pips and the golden (absorption) hearts above the hearts. */
+  refreshGear() {
+    const el = this.hud.$panel?.querySelector('.bc-gear');
+    if (!el) return;
+    const show = this.pvp && (this.armor > 0 || this.absorb > 0);
+    el.hidden = !show;
+    if (!show) return;
+    let html = '<div class="bc-armor">';
+    for (let i = 0; i < 4; i++) html += `<span class="bc-pip${i < this.armor ? ' on' : ''}"></span>`;
+    html += '</div><div class="bc-gold">';
+    for (let i = 0; i < Math.ceil(this.absorb / 2); i++) html += `<span class="bc-heart gold${this.absorb === 2 * i + 1 ? ' half' : ''}">♥</span>`;
+    html += '</div>';
+    el.innerHTML = html;
+  }
+
+  /** A pickup lying in the world: a bobbing, spinning item under a faint light
+   *  beam so it can be spotted from a distance. Armour is a little chestplate,
+   *  golden apples are gold spheres, and the enchanted ones glow purple. */
+  addDrop(d) {
+    if (!d || typeof d.id !== 'string' || this.drops.has(d.id)) return;
+    const kind = d.kind === 'enchanted' || d.kind === 'golden' ? d.kind : 'armor';
+    const x = Number(d.x), y = Number(d.y), z = Number(d.z);
+    if (![x, y, z].every(Number.isFinite)) return;
+    const mat = (color, extra = {}) => new THREE.MeshBasicMaterial({ color, ...extra });
+    const item = new THREE.Group();
+    const beamColor = kind === 'armor' ? 0x9fd0ff : kind === 'enchanted' ? 0xc27bff : 0xffe066;
+    if (kind === 'armor') {
+      const body = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.48, 0.2), mat(0xb8c4d6));
+      const trim = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.1, 0.22), mat(0x6f86a6));
+      trim.position.y = 0.18;
+      const armL = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.2, 0.2), mat(0xb8c4d6));
+      armL.position.set(-0.3, 0.14, 0);
+      const armR = armL.clone();
+      armR.position.x = 0.3;
+      item.add(body, trim, armL, armR);
+    } else {
+      const apple = new THREE.Mesh(new THREE.SphereGeometry(0.24, 12, 10), mat(0xffd83f));
+      const shine = new THREE.Mesh(new THREE.SphereGeometry(0.1, 8, 6), mat(0xfff6b0));
+      shine.position.set(-0.09, 0.09, 0.17);
+      const stem = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.1, 0.04), mat(0x6b4423));
+      stem.position.y = 0.27;
+      item.add(apple, shine, stem);
+      if (kind === 'enchanted') {
+        const aura = new THREE.Mesh(new THREE.SphereGeometry(0.42, 12, 10), mat(0xb060ff, { transparent: true, opacity: 0.35, depthWrite: false }));
+        item.add(aura);
+        item.userData.aura = aura;
+      }
+    }
+    const beam = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.06, 0.06, 6, 6, 1, true),
+      mat(beamColor, { transparent: true, opacity: 0.32, depthWrite: false, side: THREE.DoubleSide }),
+    );
+    beam.position.y = 3;
+    const group = new THREE.Group();
+    group.position.set(x, y, z);
+    item.position.y = 0.9;
+    group.add(beam, item);
+    this.scene.add(group);
+    this.drops.set(d.id, { group, item, phase: Math.random() * 6.28 });
+  }
+
+  removeDrop(id) {
+    const d = this.drops.get(id);
+    if (!d) return;
+    this.scene.remove(d.group);
+    d.group.traverse((o) => { o.geometry?.dispose?.(); o.material?.dispose?.(); });
+    this.drops.delete(id);
+  }
+
+  clearDrops() {
+    for (const id of [...this.drops.keys()]) this.removeDrop(id);
+  }
+
+  updateDrops(dt) {
+    if (!this.drops.size) return;
+    this.dropT = (this.dropT || 0) + dt;
+    for (const d of this.drops.values()) {
+      d.item.rotation.y += dt * 2;
+      d.item.position.y = 0.9 + Math.sin(this.dropT * 2.4 + d.phase) * 0.12;
+      const aura = d.item.userData.aura;
+      if (aura) aura.material.opacity = 0.25 + Math.sin(this.dropT * 4 + d.phase) * 0.12;
     }
   }
 
@@ -2160,6 +2286,9 @@ export default class Blockcraft extends Game {
 
   resetPvp() {
     this.pvp = false;
+    this.armor = 0;
+    this.absorb = 0;
+    this.clearDrops();
     this.hasBots = false;
     this.botsHave = null;
     this.setFlyButton();
@@ -2168,6 +2297,7 @@ export default class Blockcraft extends Game {
     this.kills = 0;
     this.deaths = 0;
     this.refreshHearts(true);
+    this.refreshGear();
     this.showDeath(null);
   }
 
@@ -2524,6 +2654,16 @@ function pvpHtml() {
       .bc-hearts { position:absolute; left:50%; bottom:132px; transform:translateX(-50%);
         display:flex; gap:2px; pointer-events:none; }
       .bc-hearts[hidden] { display:none; }
+      .bc-gear { position:absolute; left:50%; bottom:162px; transform:translateX(-50%);
+        display:flex; gap:14px; align-items:center; pointer-events:none; }
+      .bc-gear[hidden] { display:none; }
+      .bc-armor, .bc-gold { display:flex; gap:2px; }
+      .bc-pip { width:16px; height:18px; background:rgba(255,255,255,.25);
+        clip-path:polygon(50% 100%, 0 62%, 0 0, 100% 0, 100% 62%); }
+      .bc-pip.on { background:linear-gradient(#cfe6ff,#7fb2e8); }
+      .bc-heart.gold { color:#ffd83f; font-size:20px; }
+      .bc-heart.gold.half { background:linear-gradient(90deg,#ffd83f 50%,rgba(255,255,255,.28) 50%);
+        -webkit-background-clip:text; background-clip:text; color:transparent; text-shadow:none; }
       .bc-heart { font:400 24px/1 system-ui; color:#ff4d5e; text-shadow:0 2px 4px rgba(0,0,0,.7); }
       .bc-heart.empty { color:rgba(255,255,255,.28); }
       .bc-heart.half { background:linear-gradient(90deg,#ff4d5e 50%,rgba(255,255,255,.28) 50%);
@@ -2539,6 +2679,7 @@ function pvpHtml() {
       .bc-death p { margin:0; font:600 16px system-ui; opacity:.9; }
     </style>
     <div class="bc-hurt"></div>
+    <div class="bc-gear" hidden></div>
     <div class="bc-hearts" hidden></div>
     <div class="bc-death" hidden><h2>You died</h2><p class="bc-death-by"></p><p>Respawning…</p></div>`;
 }
