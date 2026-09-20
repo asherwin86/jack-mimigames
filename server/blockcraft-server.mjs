@@ -33,7 +33,10 @@
  * players can't ask for more than the machine can run; BOT_LEVEL sets the default
  * level. Bots walk the real terrain (generated from the seed by the same code the
  * game uses) and swing through the same hit rules as everyone else — reach,
- * cooldown, spawn protection.
+ * cooldown, spawn protection. They start at least 40 blocks from their player and
+ * just wander until you get close (how close depends on the level), so you have to
+ * go and find them; once they've spotted you they charge, shoot arrows from range
+ * (aim and rate depend on the level) and swing when they reach you.
  *
  * Built to be left running: it answers plain HTTP on the same port (GET / or
  * /health, which is what hosting platforms poll), drops connections that stop
@@ -103,15 +106,22 @@ const BOW = { reach: BOW_REACH, key: 'lastBowAt', cooldown: BOW_COOLDOWN_MS, kb:
 //   reach    how close it gets before swinging
 //   accuracy chance a swing actually lands
 //   weave    how hard it strafes while closing in (harder to hit)
-//   sight    how far away it notices you
+//   bow      how it shoots: [min, max] ms between arrows, how far it draws (0-1), and how far off it aims (blocks at the target)
+//   notice   how close you have to get before it spots you and charges (until then it just wanders;
+//            it gives up again if you get 1.8x this far away)
 //   kb       how much knockback it takes (1 = normal)
 const BOT_TICK_MS = 100;
+const BOT_BOW_MIN_RANGE = 6;      // closer than this a bot puts the bow away and swings
+const BOT_BOW_MAX_RANGE = 55;
+const BOT_BOW = { reach: 90, key: 'lastBowAt', cooldown: 0, kb: 0.5 };   // bots pace their own shots; handleHit still applies protection and scoring
+const BOT_SPAWN_MIN = 40;         // bots appear at least this far from their player
+const BOT_WANDER_SPEED = 1.3;    // an unaware bot just strolls around
 const LEVELS = {
-  supereasy: { speed: 1.6, damage: 1, swing: [2500, 3500], reach: 2.2, accuracy: 0.35, weave: 0.0, sight: 25, kb: 1.8 },
-  easy:    { speed: 2.4, damage: 2, swing: [1500, 2300], reach: 2.6, accuracy: 0.55, weave: 0.0, sight: 35, kb: 1.4 },
-  medium:  { speed: 3.6, damage: 4, swing: [900, 1500],  reach: 3.0, accuracy: 0.85, weave: 0.55, sight: 60, kb: 1.0 },
-  hard:    { speed: 4.8, damage: 5, swing: [650, 1000],  reach: 3.2, accuracy: 0.95, weave: 0.8, sight: 80, kb: 0.7 },
-  extreme: { speed: 6.0, damage: 6, swing: [470, 620],   reach: 3.5, accuracy: 1.0,  weave: 1.0, sight: 100, kb: 0.35 },
+  supereasy: { speed: 1.6, damage: 1, swing: [2500, 3500], reach: 2.2, accuracy: 0.35, weave: 0.0, bow: { every: [7000, 10000], charge: 0.35, spread: 4.0 }, notice: 12, kb: 1.8 },
+  easy:    { speed: 2.4, damage: 2, swing: [1500, 2300], reach: 2.6, accuracy: 0.55, weave: 0.0, bow: { every: [5000, 7500], charge: 0.5, spread: 2.5 }, notice: 16, kb: 1.4 },
+  medium:  { speed: 3.6, damage: 4, swing: [900, 1500],  reach: 3.0, accuracy: 0.85, weave: 0.55, bow: { every: [3200, 5000], charge: 0.7, spread: 1.4 }, notice: 22, kb: 1.0 },
+  hard:    { speed: 4.8, damage: 5, swing: [650, 1000],  reach: 3.2, accuracy: 0.95, weave: 0.8, bow: { every: [2200, 3200], charge: 0.9, spread: 0.7 }, notice: 30, kb: 0.7 },
+  extreme: { speed: 6.0, damage: 6, swing: [470, 620],   reach: 3.5, accuracy: 1.0,  weave: 1.0, bow: { every: [1300, 1900], charge: 1.0, spread: 0.2 }, notice: 40, kb: 0.35 },
 };
 const DEFAULT_LEVEL = Object.hasOwn(LEVELS, process.env.BOT_LEVEL) ? process.env.BOT_LEVEL : 'medium';
 const validLevel = (l) => (typeof l === 'string' && Object.hasOwn(LEVELS, l) ? l : null);
@@ -281,6 +291,14 @@ wss.on('connection', (ws) => {
     const player = players.get(id);
 
     if (msg.t === 'move') {
+      const nowMs = Date.now();
+      const dtm = (nowMs - (player.moveAt || nowMs)) / 1000;
+      const nxp = finite(msg.x), nzp = finite(msg.z);
+      if (dtm > 0.02 && dtm < 1) {   // a little smoothing: bots use this to lead a moving target
+        player.vx = 0.6 * (player.vx || 0) + 0.4 * ((nxp - player.x) / dtm);
+        player.vz = 0.6 * (player.vz || 0) + 0.4 * ((nzp - player.z) / dtm);
+      }
+      player.moveAt = nowMs;
       player.x = finite(msg.x);
       player.y = finite(msg.y);
       player.z = finite(msg.z);
@@ -406,15 +424,17 @@ let nextBotId = 1;
 const groundY = (x, z) => heightAt(Math.floor(x), Math.floor(z), SEED, TERRAIN) + 1;
 
 /** A random dry-land point on a ring around `near` (a player) — or world
- *  spawn if there isn't one — where a bot starts and reappears. The ring
- *  widens with the number of bots so a crowd doesn't all stack on one spot. */
+ *  spawn if there isn't one — where a bot starts and reappears. It's a good
+ *  way off (at least BOT_SPAWN_MIN blocks) so the player has time to go and
+ *  find their bots, and the ring widens with the number of bots so a crowd
+ *  doesn't all stack on one spot. */
 function botSpawnPoint(near) {
   const cx = near ? near.x : 0.5;
   const cz = near ? near.z : 0.5;
-  const spread = 14 + Math.min(30, (near?.botsHave || 0) * 0.6);
+  const spread = 25 + Math.min(30, (near?.botsHave || 0) * 0.6);
   for (let i = 0; i < 40; i++) {   // keep trying until it lands on dry ground
     const a = Math.random() * Math.PI * 2;
-    const r = 12 + Math.random() * spread;
+    const r = BOT_SPAWN_MIN + Math.random() * spread;
     const x = cx + Math.cos(a) * r;
     const z = cz + Math.sin(a) * r;
     if (groundY(x, z) - 1 >= SEA_LEVEL) return { x, z, y: groundY(x, z) };
@@ -436,7 +456,7 @@ function addBot(ownerId) {
     ws: null, isBot: true, owner: ownerId, name, color, skin: null, x: at.x, y: at.y, z: at.z, yaw: 0, pitch: 0,
     hp: MAX_HP, dead: false, kills: 0, deaths: 0, kx: 0, kz: 0, phase: Math.random() * 6.28, fightLevel: DEFAULT_LEVEL,
     lastHitAt: 0, lastHurtAt: 0, nextSwingIn: 0, protectUntil: Date.now() + SPAWN_PROTECT_MS, respawnTimer: null,
-    sentX: NaN, sentZ: NaN, sentYaw: NaN,
+    sentX: NaN, sentZ: NaN, sentYaw: NaN, alerted: false, nextShotIn: 1500, wanderTo: null, wanderWait: Math.random() * 3000, walkT: 0,
   });
   broadcast(id, { t: 'join', id, name, color, skin: null });
   return id;
@@ -474,6 +494,69 @@ function syncBots() {
   }
 }
 
+/* Bot arrows are simulated here (gravity, ground, the owner's body) in real
+ * time, and relayed to everyone as ordinary 'arrow' messages so they see the
+ * same flight the server is resolving. */
+const botArrows = [];
+const ARROW_G = 20;
+
+/** True if the straight line from a to b stays above the ground — terrain only
+ *  (the server doesn't know about blocks players have built). */
+function clearShot(a, b) {
+  const n = Math.max(2, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y, b.z - a.z)));
+  for (let i = 1; i < n; i++) {
+    const t = i / n;
+    const x = a.x + (b.x - a.x) * t;
+    const y = a.y + (b.y - a.y) * t;
+    const z = a.z + (b.z - a.z) * t;
+    if (y < groundY(x, z) - 0.2) return false;
+  }
+  return true;
+}
+
+/** Bot looses an arrow at its owner: aim for the chest, lead a moving target,
+ *  compensate for drop, then blur the aim by the level's spread. */
+function botShoot(botId, bot, owner, L) {
+  const ex = bot.x, ey = bot.y + 1.62, ez = bot.z;
+  const speed = 20 + 40 * L.bow.charge;
+  const dist = Math.hypot(owner.x - ex, owner.z - ez);
+  const t = Math.max(0.05, dist / speed);
+  const lead = L.bow.spread < 1 ? Math.min(t, 1) : 0;   // sharper levels predict where you're heading
+  const tx = owner.x + (owner.vx || 0) * lead + (Math.random() - 0.5) * 2 * L.bow.spread;
+  const tz = owner.z + (owner.vz || 0) * lead + (Math.random() - 0.5) * 2 * L.bow.spread;
+  const ty = owner.y + 1.1 + 0.5 * ARROW_G * t * t + (Math.random() - 0.5) * 2 * L.bow.spread * 0.5;
+  if (!clearShot({ x: ex, y: ey, z: ez }, { x: owner.x, y: owner.y + 1.1, z: owner.z })) return false;
+  const dx = tx - ex, dy = ty - ey, dz = tz - ez;
+  const len = Math.hypot(dx, dy, dz) || 1;
+  const vx = (dx / len) * speed, vy = (dy / len) * speed, vz = (dz / len) * speed;
+  botArrows.push({ botId, ownerId: bot.owner, x: ex, y: ey, z: ez, vx, vy, vz, life: 4, dmg: Math.max(1, Math.round(L.damage * 0.75)) });
+  bot.yaw = Math.atan2(-(owner.x - ex), -(owner.z - ez));
+  broadcastAll({ t: 'arrow', id: botId, x: ex, y: ey, z: ez, vx, vy, vz });
+  return true;
+}
+
+function stepBotArrows(dt) {
+  const SUB = 0.005;   // 0.3 blocks per step at full speed — small enough that an arrow can't skip clean through a 0.8-wide body
+  for (let i = botArrows.length - 1; i >= 0; i--) {
+    const a = botArrows[i];
+    const bot = players.get(a.botId);
+    const owner = players.get(a.ownerId);
+    let gone = !bot || !owner || bot.dead;
+    for (let t = 0; t < dt && !gone; t += SUB) {
+      a.vy -= ARROW_G * SUB;
+      a.x += a.vx * SUB; a.y += a.vy * SUB; a.z += a.vz * SUB;
+      a.life -= SUB;
+      if (!owner.dead && Math.abs(a.x - owner.x) < 0.4 && Math.abs(a.z - owner.z) < 0.4 && a.y > owner.y - 0.05 && a.y < owner.y + 1.85) {
+        handleHit(a.botId, bot, a.ownerId, a.dmg, BOT_BOW);
+        gone = true;
+      } else if (a.y <= groundY(a.x, a.z) || a.life <= 0) {
+        gone = true;   // buried in the ground (or flew too long)
+      }
+    }
+    if (gone) botArrows.splice(i, 1);
+  }
+}
+
 /** Whether a bot can step to (nx, nz): dry land, and not a wall. */
 function canStep(bot, nx, nz) {
   const gy = groundY(nx, nz);
@@ -483,18 +566,29 @@ function canStep(bot, nx, nz) {
 function botTick() {
   const dt = BOT_TICK_MS / 1000;
   const now = Date.now();
+  stepBotArrows(dt);
   for (const [id, bot] of players) {
     if (!bot.isBot || bot.dead) continue;
 
     // A bot only ever fights the player who asked for it, at that player's level.
+    // It doesn't know where you are until you get close (then it charges), and
+    // loses interest again if you get well away — so you have to go and find it.
     const owner = players.get(bot.owner);
+    const L = LEVELS[owner?.level ?? DEFAULT_LEVEL];
+    bot.fightLevel = owner?.level ?? DEFAULT_LEVEL;
     let target = null;
     if (owner && !owner.dead) {
       const d = Math.hypot(owner.x - bot.x, owner.z - bot.z);
-      if (d <= LEVELS[owner.level].sight) target = { id: bot.owner, p: owner, d };
+      if (!bot.alerted && d <= L.notice) {
+        bot.alerted = true;
+        bot.nextSwingIn = Math.max(bot.nextSwingIn, 700);   // a moment of surprise before the first swing
+      } else if (bot.alerted && d > L.notice * 1.8) {
+        bot.alerted = false;
+      }
+      if (bot.alerted) target = { id: bot.owner, p: owner, d };
+    } else {
+      bot.alerted = false;
     }
-    const L = LEVELS[target ? target.p.level : DEFAULT_LEVEL];
-    bot.fightLevel = target ? target.p.level : DEFAULT_LEVEL;
 
     let vx = bot.kx;   // knockback carries on and fades
     let vz = bot.kz;
@@ -520,6 +614,36 @@ function botTick() {
         bot.nextSwingIn = L.swing[0] + Math.random() * (L.swing[1] - L.swing[0]);
         if (Math.random() < L.accuracy) handleHit(id, bot, target.id, L.damage);
       }
+      // Too far for a sword but in range: draw the bow (the closer it gets, the more it swings instead).
+      bot.nextShotIn -= BOT_TICK_MS;
+      if (dist >= BOT_BOW_MIN_RANGE && dist <= BOT_BOW_MAX_RANGE && bot.nextShotIn <= 0) {
+        bot.nextShotIn = L.bow.every[0] + Math.random() * (L.bow.every[1] - L.bow.every[0]);
+        botShoot(id, bot, target.p, L);
+      }
+    }
+
+    if (!target) {
+      // Unaware: amble toward a random spot nearby, pause a few seconds, pick another.
+      if (bot.wanderTo) {
+        bot.walkT += BOT_TICK_MS;
+        if (Math.hypot(bot.wanderTo.x - bot.x, bot.wanderTo.z - bot.z) < 1 || bot.walkT > 9000) {
+          bot.wanderTo = null;                       // arrived (or it's been blocked too long)
+          bot.wanderWait = 1500 + Math.random() * 3500;
+        }
+      } else {
+        bot.wanderWait -= BOT_TICK_MS;
+        if (bot.wanderWait <= 0) {
+          const a = Math.random() * Math.PI * 2;
+          const r = 4 + Math.random() * 10;
+          bot.wanderTo = { x: bot.x + Math.cos(a) * r, z: bot.z + Math.sin(a) * r };
+          bot.walkT = 0;
+        }
+      }
+      if (bot.wanderTo) {
+        heading = Math.atan2(bot.wanderTo.z - bot.z, bot.wanderTo.x - bot.x);
+        bot.yaw = Math.atan2(-Math.cos(heading), -Math.sin(heading));
+        bot.pitch = 0;
+      }
     }
 
     // Walk, but never into the sea and never up a wall — and if the straight
@@ -527,9 +651,10 @@ function botTick() {
     if (heading !== null) {
       for (const turn of [0, 0.6, -0.6, 1.2, -1.2, 1.9, -1.9]) {
         const h = heading + turn;
-        const nx = bot.x + Math.cos(h) * L.speed * dt;
-        const nz = bot.z + Math.sin(h) * L.speed * dt;
-        if (canStep(bot, nx, nz)) { vx += Math.cos(h) * L.speed; vz += Math.sin(h) * L.speed; break; }
+        const sp = target ? L.speed : BOT_WANDER_SPEED;
+        const nx = bot.x + Math.cos(h) * sp * dt;
+        const nz = bot.z + Math.sin(h) * sp * dt;
+        if (canStep(bot, nx, nz)) { vx += Math.cos(h) * sp; vz += Math.sin(h) * sp; break; }
       }
     }
     const nx = bot.x + vx * dt;

@@ -7,7 +7,7 @@ export const CHANGELOG = [
   },
   {
     title: 'PvP: AI opponents',
-    detail: 'The PvP arena has AI bots so there is always someone to fight. Choose how many (0 to 50) with the Bots slider and how tough — Super easy, Easy, Medium, Hard or Extreme. Your bots chase only you, so AI or real people, your call.',
+    detail: 'The PvP arena has AI bots so there is always someone to fight. Choose how many (0 to 50) with the Bots slider and how tough — Super easy, Easy, Medium, Hard or Extreme. Bots start well away from you and only charge once you find them, and they shoot bows from range — better aim on harder levels. Your bots chase only you, so AI or real people, your call.',
   },
   {
     title: 'Tidier menu',

@@ -139,7 +139,7 @@ walls, and that holding to dig respects each block's hardness.
 
 `npm run check:pvp` starts the real server in `--pvp` mode and checks hearts,
 reach and cooldown, spawn protection, knockback, death/scoring/respawn, health
-regeneration, that the world survives a restart, and the AI bots (each player picks 0–50, they walk up and hit only their owner at the level chosen, can be killed by anyone, respect the server-wide cap, and leave with their player). To run a PvP server that
+regeneration, that the world survives a restart, and the AI bots (each player picks 0–50; they start 40+ blocks away and only charge once found, shoot arrows from range, hit only their owner at the level chosen, can be killed by anyone, respect the server-wide cap, and leave with their player). To run a PvP server that
 stays up, see [`deploy/`](deploy/README.md).
 
 `npm run check:backdrop` covers the menu backdrop: that hovering a flying

@@ -59,6 +59,17 @@ async function client(name, port = PORT, extraHello = {}) {
   return { ws, all, wait, send, welcome, id: welcome.id, count: (t) => all.filter((m) => m.t === t).length };
 }
 
+/** How much each hit on `c` took off, from the running hp (regen and respawns reset it). */
+function damages(c) {
+  let hp = 20;
+  const out = [];
+  for (const m of c.all) {
+    if ((m.t === 'health' || m.t === 'respawn') && m.id === c.id) hp = m.hp;
+    else if (m.t === 'hurt' && m.id === c.id) { out.push({ dmg: hp - m.hp, by: m.by }); hp = m.hp; }
+  }
+  return out;
+}
+
 let server = startServer(['--pvp', '--bots=0']);   // bots off here: these checks are about two people fighting
 try {
   await sleep(500);
@@ -206,42 +217,59 @@ try {
     const hp = await (await fetch(`http://127.0.0.1:${BPORT}/health`)).json();
     ok('no bots run while the arena is empty', hp.bots === 0, JSON.stringify(hp));
 
-    const me = await client('Human', BPORT, { level: 'extreme' });
-    ok('welcome says bots are on, echoes the level and the default count', me.welcome.bots === true && me.welcome.level === 'extreme' && me.welcome.botCount === 2);
+    const me = await client('Human', BPORT, { level: 'easy' });
+    ok('welcome says bots are on, echoes the level and the default count', me.welcome.bots === true && me.welcome.level === 'easy' && me.welcome.botCount === 2);
     await sleep(400);
     const joinsOf = (c) => c.all.filter((m) => m.t === 'join' && /\[bot\]/.test(m.name));
     ok('a player who does not choose gets the default number of bots', joinsOf(me).length === 2, `${joinsOf(me).length} bots joined`);
     ok('bots look like players (id, name, colour)', joinsOf(me).every((j) => /^bot\d+$/.test(j.id) && j.color));
 
-    // Stand on land at spawn; the bots should walk to us and start swinging.
-    const groundAtSpawn = heightAt(0, 0, me.welcome.seed, calibrateHeight(me.welcome.seed)) + 1;   // the same ground the server's bots walk on
-    const stand = () => me.send({ t: 'move', x: 0.5, y: groundAtSpawn, z: 0.5, yaw: 0, pitch: 0 });
+    const seed = me.welcome.seed;
+    const cal = calibrateHeight(seed);
+    const groundAt = (x, z) => heightAt(Math.floor(x), Math.floor(z), seed, cal) + 1;   // the same ground the server's bots walk on
+    let pos = { x: 0.5, z: 0.5 };
+    /** A dry spot `d` blocks from a bot at about its own height, so nothing (a cliff, a lake) is between them. */
+    const spotBeside = (bot, d) => {
+      const here = groundAt(bot.x, bot.z);
+      for (let a = 0; a < 6.28; a += 0.5) {
+        const x = bot.x + Math.cos(a) * d;
+        const z = bot.z + Math.sin(a) * d;
+        if (groundAt(x, z) - 1 >= 12 && Math.abs(groundAt(x, z) - here) <= 1) return { x, z };
+      }
+      return { x: bot.x + d, z: bot.z };
+    };
+    const stand = () => me.send({ t: 'move', x: pos.x, y: groundAt(pos.x, pos.z), z: pos.z, yaw: 0, pitch: 0 });
     stand();
     const iv = setInterval(stand, 200);
     const botMoves = () => me.all.filter((m) => m.t === 'move' && /^bot/.test(m.id));
-    const first = () => botMoves().find((m) => m.id === joinsOf(me)[0].id);
-    await sleep(600);
-    const d0 = Math.hypot(first().x - 0.5, first().z - 0.5);
-    ok('bots move (they are broadcast like any player)', botMoves().length > 3);
+    const lastPos = (id) => [...botMoves()].reverse().find((m) => m.id === id);
+    await sleep(700);
+    ok('bots are broadcast like any player (each reports a position)', botMoves().length >= 2);
+    const firsts = joinsOf(me).map((j) => botMoves().find((m) => m.id === j.id)).filter(Boolean);
+    const nearest = Math.min(...firsts.map((m) => Math.hypot(m.x - 0.5, m.z - 0.5)));
+    ok('bots start a good way off, so you have to go and find them', firsts.length === 2 && nearest >= 35, `nearest ${nearest.toFixed(0)} blocks`);
 
-    const hurt1 = await me.wait((m) => m.t === 'hurt' && m.id === me.id && /^bot/.test(m.by), 25000).catch(() => null);
-    ok('a bot walks up and hits the human', !!hurt1, hurt1 ? `hp ${hurt1.hp}` : 'never hit');
+    await sleep(5000);
+    ok('...and leave you alone while you are far away', !me.all.some((m) => m.t === 'hurt' && m.id === me.id), `${me.count('hurt')} hits`);
+
+    // Go looking: walk up to the first bot. It spots you and charges.
+    me.send({ t: 'level', level: 'extreme' });
+    const bot0 = lastPos(joinsOf(me)[0].id);
+    pos = spotBeside(bot0, 6);
+    stand();
+    const hurt1 = await me.wait((m) => m.t === 'hurt' && m.id === me.id && /^bot/.test(m.by), 20000).catch(() => null);
+    ok('once you find a bot it notices you and hits', !!hurt1, hurt1 ? `hp ${hurt1.hp}` : 'never hit');
     ok('an EXTREME bot hits hard (3 hearts)', hurt1?.hp === 14, `hp ${hurt1?.hp}`);
-    const lastB = [...botMoves()].reverse().find((m) => m.id === joinsOf(me)[0].id);
-    ok('the bot closed the distance', Math.hypot(lastB.x - 0.5, lastB.z - 0.5) < d0, `${d0.toFixed(1)} → ${Math.hypot(lastB.x - 0.5, lastB.z - 0.5).toFixed(1)}`);
 
     // Drop to super easy: hits now do one half-heart.
     me.send({ t: 'level', level: 'supereasy' });
     await sleep(300);
     const before = me.all.filter((m) => m.t === 'hurt' && m.id === me.id).length;
     let sample = null;
-    for (let i = 0; i < 120 && !sample; i++) {
+    for (let i = 0; i < 180 && sample === null; i++) {   // slow bots: give them up to 45s
       await sleep(250);
-      const hits = me.all.filter((m) => m.t === 'hurt' && m.id === me.id);
-      if (hits.length > before + 1) {
-        const [a, b] = hits.slice(-2);
-        if (a.hp - b.hp > 0) sample = a.hp - b.hp;
-      }
+      const fresh = damages(me).slice(before).filter((d) => d.by && /^bot/.test(d.by) && d.dmg > 0);
+      if (fresh.length) sample = fresh[0].dmg;
     }
     ok('super easy bots only take half a heart', sample === 1, `hit for ${sample}`);
 
@@ -249,7 +277,7 @@ try {
     const nearestBot = () => {
       const last = (id) => [...me.all].reverse().find((m) => m.t === 'move' && m.id === id);
       return joinsOf(me).map((j) => ({ id: j.id, m: last(j.id) })).filter((x) => x.m)
-        .sort((a, b) => Math.hypot(a.m.x - 0.5, a.m.z - 0.5) - Math.hypot(b.m.x - 0.5, b.m.z - 0.5))[0]?.id;
+        .sort((a, b) => Math.hypot(a.m.x - pos.x, a.m.z - pos.z) - Math.hypot(b.m.x - pos.x, b.m.z - pos.z))[0]?.id;
     };
     let killed = null;
     for (let i = 0; i < 14 && !killed; i++) {
@@ -285,20 +313,36 @@ try {
     ok('when the first player asks for fewer, the second gets theirs', !!freed);
     await sleep(300);
 
-    // Bots belong to their player: standing right next to the first player's bots
-    // as a second player, you are never their target.
+    // Bots belong to their player: stand a second player right beside the first
+    // (next to the first player's bots) and they are never that player's target.
     me.send({ t: 'level', level: 'extreme' });
-    const standTwo = () => two.send({ t: 'move', x: 0.6, y: groundAtSpawn, z: 0.5, yaw: 0, pitch: 0 });
-    const iv2 = setInterval(standTwo, 200);
     two.send({ t: 'level', level: 'supereasy' });
+    // The first player's own bots: the ones already there when the second player joined
+    // (joinsOf() would also include the second player's bots, which are broadcast to everyone).
+    const firstsBots = new Set(two.welcome.players.filter((p) => /\[bot\]/.test(p.name)).map((p) => p.id));
+    const liveMine = () => {
+      const left = new Set(me.all.filter((m) => m.t === 'leave').map((m) => m.id));
+      return [...firstsBots].filter((id) => !left.has(id)).map(lastPos).filter(Boolean);
+    };
+    const mineNow = liveMine();
+    const anchor = mineNow.sort((a, b) => Math.hypot(a.x - pos.x, a.z - pos.z) - Math.hypot(b.x - pos.x, b.z - pos.z))[0];
+    pos = spotBeside(anchor, 3);
+    stand();
+    const standTwo = () => two.send({ t: 'move', x: pos.x + 0.1, y: groundAt(pos.x, pos.z), z: pos.z, yaw: 0, pitch: 0 });
+    standTwo();
+    const iv2 = setInterval(standTwo, 200);
+    const chase = setInterval(() => {   // keep walking up to the nearest live bot, like a player going after them
+      const near = liveMine().sort((a, b) => Math.hypot(a.x - pos.x, a.z - pos.z) - Math.hypot(b.x - pos.x, b.z - pos.z))[0];
+      if (near && Math.hypot(near.x - pos.x, near.z - pos.z) > 4) pos = spotBeside(near, 3);
+    }, 1000);
     const myHurtsBefore = me.all.filter((m) => m.t === 'hurt' && m.id === me.id).length;
-    await sleep(9000);
+    await sleep(14000);
     const myHurts = me.all.filter((m) => m.t === 'hurt' && m.id === me.id).length - myHurtsBefore;
     const twoHurtBy = two.all.filter((m) => m.t === 'hurt' && m.id === two.id && /^bot/.test(m.by));
     ok('the first player\'s bots keep attacking their own player', myHurts > 0, `${myHurts} hits`);
-    const foreignBots = new Set(two.welcome.players.filter((p) => /\[bot\]/.test(p.name)).map((p) => p.id));   // the first player's bots, already there when this one joined
+    const foreignBots = firstsBots;
     ok('...and a second player standing beside them is never their target', foreignBots.size > 0 && twoHurtBy.every((m) => !foreignBots.has(m.by)), `${foreignBots.size} foreign bots, ${twoHurtBy.length} hits on the second player`);
-    clearInterval(iv); clearInterval(iv2);
+    clearInterval(iv); clearInterval(iv2); clearInterval(chase);
 
     me.ws.close(); two.ws.close();
     await sleep(500);
@@ -309,6 +353,62 @@ try {
     console.log(bots.log);
   } finally {
     bots.kill();
+  }
+}
+
+// ------------------------------------------------- bots use the bow too
+{
+  const APORT = PORT + 2;
+  const srv = startServer(['--pvp', '--bots=1'], APORT, '');
+  try {
+    await sleep(700);
+    const me = await client('Sniped', APORT, { level: 'extreme' });
+    await sleep(500);
+    const seed = me.welcome.seed;
+    const cal = calibrateHeight(seed);
+    const groundAt = (x, z) => heightAt(Math.floor(x), Math.floor(z), seed, cal) + 1;
+    me.send({ t: 'move', x: 0.5, y: groundAt(0.5, 0.5), z: 0.5, yaw: 0, pitch: 0 });
+    await sleep(400);
+    const botId = me.all.find((m) => m.t === 'join' && /\[bot\]/.test(m.name)).id;
+    const b = [...me.all].reverse().find((m) => m.t === 'move' && m.id === botId);
+    // Find spots 26-40 blocks from the bot on dry ground that it can actually see:
+    // the same straight-line test the server applies before it lets a bot shoot.
+    const canSee = (bot, to) => {
+      const ey = groundAt(bot.x, bot.z) + 1.62;
+      const ty = groundAt(to.x, to.z) + 1.1;
+      const n = Math.ceil(Math.hypot(to.x - bot.x, to.z - bot.z));
+      for (let i = 1; i < n; i++) {
+        const t = i / n;
+        if (ey + (ty - ey) * t < groundAt(bot.x + (to.x - bot.x) * t, bot.z + (to.z - bot.z) * t) - 0.2) return false;
+      }
+      return true;
+    };
+    const spots = [];
+    for (const r of [34, 30, 38, 26, 40]) {
+      for (let a = 0; a < 6.28; a += 0.25) {
+        const x = b.x + Math.cos(a) * r;
+        const z = b.z + Math.sin(a) * r;
+        if (groundAt(x, z) - 1 >= 12 && canSee(b, { x, z })) spots.push({ x, z });
+      }
+      if (spots.length) break;
+    }
+    ok('(test setup) found a clear firing line to stand on', spots.length > 0, `${spots.length} candidates`);
+    let spot = spots[0];
+    const stand = () => me.send({ t: 'move', x: spot.x, y: groundAt(spot.x, spot.z), z: spot.z, yaw: 0, pitch: 0 });
+    stand();
+    const iv = setInterval(stand, 150);
+    const shot = await me.wait((m) => m.t === 'arrow' && m.id === botId, 12000).catch(() => null);
+    ok('a bot at range draws its bow (an arrow is shown flying)', !!shot && Math.hypot(shot.vx, shot.vy, shot.vz) > 55, shot ? `speed ${Math.hypot(shot.vx, shot.vy, shot.vz).toFixed(0)}` : 'no arrow');
+    await sleep(6000);
+    const dmgs = damages(me).map((d) => d.dmg);
+    ok('...and its arrows can hit you (extreme: 5 half-hearts, a sword hit is 6)', dmgs.includes(5), `damage per hit: ${dmgs.join(', ')}`);
+    clearInterval(iv);
+    me.ws.close();
+  } catch (e) {
+    ok(e.message, false);
+    console.log(srv.log);
+  } finally {
+    srv.kill();
   }
 }
 
