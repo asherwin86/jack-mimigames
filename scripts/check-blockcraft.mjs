@@ -13,6 +13,19 @@ globalThis.document ??= {
 };
 globalThis.addEventListener ??= () => {};
 
+// A fixed random stream: the world's seed (and everything else that rolls dice)
+// is then the same every run, so a check can only fail because of a real change,
+// never because this run happened to draw a terrain with no buried stone near spawn.
+{
+  let a = 0x2f6e2b1;
+  Math.random = () => {
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
 // In-memory localStorage: Node has no such global, and blockcraft.js's save
 // functions already guard for that with try/catch — but a real shim, shared
 // across instances, is what lets the save/load round trip actually be tested.
@@ -626,6 +639,69 @@ check('loading a different world restores its edit', game2.get(1, 3, 2) === 9);
   game.hostConns.clear();
   game.hostPeer = null;
   game.netPeers.clear();
+}
+
+// --- PvP worlds: hearts, combat and bots run inside the game itself -------
+{
+  const pw = makeGame(makeInput());
+  pw.start();
+  check('a normal world has no arena and no PvP', pw.arena === null && pw.pvp === false);
+  pw.buildWorld(777, null, 'PvP test', 'pvp-test', true);
+  check('a PvP world starts an arena and turns PvP on', !!pw.arena && pw.pvp === true && pw.hasBots === true && pw.netId === 'host');
+  check('it is remembered as a PvP world (the world list gets the flag)', (() => {
+    pw.touchActive();
+    return loadWorldListForTest().find((w) => w.id === 'pvp-test')?.pvp === true;
+  })());
+  check('flying is off in a PvP world', pw.flying === false);
+  const botIds = () => [...pw.netPeers.keys()].filter((k) => String(k).startsWith('bot'));
+  check('bots appear as players (the default count)', botIds().length === pw.botCount && pw.botCount > 0, `${botIds().length}`);
+  pw.sendPvp({ t: 'bots', n: 5 });
+  check('the Bots slider adds bots', botIds().length === 5);
+  pw.sendPvp({ t: 'bots', n: 0 });
+  check('...and 0 removes them all', botIds().length === 0);
+  pw.sendPvp({ t: 'bots', n: 2 });
+  const b1 = botIds()[0];
+
+  // Put a bot beside us and cut it down; loot should drop (Math.random pinned so the roll is armour).
+  const rec = pw.arena.players.get(b1);
+  Object.assign(rec, { x: pw.pos.x + 1.5, y: pw.pos.y, z: pw.pos.z, protectUntil: 0 });
+  pw.arena.onMove('host', { x: pw.pos.x, y: pw.pos.y, z: pw.pos.z, yaw: 0, pitch: 0 });
+  pw.sendPvp({ t: 'hit', target: b1, w: 'sword' });
+  check('hitting a bot hurts it (and everyone is told)', rec.hp === 14 && pw.netPeers.get(b1).hp === 14, `hp ${rec.hp}`);
+  const realRandom = Math.random;
+  Math.random = () => 0.1;
+  rec.hp = 1; pw.arena.players.get('host').lastHitAt = 0;   // (the swing cooldown is the attacker's)
+  pw.sendPvp({ t: 'hit', target: b1, w: 'sword' });
+  Math.random = realRandom;
+  check('killing a bot scores it and drops loot', pw.kills === 1 && pw.drops.size === 1, `kills ${pw.kills}, drops ${pw.drops.size}`);
+  const drop = [...pw.drops.values()][0];
+  pw.arena.onMove('host', { x: drop.group.position.x, y: drop.group.position.y, z: drop.group.position.z, yaw: 0, pitch: 0 });
+  for (let i = 0; i < 40 && pw.armor < 1; i++) await new Promise((r) => setTimeout(r, 50));   // the arena checks pickups on a 100ms timer (allow a slow machine)
+  check('walking over the drop picks it up (armour)', pw.armor === 1 && pw.drops.size === 0, `armor ${pw.armor}`);
+
+  // Hosting a PvP world: friends join the same arena.
+  pw.hostPeer = { destroy() {} };
+  pw.hostCode = 'bc-test';
+  const sent = [];
+  const conn = { peer: 'peerZ', send: (m) => sent.push(m), close() {} };
+  pw.handleHostData(conn, { t: 'hello', name: 'Zed', bots: 0, level: 'easy' });
+  const w = sent.find((m) => m.t === 'welcome');
+  check('a friend joining is told it is a PvP world with bots', w?.pvp === true && w?.bots === true && w?.botCount === 0 && Array.isArray(w?.drops));
+  check('their welcome lists you and the bots', w.players.some((p) => p.id === 'host') && w.players.filter((p) => String(p.id).startsWith('bot')).length === botIds().length);
+  pw.handleHostData(conn, { t: 'level', level: 'hard' });
+  check('the friend\'s AI level is applied', pw.arena.players.get('peerZ').level === 'hard');
+  pw.handleHostData(conn, { t: 'bots', n: 4 });
+  const theirBots = () => [...pw.arena.players].filter(([, p]) => p.isBot && p.owner === 'peerZ');
+  check('the friend can choose their own bots', theirBots().length === 4);
+  check('their bots are announced to them', sent.filter((m) => m.t === 'join' && String(m.id).startsWith('bot')).length >= 4);
+  pw.handleHostConnClose('peerZ');
+  check('when the friend leaves, their bots go too', !pw.arena.players.has('peerZ') && theirBots().length === 0);
+  const oldArena = pw.arena;
+  pw.stopHosting();
+  check('stopping hosting gives you a fresh arena', pw.arena !== oldArena && pw.pvp === true && !!pw.arena);
+  pw.buildWorld(778, null, 'Plain', 'plain-test', false);
+  check('switching to an ordinary world drops the arena and PvP', pw.arena === null && pw.pvp === false && pw.hasBots === false);
+  pw.dispose();
 }
 
 function loadWorldData(id) {

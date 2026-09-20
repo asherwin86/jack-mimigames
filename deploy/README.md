@@ -78,7 +78,7 @@ hide the button. Anyone can also paste any address into the Multiplayer panel.
 | `PVP` | off | `1` turns on hearts, hitting, death and scoring (same as `--pvp`) |
 | `DATA_FILE` | none | JSON file the world (seed + block edits) is saved to every 30s and on shutdown |
 | `MAX_PLAYERS` | `32` | Connections beyond this are refused |
-| `BOTS` | `3` (PvP) | Default number of AI bots each player fights. Every player chooses their own, 0–50, in the Multiplayer panel; their bots chase only them and leave with them (also `--bots=N`) |
-| `MAX_BOTS` | `60` | Ceiling on bots across the whole server — a few players can't ask for more than the machine can run. Later players are given what's left. `0` turns bots off entirely |
+| `BOTS` | `3` (once bots are on) | Default number of AI bots each player fights. Every player chooses their own, 0–50, in the Multiplayer panel; their bots chase only them and leave with them (also `--bots=N`, which also turns bots on) |
+| `MAX_BOTS` | `0` — **bots are off** | Ceiling on bots across the whole server; set it above 0 (or pass `--bots=N`) to turn bots on. The public PvP arena leaves them off: to fight bots, make a PvP world in the game and use its Multiplayer panel |
 | `LOOT_FORCE` | off | Testing only: makes every bot kill drop the given kind(s) — `armor`, `golden`, `enchanted`, or a comma list to cycle. Normally drops are random (35% armour, 30% golden apple, 6% enchanted) |
 | `BOT_LEVEL` | `medium` | Default AI level for players who haven't picked one (`supereasy`, `easy`, `medium`, `hard`, `extreme`) — players choose their own in the Multiplayer panel |

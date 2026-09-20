@@ -259,7 +259,7 @@ try {
     stand();
     const hurt1 = await me.wait((m) => m.t === 'hurt' && m.id === me.id && /^bot/.test(m.by), 20000).catch(() => null);
     ok('once you find a bot it notices you and hits', !!hurt1, hurt1 ? `hp ${hurt1.hp}` : 'never hit');
-    ok('an EXTREME bot hits hard (3 hearts)', hurt1?.hp === 14, `hp ${hurt1?.hp}`);
+    ok('an EXTREME bot hits hard (a sword hit is 6, an arrow 5)', hurt1?.hp === 14 || hurt1?.hp === 15, `hp ${hurt1?.hp}`);
 
     // Drop to super easy: hits now do one half-heart.
     me.send({ t: 'level', level: 'supereasy' });
@@ -353,6 +353,26 @@ try {
     console.log(bots.log);
   } finally {
     bots.kill();
+  }
+}
+
+// ------------------------------------------- bots are off on a plain PvP server
+{
+  const XPORT = PORT + 4;
+  const srv = startServer(['--pvp'], XPORT, '');   // no --bots flag: how the public arena runs
+  try {
+    await sleep(600);
+    const me = await client('Plain', XPORT, {});
+    ok('a plain PvP server says it has no bots', me.welcome.pvp === true && me.welcome.bots === false && me.welcome.botCount === 0, JSON.stringify({ bots: me.welcome.bots, botCount: me.welcome.botCount }));
+    me.send({ t: 'bots', n: 20 });
+    await sleep(800);
+    ok('asking for bots there gives nothing', !me.all.some((m) => m.t === 'join' && /\[bot\]/.test(m.name)) && (await (await fetch(`http://127.0.0.1:${XPORT}/health`)).json()).bots === 0);
+    me.ws.close();
+  } catch (e) {
+    ok(e.message, false);
+    console.log(srv.log);
+  } finally {
+    srv.kill();
   }
 }
 

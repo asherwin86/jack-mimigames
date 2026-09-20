@@ -2,6 +2,10 @@
  *  menu, under the trailer. Keep entries brief; this isn't a commit log. */
 export const CHANGELOG = [
   {
+    title: 'PvP worlds with bots',
+    detail: 'Tick "PvP mode" when you make a New World and it gets hearts, fighting, loot and AI bots — solo or hosted for friends — with the Bots slider and AI level in the Multiplayer panel. The public PvP arena is now people-only (no bots).',
+  },
+  {
     title: 'Blockcraft: a bow',
     detail: 'Slot 2 is a bow — hold to draw, release to shoot. Arrows arc and stick in blocks, other players see them fly, and in PvP a longer draw hits harder (up to a sword hit) from up to 70 blocks away.',
   },

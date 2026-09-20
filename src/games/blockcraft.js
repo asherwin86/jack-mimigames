@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { Game } from '../engine/Game.js';
 import { sky, clamp, damp, seeded, lerp, invLerp, rand, Burst } from '../engine/utils.js';
 import { H, SEA, hash2, calibrateHeight, heightAt } from '../engine/terrainHeight.js';
+import { createArena } from '../engine/PvpArena.js';
 import {
   isValidSkinData, importSkinFile, skinToDataURL, skinFromDataURL, defaultSkinCanvas, buildSkinnedPlayer, drawSkinPreview,
 } from '../engine/Skin.js';
@@ -214,6 +215,9 @@ export default class Blockcraft extends Game {
     this.hostPeer = null;
     this.hostConns = new Map();
     this.hostCode = null;
+    this.arena = null;                  // the PvP/bots game logic, when this world is a PvP world
+    this.pvpWorld = false;              // was this world created in PvP mode?
+    this.arenaMoveT = 0;
     this.armor = 0;                     // pieces of armour worn (0-4): each trims 10% off a hit
     this.absorb = 0;                    // absorption hp from golden apples (2 per golden heart)
     this.drops = new Map();             // loot lying in the world, by id
@@ -235,7 +239,7 @@ export default class Blockcraft extends Game {
     const activeData = activeMeta ? loadWorldData(activeId) : null;
 
     if (activeMeta && activeData) {
-      this.buildWorld(activeMeta.seed, activeData.edits, activeMeta.name, activeMeta.id);
+      this.buildWorld(activeMeta.seed, activeData.edits, activeMeta.name, activeMeta.id, !!activeMeta.pvp);
       this.pos.set(activeData.pos.x, activeData.pos.y, activeData.pos.z);
       this.yaw = activeData.yaw;
       this.pitch = activeData.pitch;
@@ -289,6 +293,8 @@ export default class Blockcraft extends Game {
     this.bindWorldPanel();
     this.bindMultiplayerPanel();
     this.hud.hint((this.multiplayer ? `Multiplayer, seed ${this.seed} · ` : `${this.worldName}, seed ${this.seed} · `) + this.controlsHint());
+    this.refreshHearts(true);
+    this.refreshGear();
   }
 
   /** The control scheme half of the hint text — shared by start() and the
@@ -313,7 +319,9 @@ export default class Blockcraft extends Game {
    * updateStreaming() — this doesn't generate anything yet except spawn's
    * own column. Called once from start(), and again from the World panel.
    */
-  buildWorld(seed, savedEdits, name, id) {
+  buildWorld(seed, savedEdits, name, id, pvp = false) {
+    this.teardownArena();   // a different world means a different arena (or none)
+    this.pvpWorld = !!pvp;
     for (const meshes of this.chunks?.values() ?? []) {
       for (const m of meshes) { this.scene.remove(m); m.geometry.dispose(); }
     }
@@ -368,6 +376,7 @@ export default class Blockcraft extends Game {
     if (this.crack) this.crack.visible = false;
 
     this.updateStreaming(true);   // load what's around spawn immediately, not next frame
+    if (this.pvpWorld) this.setupLocalArena();
   }
 
   /** Serializes only the edited chunks (run-length encoded) plus player
@@ -394,7 +403,7 @@ export default class Blockcraft extends Game {
    *  the voxel data — used when nothing actually changed. */
   touchActive() {
     const list = loadWorldList().filter((w) => w.id !== this.worldId);
-    list.unshift({ id: this.worldId, name: this.worldName, seed: this.seed, savedAt: Date.now() });
+    list.unshift({ id: this.worldId, name: this.worldName, seed: this.seed, savedAt: Date.now(), ...(this.pvpWorld ? { pvp: true } : {}) });
     writeWorldList(list);
     setActiveWorldId(this.worldId);
   }
@@ -418,6 +427,7 @@ export default class Blockcraft extends Game {
     input?.addEventListener('pointerdown', (e) => e.stopPropagation());
     input?.addEventListener('keydown', (e) => e.stopPropagation());
     newButton?.addEventListener('pointerdown', (e) => e.stopPropagation());
+    panel.querySelector('.bc-pvp-row')?.addEventListener('pointerdown', (e) => e.stopPropagation());
     list?.addEventListener('pointerdown', (e) => e.stopPropagation());
     for (const b of viewButtons) b.addEventListener('pointerdown', (e) => e.stopPropagation());
 
@@ -447,11 +457,12 @@ export default class Blockcraft extends Game {
       const text = input?.value.trim();
       const seed = text ? hashSeed(text) : randomSeed();
       const name = text || `World ${seed}`;
-      this.buildWorld(seed, null, name, String(seed));
+      const pvp = !!panel.querySelector('.bc-pvp-check')?.checked;
+      this.buildWorld(seed, null, name, String(seed), pvp);
       this.dirty = false;
       this.save();
       if (input) input.value = '';
-      this.hud.toast(`NEW WORLD · ${name}`, 1400);
+      this.hud.toast(`NEW ${pvp ? 'PvP ' : ''}WORLD · ${name}`, 1400);
       this.hud.hint(`New world, seed ${this.seed} · ` + this.controlsHint());
       this.refreshWorldList();
       this.audio.good();
@@ -515,7 +526,7 @@ export default class Blockcraft extends Game {
     const meta = loadWorldList().find((w) => w.id === id);
     const data = meta && loadWorldData(id);
     if (!meta || !data) return;
-    this.buildWorld(meta.seed, data.edits, meta.name, meta.id);
+    this.buildWorld(meta.seed, data.edits, meta.name, meta.id, !!meta.pvp);
     this.pos.set(data.pos.x, data.pos.y, data.pos.z);
     this.yaw = data.yaw;
     this.pitch = data.pitch;
@@ -544,7 +555,7 @@ export default class Blockcraft extends Game {
       const current = w.id === this.worldId;
       return `
         <div class="bc-world-row${current ? ' on' : ''}" data-id="${escapeHtml(w.id)}">
-          <span class="bc-world-name">${escapeHtml(w.name)}</span>
+          <span class="bc-world-name">${w.pvp ? '<span class="bc-badge">⚔</span> ' : ''}${escapeHtml(w.name)}</span>
           ${current ? '' : '<button class="bc-load">Load</button><button class="bc-del">&times;</button>'}
         </div>`;
     }).join('');
@@ -1206,7 +1217,7 @@ export default class Blockcraft extends Game {
     this.bowCool = 0.35;
     this.audio.tone(140 + 200 * charge, 0.09, { type: 'triangle', gain: 0.1 });
     const shot = { t: 'shoot', x: pos.x, y: pos.y, z: pos.z, vx: vel.x, vy: vel.y, vz: vel.z };
-    if (this.net && this.net.readyState === 1) this.net.send(JSON.stringify(shot));
+    if (this.net || this.arena) this.sendPvp(shot);
     else if (this.hostPeer) this.hostBroadcast({ t: 'arrow', id: 'host', x: pos.x, y: pos.y, z: pos.z, vx: vel.x, vy: vel.y, vz: vel.z });
   }
 
@@ -1264,10 +1275,10 @@ export default class Blockcraft extends Game {
       for (let i = 0; i < steps && !done; i++) {
         const next = a.pos.clone().add(stepV);
         // Players first: the segment prev -> next against each body box.
-        if (a.own && this.pvp && this.net) {
+        if (a.own && this.inPvp()) {
           const victim = this.arrowVictim(a.pos, next);
           if (victim) {
-            if (this.net.readyState === 1) this.net.send(JSON.stringify({ t: 'hit', target: victim, w: BOW, c: a.charge }));
+            this.sendPvp({ t: 'hit', target: victim, w: BOW, c: a.charge });
             this.audio.tone(520, 0.05, { type: 'square', gain: 0.1 });
             this.removeArrow(a);
             done = true;
@@ -1401,16 +1412,14 @@ export default class Blockcraft extends Game {
       return;
     }
     if (this.bowCharge > 0) this.bowCharge = 0;   // switched away mid-draw
-    const target = this.pvp && this.net ? this.pickPlayer(hit) : null;
+    const target = this.inPvp() ? this.pickPlayer(hit) : null;
     if (target || sword) {
       this.mine(dt, null);
       const swinging = (this.input.button(0) && this.input.locked) || this.input.gpButton(7) || this.touch.mine;
       if (swinging && this.atkCool <= 0) {
         this.atkCool = ATTACK_COOLDOWN;
         if (sword) this.swingT = 0.001;
-        if (target && this.net.readyState === 1) {
-          this.net.send(JSON.stringify(sword ? { t: 'hit', target, w: SWORD } : { t: 'hit', target }));
-        }
+        if (target) this.sendPvp(sword ? { t: 'hit', target, w: SWORD } : { t: 'hit', target });
         this.audio.tone(sword ? 320 : 200, 0.06, { type: 'square', gain: 0.09 });
       }
     } else {
@@ -1497,6 +1506,13 @@ export default class Blockcraft extends Game {
    *  eases every other connected player's avatar toward wherever their last
    *  update placed them, rather than snapping. */
   updateNet(dt) {
+    if (this.arena) {   // tell the arena where you are, ten times a second (bots aim at this)
+      this.arenaMoveT -= dt;
+      if (this.arenaMoveT <= 0) {
+        this.arenaMoveT = NET_MOVE_INTERVAL;
+        this.arena.onMove('host', { x: this.pos.x, y: this.pos.y, z: this.pos.z, yaw: this.yaw, pitch: this.pitch });
+      }
+    }
     if (this.net && this.net.readyState === 1) {
       this.netMoveTimer -= dt;
       if (this.netMoveTimer <= 0) {
@@ -1675,21 +1691,32 @@ export default class Blockcraft extends Game {
       const name = String(msg.name || 'Player').trim().slice(0, 16) || 'Player';
       const skin = isValidSkinData(msg.skin) ? msg.skin : null;
       this.hostConns.set(pid, { conn, name, color, skin });
-      conn.send({
-        t: 'welcome', id: pid, seed: this.seed, edits: this.flattenEditsForNet(),
-        players: [
-          { id: 'host', name: this.playerName, color: '#ffffff', skin: this.skinData, x: this.pos.x, y: this.pos.y, z: this.pos.z, yaw: this.yaw },
-          ...[...this.hostConns].filter(([k]) => k !== pid).map(([k, v]) => {
-            const p = this.netPeers.get(k);
-            return { id: k, name: v.name, color: v.color, skin: v.skin, x: p?.x ?? 0, y: p?.y ?? 0, z: p?.z ?? 0, yaw: p?.yaw ?? 0 };
-          }),
-        ],
-      });
+      if (this.arena) {
+        // A PvP world: the arena knows everyone (you, your friends, the bots) and their hearts.
+        this.arena.addHuman(pid, { conn, name, color, skin, level: msg.level, bots: msg.bots });
+        conn.send({
+          t: 'welcome', id: pid, seed: this.seed, edits: this.flattenEditsForNet(),
+          ...this.arena.welcomeFields(pid),
+          players: this.arena.playersList(pid),
+        });
+      } else {
+        conn.send({
+          t: 'welcome', id: pid, seed: this.seed, edits: this.flattenEditsForNet(),
+          players: [
+            { id: 'host', name: this.playerName, color: '#ffffff', skin: this.skinData, x: this.pos.x, y: this.pos.y, z: this.pos.z, yaw: this.yaw },
+            ...[...this.hostConns].filter(([k]) => k !== pid).map(([k, v]) => {
+              const p = this.netPeers.get(k);
+              return { id: k, name: v.name, color: v.color, skin: v.skin, x: p?.x ?? 0, y: p?.y ?? 0, z: p?.z ?? 0, yaw: p?.yaw ?? 0 };
+            }),
+          ],
+        });
+      }
       this.addNetPeer(pid, { name, color, skin, x: this.pos.x, y: this.pos.y, z: this.pos.z, yaw: this.yaw });
       this.hostBroadcast({ t: 'join', id: pid, name, color, skin }, pid);
       this.hud.toast(`${name} joined`, 1200);
       this.refreshMultiplayerPanel();
       this.announceNow();
+      this.arena?.syncBots();
       return;
     }
 
@@ -1699,7 +1726,13 @@ export default class Blockcraft extends Game {
     if (msg.t === 'move') {
       const peer = this.netPeers.get(pid);
       if (peer) { peer.tx = msg.x; peer.ty = msg.y; peer.tz = msg.z; peer.tyaw = msg.yaw; peer.tpitch = Number(msg.pitch) || 0; }
+      this.arena?.onMove(pid, msg);
       this.hostBroadcast({ t: 'move', id: pid, x: msg.x, y: msg.y, z: msg.z, yaw: msg.yaw, pitch: msg.pitch }, pid);
+    } else if (this.arena && (msg.t === 'hit' || msg.t === 'shoot' || msg.t === 'level' || msg.t === 'bots')) {
+      if (msg.t === 'hit') this.arena.onHit(pid, msg);
+      else if (msg.t === 'shoot') this.arena.onShoot(pid, msg);
+      else if (msg.t === 'level') this.arena.onLevel(pid, msg);
+      else this.arena.onBots(pid, msg);
     } else if (msg.t === 'shoot') {
       const v = [msg.vx, msg.vy, msg.vz].map(Number);
       if (![msg.x, msg.y, msg.z, ...v].every(Number.isFinite) || Math.hypot(...v) > 70) return;
@@ -1732,6 +1765,7 @@ export default class Blockcraft extends Game {
     this.hostBroadcast({ t: 'leave', id: pid }, pid);
     this.refreshMultiplayerPanel();
     this.announceNow();
+    if (this.arena) { this.arena.removeHuman(pid); this.arena.syncBots(); }
   }
 
   /* --------------------------------------------------- public server list */
@@ -1847,6 +1881,7 @@ export default class Blockcraft extends Game {
     try { this.hostPeer.destroy(); } catch { /* already gone */ }
     this.hostPeer = null;
     this.hostCode = null;
+    if (this.pvpWorld) this.setupLocalArena();   // friends are gone: a fresh arena for you alone
     this.netStatus = 'offline';
     this.netMode = null;
   }
@@ -1865,8 +1900,10 @@ export default class Blockcraft extends Game {
     this.multiplayer = false;
     this.netStatus = 'offline';
     this.netMode = null;
-    this.clearNetPeers();
-    this.resetPvp();
+    if (!this.arena) {   // (a PvP world keeps its own bots and hearts; there's nothing to tear down)
+      this.clearNetPeers();
+      this.resetPvp();
+    }
     this.refreshMultiplayerPanel();
   }
 
@@ -1939,7 +1976,10 @@ export default class Blockcraft extends Game {
       this.refreshMultiplayerPanel();
     } else if (msg.t === 'move') {
       const peer = this.netPeers.get(msg.id);
-      if (peer) { peer.tx = msg.x; peer.ty = msg.y; peer.tz = msg.z; peer.tyaw = msg.yaw; peer.tpitch = Number(msg.pitch) || 0; }
+      if (peer) {
+        peer.tx = msg.x; peer.ty = msg.y; peer.tz = msg.z; peer.tyaw = msg.yaw; peer.tpitch = Number(msg.pitch) || 0;
+        if (!peer.placed) { peer.x = peer.tx; peer.y = peer.ty; peer.z = peer.tz; peer.yaw = peer.tyaw; peer.placed = true; }   // first report: appear there, don't glide in from wherever they were created
+      }
     } else if (msg.t === 'bots') {
       this.botsHave = Number(msg.have) | 0;
       this.refreshBotsRow();
@@ -2034,6 +2074,8 @@ export default class Blockcraft extends Game {
     }
     saveSkin(this.skinData);
     this.refreshSkinPreview();
+    const rec = this.arena?.players.get('host');
+    if (rec) rec.skin = this.skinData;
     if (this.net && this.net.readyState === 1) {
       this.net.send(JSON.stringify({ t: 'skin', skin: this.skinData }));
     } else if (this.hostPeer) {
@@ -2059,6 +2101,85 @@ export default class Blockcraft extends Game {
   }
 
   /* ------------------------------------------------------------------ PvP */
+
+  /* ------------------------------------------------------- PvP world arena */
+
+  /** Starts the PvP game logic for this world: hearts, combat, loot and AI
+   *  bots run right here (src/engine/PvpArena.js — the same code the PvP
+   *  server uses), whether you're playing solo or hosting friends. You're
+   *  the arena's 'host' player; everything the arena says to you comes back
+   *  through the same message handler a network server's messages would. */
+  setupLocalArena() {
+    this.teardownArena();
+    this.arena = createArena({
+      seed: this.seed,
+      pvp: true,
+      botsDefault: this.botCount,
+      maxBots: 60,
+      defaultLevel: this.aiLevel,
+      deliver: (id, msg) => this.arenaDeliver(id, msg),
+    });
+    this.arena.addHuman('host', { name: this.playerName, color: '#ffffff', skin: this.skinData, level: this.aiLevel, bots: this.botCount });
+    this.arena.onMove('host', { x: this.spawnPos.x, y: this.spawnPos.y, z: this.spawnPos.z, yaw: 0, pitch: 0 });
+    this.netId = 'host';
+    this.pvp = true;
+    this.hasBots = true;
+    this.maxHp = 20;
+    this.hp = 20;
+    this.dead = false;
+    this.kills = 0;
+    this.deaths = 0;
+    this.armor = 0;
+    this.absorb = 0;
+    this.botsHave = null;
+    this.flying = false;
+    this.arenaMoveT = 0;
+    this.arena.start();
+    this.arena.syncBots();
+    this.refreshHearts(true);
+    this.refreshGear();
+    this.showDeath(null);
+    this.setFlyButton();
+    this.refreshMultiplayerPanel();
+  }
+
+  teardownArena() {
+    if (!this.arena) return;
+    this.arena.stop();
+    this.arena = null;
+    this.clearNetPeers();
+    this.resetPvp();
+    this.netId = undefined;
+  }
+
+  /** The arena talking to one human: you (the 'host') get it straight into
+   *  the message handler; a joined friend gets it over their connection. */
+  arenaDeliver(id, msg) {
+    if (id === 'host') {
+      this.handleNetMessage(JSON.stringify(msg));
+    } else {
+      try { this.hostConns.get(id)?.conn.send(msg); } catch { /* their close handler cleans up */ }
+    }
+  }
+
+  /** True when fighting is on for you: connected to a PvP server, or in your own PvP world. */
+  inPvp() {
+    return this.pvp && !!(this.net || this.arena);
+  }
+
+  /** Sends one of your PvP actions (hit / shoot / level / bots) to wherever
+   *  the fight is being run: the server you're connected to, or your own arena. */
+  sendPvp(msg) {
+    if (this.net) {
+      if (this.net.readyState === 1) this.net.send(JSON.stringify(msg));
+      return;
+    }
+    if (!this.arena) return;
+    if (msg.t === 'hit') this.arena.onHit('host', msg);
+    else if (msg.t === 'shoot') this.arena.onShoot('host', msg);
+    else if (msg.t === 'level') this.arena.onLevel('host', msg);
+    else if (msg.t === 'bots') this.arena.onBots('host', msg);
+  }
 
   /** hurt / health / died / respawn from a PvP server. The server decides all
    *  of it; this just shows the result — hearts, knockback, the kill feed,
@@ -2350,6 +2471,8 @@ export default class Blockcraft extends Game {
     nameInput?.addEventListener('change', () => {
       this.playerName = nameInput.value.trim().slice(0, 16) || 'Player';
       savePlayerName(this.playerName);
+      const rec = this.arena?.players.get('host');
+      if (rec) rec.name = this.playerName;
     });
 
     connectBtn?.addEventListener('click', () => {
@@ -2408,7 +2531,7 @@ export default class Blockcraft extends Game {
       levelSel.addEventListener('change', () => {
         this.aiLevel = levelSel.value;
         saveAiLevel(this.aiLevel);
-        if (this.net && this.net.readyState === 1) this.net.send(JSON.stringify({ t: 'level', level: this.aiLevel }));
+        this.sendPvp({ t: 'level', level: this.aiLevel });
         this.hud.toast(`AI level: ${AI_LEVELS.find(([v]) => v === this.aiLevel)?.[1] ?? this.aiLevel}`, 1200);
       });
     }
@@ -2423,7 +2546,7 @@ export default class Blockcraft extends Game {
       botsRange.addEventListener('change', () => {
         this.botCount = Math.max(0, Math.min(MAX_BOTS_CHOICE, Number(botsRange.value) | 0));
         saveBotCount(this.botCount);
-        if (this.net && this.net.readyState === 1) this.net.send(JSON.stringify({ t: 'bots', n: this.botCount }));
+        this.sendPvp({ t: 'bots', n: this.botCount });
         this.refreshBotsRow();
       });
     }
@@ -2519,9 +2642,9 @@ export default class Blockcraft extends Game {
     const status = panel.querySelector('.bc-mp-status');
     const list = panel.querySelector('.bc-mp-players');
     const levelRow = panel.querySelector('.bc-level-row');
-    if (levelRow) levelRow.hidden = !(this.pvp && this.hasBots && this.net);
+    if (levelRow) levelRow.hidden = !(this.pvp && this.hasBots && (this.net || this.arena));
     const botsRow = panel.querySelector('.bc-bots-row');
-    if (botsRow) { botsRow.hidden = !(this.pvp && this.hasBots && this.net); this.refreshBotsRow(); }
+    if (botsRow) { botsRow.hidden = !(this.pvp && this.hasBots && (this.net || this.arena)); this.refreshBotsRow(); }
     if (connectBtn) {
       connectBtn.textContent = this.net ? 'Disconnect' : 'Connect';
       connectBtn.classList.toggle('on', !!this.net);
@@ -2545,7 +2668,7 @@ export default class Blockcraft extends Game {
     }
     if (list) {
       const score = (k, d) => (this.pvp ? `<span class="bc-mp-score">⚔${k} ☠${d}</span>` : '');
-      const me = this.pvp && this.net
+      const me = this.inPvp()
         ? `<div class="bc-mp-player"><span class="bc-mp-dot" style="background:#fff"></span>You${score(this.kills, this.deaths)}</div>` : '';
       // Bots (there can be dozens) collapse into one line; people are listed individually.
       const all = [...this.netPeers].map(([id, p]) => ({ id, p }));
@@ -2585,6 +2708,7 @@ export default class Blockcraft extends Game {
     this.input.exitLock();
     if (this.net) { const ws = this.net; this.net = null; try { ws.close(); } catch { /* ignore */ } }
     this.stopHosting();
+    this.arena?.stop();
     if (this.dirty && !this.multiplayer) { this.save(); this.dirty = false; }
   }
 }
@@ -3259,6 +3383,9 @@ function worldHtml() {
       .bc-world .bc-view { flex:1; padding:4px 0; border-radius:5px; border:1px solid rgba(255,255,255,.2);
         background:rgba(255,255,255,.06); color:#fff; cursor:pointer; font:inherit; }
       .bc-world .bc-view.on { border-color:#fff; background:rgba(255,255,255,.22); }
+      .bc-world .bc-pvp-row { display:flex; align-items:center; gap:6px; font-size:11px; color:rgba(255,255,255,.85); cursor:pointer; }
+      .bc-world .bc-pvp-row input { width:auto; margin:0; }
+      .bc-world .bc-badge { font-size:10px; color:#ffb0a8; }
       .bc-world .bc-new { padding:5px 0; border-radius:5px; border:1px solid rgba(255,255,255,.25);
         background:rgba(255,90,80,.25); color:#fff; cursor:pointer; font:700 12px inherit; }
       .bc-world .bc-worlds-list { display:flex; flex-direction:column; gap:3px;
@@ -3279,6 +3406,7 @@ function worldHtml() {
     <div class="bc-world">
       <div class="bc-label">New world seed</div>
       <input class="bc-seed-input" type="text" placeholder="random" maxlength="24" />
+      <label class="bc-pvp-row" title="A PvP world has hearts, fighting and AI bots (Multiplayer panel → Bots)"><input type="checkbox" class="bc-pvp-check" /> PvP mode (hearts + bots)</label>
       <button class="bc-new">New World</button>
       <div class="bc-label">View distance</div>
       <div class="bc-views">${views}</div>
