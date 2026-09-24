@@ -26,26 +26,32 @@ export default class FruitSlice extends Game {
     this.score = 0;
     this.lives = LIVES;
     this.nextSpawn = 0.6;
+    this.frenzyT = 0;      // a golden fruit sets off a frenzy: twice the fruit, twice the points
     this.prevDown = false;
     this.showCursor = true;   // a real on-screen cursor — see Engine._updateCursor()
     this._ray = new THREE.Raycaster();
 
     this.camera.position.set(0, 1.5, 11);
     this.camera.lookAt(0, 1.5, 0);
-    this.hud.hint('Hold and drag across the fruit to slice it · avoid the bombs');
+    this.hud.hint('Hold and drag across the fruit to slice it · avoid the bombs · golden fruit starts a frenzy, pink hearts give a life back');
   }
 
   spawn() {
     const o = this.pool.pop();
     if (!o) return;
     const isBomb = Math.random() < 0.18;
-    o.material.color.set(isBomb ? 0x1c1e24 : pick(COLORS));
-    o.material.emissive.set(isBomb ? 0xff3040 : pick(COLORS));
-    o.material.emissiveIntensity = isBomb ? 0.4 : 0.7;
-    o.scale.setScalar(isBomb ? 1.1 : rand(0.85, 1.25));
+    // Now and then a special one: golden = frenzy, pink = a life back (only offered when you are missing one).
+    const r = Math.random();
+    const special = isBomb ? null : r < 0.05 ? 'gold' : r < 0.09 && this.lives < LIVES ? 'heart' : null;
+    const col = special === 'gold' ? PALETTE.amber : special === 'heart' ? PALETTE.pink : null;
+    o.material.color.set(isBomb ? 0x1c1e24 : col ?? pick(COLORS));
+    o.material.emissive.set(isBomb ? 0xff3040 : col ?? pick(COLORS));
+    o.material.emissiveIntensity = isBomb ? 0.4 : special ? 1.1 : 0.7;
+    o.scale.setScalar(isBomb ? 1.1 : special ? 1.35 : rand(0.85, 1.25));
     o.position.set(rand(-5.5, 5.5), -6, rand(-1, 1));
     o.userData = {
       bomb: isBomb,
+      special,
       vel: { x: rand(-2.2, 2.2), y: rand(9.5, 12.5) },
       sliced: false,
     };
@@ -54,10 +60,11 @@ export default class FruitSlice extends Game {
   }
 
   update(dt) {
+    this.frenzyT = Math.max(0, this.frenzyT - dt);
     this.nextSpawn -= dt;
     if (this.nextSpawn <= 0) {
       this.spawn();
-      this.nextSpawn = clamp(0.75 - this.score * 0.01, 0.28, 0.75) * rand(0.8, 1.2);
+      this.nextSpawn = clamp(0.75 - this.score * 0.01, 0.28, 0.75) * rand(0.8, 1.2) * (this.frenzyT > 0 ? 0.5 : 1);
     }
 
     for (let i = this.live.length - 1; i >= 0; i--) {
@@ -85,6 +92,7 @@ export default class FruitSlice extends Game {
     this.burst.update(dt);
     this.hud.stat('Score', this.score);
     this.hud.stat('Lives', '●'.repeat(Math.max(0, this.lives)) || '—', this.lives === 1);
+    if (this.frenzyT > 0) this.hud.stat('Frenzy ×2', `${Math.ceil(this.frenzyT)}s`); else this.hud.removeStat('Frenzy ×2');
   }
 
   slice(o) {
@@ -102,9 +110,19 @@ export default class FruitSlice extends Game {
       }
       this.hud.toast('BOOM', 700);
     } else {
-      this.score++;
+      this.score += this.frenzyT > 0 ? 2 : 1;
       this.burst.burst(o.position, o.material.color.getHex(), 14, 6);
       this.audio.blip(clamp(this.score, 0, 20));
+      if (o.userData.special === 'gold') {
+        this.frenzyT = 6;
+        this.score += 2;
+        this.hud.toast('FRENZY!', 900);
+        this.audio.win();
+      } else if (o.userData.special === 'heart') {
+        this.lives = Math.min(LIVES, this.lives + 1);
+        this.hud.toast('LIFE BACK', 800);
+        this.audio.good();
+      }
     }
     this.recycle(o, i);
   }

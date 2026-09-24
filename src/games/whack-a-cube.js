@@ -51,7 +51,7 @@ export default class WhackACube extends Game {
 
     this.camera.position.set(0, 11.5, 11);
     this.camera.lookAt(0, 0, 0.5);
-    this.hud.hint('Smash cyan cubes · gold is worth triple · never hit red');
+    this.hud.hint('Smash cyan cubes · gold is worth triple · white clock cubes add 4 seconds · never hit red');
   }
 
   popRandom() {
@@ -59,8 +59,8 @@ export default class WhackACube extends Game {
     if (!down.length) return;
     const c = down[randInt(0, down.length - 1)];
     const roll = Math.random();
-    const kind = roll < 0.18 ? 'bomb' : roll < 0.32 ? 'gold' : 'good';
-    const colour = kind === 'bomb' ? PALETTE.red : kind === 'gold' ? PALETTE.amber : PALETTE.cyan;
+    const kind = roll < 0.16 ? 'bomb' : roll < 0.28 ? 'gold' : roll < 0.34 ? 'clock' : 'good';
+    const colour = kind === 'bomb' ? PALETTE.red : kind === 'gold' ? PALETTE.amber : kind === 'clock' ? 0xffffff : PALETTE.cyan;
     c.material.color.set(colour);
     c.material.emissive.set(colour);
     c.material.emissiveIntensity = 0.8;
@@ -89,7 +89,7 @@ export default class WhackACube extends Game {
       if (d.state === 'up') {
         c.position.y = damp(c.position.y, 0.9, 12, dt);
         c.rotation.y += dt * 1.2;
-        if (d.t > d.life) this.retract(c, d.kind !== 'bomb');
+        if (d.t > d.life) this.retract(c, d.kind === 'good' || d.kind === 'gold');
       } else if (d.state === 'down') {
         c.position.y = damp(c.position.y, d.y0, 10, dt);
         c.rotation.y = damp(c.rotation.y, 0, 8, dt);
@@ -170,10 +170,14 @@ export default class WhackACube extends Game {
       const mult = 1 + Math.floor(this.combo / 4);
       const base = kind === 'gold' ? 75 : 25;
       const gained = base * mult;
+      if (kind === 'clock') {
+        this.timeLeft = Math.min(ROUND + 15, this.timeLeft + 4);
+        this.hud.toast('+4 s', 700);
+      }
       this.score += gained;
       this.combo++;
       this.hits++;
-      this.burst.burst(c.position, kind === 'gold' ? PALETTE.amber : PALETTE.cyan, 12, 6);
+      this.burst.burst(c.position, kind === 'gold' ? PALETTE.amber : kind === 'clock' ? 0xffffff : PALETTE.cyan, 12, 6);
       this.audio.blip(clamp(this.combo, 0, 14));
       if (mult > 1) this.hud.toast(`+${gained}`, 420);
     }

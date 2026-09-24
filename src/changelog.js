@@ -2,6 +2,10 @@
  *  menu, under the trailer. Keep entries brief; this isn't a commit log. */
 export const CHANGELOG = [
   {
+    title: 'New in Whack-a-Cube, Fruit Slice, Wrecking Ball, Frog Hopper and Artillery Duel',
+    detail: 'Whack-a-Cube: white clock cubes add 4 seconds. Fruit Slice: golden fruit starts a frenzy (double fruit, double points) and pink hearts give a life back. Wrecking Ball: red TNT blocks blow up their neighbours. Frog Hopper: catch the golden fly to win a life back. Artillery Duel: some targets slide side to side (worth 50% more) and a bullseye earns a spare shell.',
+  },
+  {
     title: 'New in Beat Lanes, Colour Rush, Lava Floor, Maze Escape and Brick Wall',
     detail: 'Beat Lanes: white star notes give a life and 5 seconds of double points. Colour Rush: big gold rounds pay triple, and every 15 streak wins a life back. Lava Floor: blue coolant orbs push the lava down. Maze Escape: cyan shards take 4 seconds off. Brick Wall: bricks drop capsules — wide paddle, slow ball or an extra life.',
   },

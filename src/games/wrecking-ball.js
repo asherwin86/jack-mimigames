@@ -41,7 +41,7 @@ export default class WreckingBall extends Game {
 
     this.camera.position.set(0, 8, 14);
     this.camera.lookAt(0, 4, -4);
-    this.hud.hint('Move the mouse left and right to swing the ball into the tower');
+    this.hud.hint('Move the mouse left and right to swing the ball into the tower · red TNT blocks blow up their neighbours');
   }
 
   buildTower() {
@@ -50,11 +50,14 @@ export default class WreckingBall extends Game {
       for (let c = 0; c < COLS; c++) {
         const b = this.pool.pop();
         if (!b) return;
-        b.material.color.set(pick(COLORS));
+        // About one block in twelve is TNT: knock it loose and it blows the blocks around it too.
+        const tnt = Math.random() < 0.09;
+        b.material.color.set(tnt ? 0xff3b30 : pick(COLORS));
+        b.material.emissive.setHex(tnt ? 0x7a1208 : 0x000000);
         b.position.set((c - (COLS - 1) / 2) * 1.5, 0.7 + r * 1.42, -6 + rand(-0.2, 0.2));
         b.rotation.set(0, 0, 0);
         b.visible = true;
-        b.userData = { standing: true, vel: new THREE.Vector3() };
+        b.userData = { standing: true, vel: new THREE.Vector3(), tnt };
         this.blocks.push(b);
       }
     }
@@ -112,6 +115,15 @@ export default class WreckingBall extends Game {
     this.burst.burst(b.position, b.material.color.getHex(), 12, 6);
     this.audio.thud();
     this.audio.blip(clamp(this.score % 12, 0, 12));
+    if (b.userData.tnt) {
+      b.userData.tnt = false;
+      this.burst.burst(b.position, 0xff8a30, 28, 12);
+      this.audio.boom();
+      this.hud.toast('TNT!', 600);
+      for (const other of [...this.blocks]) {
+        if (other.userData.standing && other.position.distanceTo(b.position) < 3.3) this.knock(other, b.position, 7);
+      }
+    }
   }
 
   recycle(b, i) {

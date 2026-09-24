@@ -36,13 +36,14 @@ export default class ArtilleryDuel extends Game {
     this.power = 0;
     this.charging = false;
     this.shellsLeft = SHELLS;
+    this.fired = 0;
     this.score = 0;
     this.hits = 0;
     this.wind = new THREE.Vector3(rand(-4, 4), 0, rand(-2, 2));
     this.showCursor = true;   // a gamepad has no cursor of its own — see Engine._updateCursor()
 
     this.camera.position.set(0, 7, 13);
-    this.hud.hint('Mouse aims · hold click to charge, release to fire · mind the wind');
+    this.hud.hint('Mouse aims · hold click to charge, release to fire · mind the wind · a bullseye earns a spare shell · sliding targets pay half again');
   }
 
   spawnTarget() {
@@ -52,6 +53,12 @@ export default class ArtilleryDuel extends Game {
     const t = box(4.5, h, 4.5, COLORS[this.targets.length % COLORS.length]);
     t.position.set(Math.sin(a) * dist, h / 2, -Math.cos(a) * dist);
     t.userData = { radius: 4.2, points: Math.round(dist / 2) };
+    // After a few hits, some targets slide from side to side and are worth 50% more.
+    if (this.hits >= 3 && Math.random() < 0.4) {
+      t.userData.slide = { x0: t.position.x, amp: rand(6, 12), speed: rand(0.6, 1.1), phase: rand(0, 6.28) };
+      t.userData.points = Math.round(t.userData.points * 1.5);
+      t.material.emissive.setHex(0x333333);
+    }
     // A ring on the ground makes distant targets findable.
     const marker = cyl(5.6, 5.6, 0.1, glow(PALETTE.amber, { transparent: true, opacity: 0.35 }), { cast: false });
     marker.position.set(t.position.x, 0.06, t.position.z);
@@ -125,6 +132,11 @@ export default class ArtilleryDuel extends Game {
     }
 
     for (const t of this.targets) {
+      const sl = t.userData.slide;
+      if (sl) {
+        t.position.x = sl.x0 + Math.sin(this.time * sl.speed + sl.phase) * sl.amp;
+        t.userData.marker.position.x = t.position.x;
+      }
       t.userData.marker.material.opacity = 0.25 + Math.sin(this.time * 3 + t.position.x) * 0.12;
     }
 
@@ -148,6 +160,7 @@ export default class ArtilleryDuel extends Game {
   fire() {
     if (this.shellsLeft <= 0 || this.power < 0.05) return;
     this.shellsLeft--;
+    this.fired++;
     const speed = 26 + this.power * 52;
     const dir = new THREE.Vector3(
       -Math.sin(this.yaw) * Math.cos(this.pitch),
@@ -179,7 +192,12 @@ export default class ArtilleryDuel extends Game {
     this.burst.burst(target.position, target.material.color.getHex(), 26, 11);
     this.audio.boom();
     this.audio.good();
-    this.hud.toast(bullseye ? `BULLSEYE +${pts}` : `+${pts}`, 900);
+    if (bullseye && this.shellsLeft < SHELLS + 3) {
+      this.shellsLeft++;
+      this.hud.toast(`BULLSEYE +${pts} · SPARE SHELL`, 1100);
+    } else {
+      this.hud.toast(bullseye ? `BULLSEYE +${pts}` : `+${pts}`, 900);
+    }
 
     this.scene.remove(target.userData.marker);
     target.userData.marker.geometry.dispose();
@@ -203,6 +221,6 @@ export default class ArtilleryDuel extends Game {
 
   finish() {
     this.audio.win();
-    this.end(this.score, `${this.hits} of ${SHELLS} shells on target.`);
+    this.end(this.score, `${this.hits} of ${this.fired} shells on target.`);
   }
 }

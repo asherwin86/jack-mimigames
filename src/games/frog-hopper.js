@@ -27,9 +27,14 @@ export default class FrogHopper extends Game {
     this.speedMul = 1;
     this.placePlayer(true);
 
+    // A fly turns up on a safe strip while you are down a life: catch it to get the life back.
+    this.fly = this.add(box(0.4, 0.4, 0.4, glow(PALETTE.amber, { emissiveIntensity: 1 }), { cast: false }));
+    this.fly.visible = false;
+    this.flyCell = null;
+
     this.burst = new Burst(this.scene, 70, 0.2);
     this.camera.position.set(0, 9, 8);
-    this.hud.hint('WASD or arrows to hop one square at a time · ride the logs, dodge the cars');
+    this.hud.hint('WASD or arrows to hop one square at a time · ride the logs, dodge the cars · catch the golden fly to win a life back');
   }
 
   buildLane(row) {
@@ -59,6 +64,14 @@ export default class FrogHopper extends Game {
       }
     }
     this.lanes.push({ row, type, z, width, items });
+  }
+
+  /** Puts the fly on one of the safe strips (rows 3 and 6), if a life is missing and none is out. */
+  placeFly() {
+    if (this.flyCell || this.lives >= LIVES) return;
+    this.flyCell = { col: Math.floor(Math.random() * COLS), row: Math.random() < 0.5 ? 3 : 6 };
+    this.fly.position.set((this.flyCell.col - (COLS - 1) / 2) * COLW, 0.9, -this.flyCell.row * ROWH);
+    this.fly.visible = true;
   }
 
   laneAt(row) { return this.lanes[((row % this.lanes.length) + this.lanes.length) % this.lanes.length]; }
@@ -124,12 +137,25 @@ export default class FrogHopper extends Game {
       }
     }
 
+    if (this.flyCell) {
+      this.fly.position.y = 0.9 + Math.sin(this.time * 6) * 0.15;
+      this.fly.rotation.y += dt * 4;
+      if (this.hopT === 0 && this.col === this.flyCell.col && this.row === this.flyCell.row) {
+        this.lives = Math.min(LIVES, this.lives + 1);
+        this.flyCell = null;
+        this.fly.visible = false;
+        this.audio.good();
+        this.hud.toast('LIFE BACK', 800);
+      }
+    }
+
     if (lane.type === 'bank' && this.hopT === 0 && this.row > 0) {
       this.crossings++;
       this.speedMul = 1 + this.crossings * 0.12;
       this.audio.good();
       this.hud.toast(`CROSSED (${this.crossings})`, 800);
       this.placePlayer(true);
+      this.placeFly();
     }
 
     this.burst.update(dt);
@@ -149,5 +175,6 @@ export default class FrogHopper extends Game {
       return this.end(this.crossings, `You made it across ${this.crossings} times.`);
     }
     this.placePlayer(true);
+    this.placeFly();
   }
 }

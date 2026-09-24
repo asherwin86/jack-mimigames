@@ -515,4 +515,152 @@ import { boot, check, finish } from './lib/game-harness.mjs';
   check(dropped > 0 && dropped < 40, 'brick-wall: some (not all) broken bricks drop capsules', `${dropped} of 40`);
 }
 
+// ---------- Whack-a-Cube: clock cubes ----------
+{
+  const { game } = await boot('whack-a-cube');
+  const pop = (roll) => {
+    const real = Math.random;
+    const seq = [0.0, roll];                 // 1st call picks the cell index, 2nd is the kind roll
+    let i = 0; Math.random = () => (i < seq.length ? seq[i++] : 0.5);
+    game.popRandom();
+    Math.random = real;
+    return game.cells.find((c) => c.userData.state === 'up' && c.userData.kind);
+  };
+  const clock = pop(0.30);                   // 0.28 <= roll < 0.34
+  check(clock?.userData.kind === 'clock', 'whack-a-cube: white clock cubes can pop up');
+  game.timeLeft = 20;
+  game.strike(clock);
+  check(game.timeLeft > 23.9 && game.timeLeft <= 24.01, 'whack-a-cube: smashing a clock cube adds 4 seconds', String(game.timeLeft));
+  check(game.hits === 1 && game.score >= 25, 'whack-a-cube: ...and still scores like a normal cube');
+  game.timeLeft = 44;
+  const c2 = pop(0.30);
+  game.strike(c2);
+  check(game.timeLeft <= 60, 'whack-a-cube: the clock is capped 15 s above the start');
+  game.timeLeft = 59;
+  const c3 = pop(0.30); game.strike(c3);
+  check(game.timeLeft === 60, 'whack-a-cube: (exactly at the cap)');
+  game.combo = 5;
+  const c4 = pop(0.30);
+  game.retract(c4, c4.userData.kind === 'good' || c4.userData.kind === 'gold');
+  check(game.combo === 5, 'whack-a-cube: letting a clock cube duck away does not break your combo');
+}
+
+// ---------- Fruit Slice: frenzy + heart fruit ----------
+{
+  const { game } = await boot('fruit-slice');
+  const spawnAs = (bombRoll, specialRoll) => {
+    const real = Math.random; let i = 0; const seq = [bombRoll, specialRoll];
+    Math.random = () => (i < seq.length ? seq[i++] : 0.5);
+    game.spawn();
+    Math.random = real;
+    return game.live[game.live.length - 1];
+  };
+  const gold = spawnAs(0.9, 0.02);
+  check(gold.userData.special === 'gold', 'fruit-slice: a golden fruit can spawn');
+  const s0 = game.score;
+  game.slice(gold);
+  check(game.frenzyT > 5 && game.score === s0 + 3, 'fruit-slice: slicing it starts a 6 s frenzy (and is worth 3)', `${game.score - s0}`);
+  const f = spawnAs(0.9, 0.5);
+  const s1 = game.score;
+  game.slice(f);
+  check(game.score === s1 + 2, 'fruit-slice: during the frenzy fruit is worth double');
+  game.nextSpawn = 0;
+  const before = game.nextSpawn;
+  game.update(1 / 60);
+  check(game.nextSpawn < 0.75 * 1.2 * 0.5 + 0.001, 'fruit-slice: ...and fruit comes twice as often', String(game.nextSpawn));
+  void before;
+  game.frenzyT = 0;
+  game.lives = 3;
+  const noHeart = spawnAs(0.9, 0.07);
+  check(!noHeart.userData.special, 'fruit-slice: no heart fruit while you are on full lives');
+  game.lives = 2;
+  const heart = spawnAs(0.9, 0.07);
+  check(heart.userData.special === 'heart', 'fruit-slice: a heart fruit can spawn once a life is missing');
+  game.slice(heart);
+  check(game.lives === 3, 'fruit-slice: slicing it gives the life back');
+  const bomb = spawnAs(0.0, 0.0);
+  check(bomb.userData.bomb && !bomb.userData.special, 'fruit-slice: bombs are never special');
+}
+
+// ---------- Wrecking Ball: TNT ----------
+{
+  const { game } = await boot('wrecking-ball');
+  const b = game.blocks[12];
+  for (const o of game.blocks) o.userData.tnt = false;   // no chain reactions for this one
+  b.userData.tnt = true;
+  const near = game.blocks.filter((o) => o !== b && o.position.distanceTo(b.position) < 3.3);
+  const far = game.blocks.filter((o) => o.position.distanceTo(b.position) > 3.4);
+  check(near.length >= 3 && far.length > 0, 'wrecking-ball: (setup) the block has neighbours and distant blocks');
+  const before = game.score;
+  game.knock(b, b.position.clone().add(new game.pivot.position.constructor(0, 0, 3)), 5);
+  check(near.every((o) => !o.userData.standing), 'wrecking-ball: knocking a TNT block blows every block within reach loose');
+  check(far.every((o) => o.userData.standing), 'wrecking-ball: ...and leaves distant ones alone');
+  check(game.score === before + 1 + near.length, 'wrecking-ball: each one scores', `${game.score - before} vs ${1 + near.length}`);
+  // fresh towers: TNT is rare but present, and never leaks from a recycled block
+  const t = await boot('wrecking-ball', 11);
+  let tnt = 0, total = 0;
+  for (let round = 0; round < 12; round++) {
+    for (const blk of t.game.blocks) { tnt += blk.userData.tnt ? 1 : 0; total++; t.game.pool.push(blk); blk.userData.standing = false; }
+    t.game.blocks = [];
+    t.game.buildTower();
+  }
+  check(tnt > 0 && tnt < total * 0.25, 'wrecking-ball: roughly one block in eleven is TNT', `${tnt}/${total}`);
+  check(t.game.blocks.filter((k) => !k.userData.tnt).every((k) => k.material.emissive.getHex() === 0), 'wrecking-ball: recycled blocks lose the TNT glow');
+}
+
+// ---------- Frog Hopper: the golden fly ----------
+{
+  const { game, step } = await boot('frog-hopper');
+  game.placeFly();
+  check(game.flyCell === null, 'frog-hopper: no fly while you are on full lives');
+  game.lives = 2;
+  game.placeFly();
+  check(!!game.flyCell && [3, 6].includes(game.flyCell.row) && game.fly.visible, 'frog-hopper: with a life missing a fly appears on a safe strip');
+  const cell = game.flyCell;
+  game.col = cell.col; game.row = cell.row; game.hopT = 0;
+  game.player.position.set((cell.col - 2) * 2, 0.45, -cell.row * 2.4);
+  game.player.userData.targetX = game.player.position.x; game.player.userData.targetZ = game.player.position.z;
+  step(1);
+  check(game.lives === 3 && game.flyCell === null && !game.fly.visible, 'frog-hopper: catching the fly gives the life back');
+  game.lives = 2; game.placeFly(); const c1 = { ...game.flyCell };
+  game.placeFly();
+  check(game.flyCell.col === c1.col && game.flyCell.row === c1.row, 'frog-hopper: only one fly at a time');
+  game.hit();
+  check(game.lives === 1, 'frog-hopper: (a hit costs a life as before)');
+}
+
+// ---------- Artillery Duel: sliding targets + spare shells ----------
+{
+  const { game, step } = await boot('artillery-duel');
+  game.hits = 5;
+  const real = Math.random;
+  Math.random = () => 0.1;                   // < 0.4: slide
+  game.spawnTarget();
+  Math.random = real;
+  const mover = game.targets[game.targets.length - 1];
+  check(!!mover.userData.slide, 'artillery-duel: after a few hits new targets can slide');
+  const x0 = mover.position.x;
+  step(60);
+  check(Math.abs(mover.position.x - x0) > 0.5 && mover.userData.marker.position.x === mover.position.x, 'artillery-duel: sliding targets move (and their ground marker follows)');
+  game.hits = 0;
+  Math.random = () => 0.1;
+  game.spawnTarget();
+  Math.random = real;
+  check(!game.targets[game.targets.length - 1].userData.slide, 'artillery-duel: none slide at the start');
+  // bullseye = spare shell
+  const t = game.targets[0];
+  game.shellsLeft = 5;
+  game.hit(t, 0, 0.5);
+  check(game.shellsLeft === 6, 'artillery-duel: a bullseye earns a spare shell');
+  game.shellsLeft = 5;
+  game.hit(game.targets[0], 0, 3.0);
+  check(game.shellsLeft === 5, 'artillery-duel: an ordinary hit does not');
+  game.shellsLeft = 14;
+  game.hit(game.targets[0], 0, 0.5);
+  check(game.shellsLeft === 15, 'artillery-duel: spare shells can take you up to 15');
+  game.shellsLeft = 15;
+  game.hit(game.targets[0], 0, 0.5);
+  check(game.shellsLeft === 15, 'artillery-duel: ...and never beyond 15');
+}
+
 finish('extras');
