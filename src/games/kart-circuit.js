@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import { Game } from '../engine/Game.js';
 import { Scores } from '../engine/Storage.js';
 import { hubUrl } from '../engine/Account.js';
+import { BY_ID } from './catalog.js';
+import { valueReached } from '../engine/challenges.js';
 import { KART_FRAME_HTML } from './kart-circuit/frame.js';
 
 const WINS_KEY = 'mg.kart-circuit.wins';
@@ -27,6 +29,7 @@ function readWins() {
  */
 export default class KartCircuit extends Game {
   start() {
+    this.genericPowers = false;   // the generic powers act on the arcade's canvas, which this game doesn't use
     // The game's online modes and profile calls read the account server's address from
     // here (it's a different site from this page). Signing in is shared too: the
     // arcade's session (mimiActiveSession) is exactly what the game looks for.
@@ -52,18 +55,22 @@ export default class KartCircuit extends Game {
 
     this.onMessage = (e) => {
       if (e.data?.source !== 'kart-circuit' || (frame && e.source !== frame.contentWindow)) return;
-      if (e.data.type === 'exit') {
+      if (e.data.type === 'admin') {
+        dispatchEvent(new Event('mimi:admin'));   // the backtick key, pressed inside the frame
+      } else if (e.data.type === 'exit') {
         location.hash = '';
       } else if (e.data.type === 'race-finished' && e.data.won === true) {
         const wins = readWins() + 1;
         try { localStorage.setItem(WINS_KEY, String(wins)); } catch { /* private mode: still counts this session */ }
         Scores.submit('kart-circuit', wins, true);
+        valueReached(BY_ID.get('kart-circuit'), wins);   // pays any "win N races" challenges
         this.hud.toast?.(`RACE WON · ${wins} win${wins === 1 ? '' : 's'}`, 2200);
       }
     };
     // Capture phase, so it runs before the arcade's own Escape handling (which would open its pause card).
     this.onEscape = (e) => {
       if (e.key !== 'Escape') return;
+      if (document.querySelector('.rc-backdrop')) return;   // Escape is closing the Rocoins panel, not leaving the game
       e.stopImmediatePropagation();
       location.hash = '';
     };
@@ -71,6 +78,34 @@ export default class KartCircuit extends Game {
       addEventListener('message', this.onMessage);
       addEventListener('keydown', this.onEscape, true);
     }
+  }
+
+  /** The frame has no arcade canvas to decorate, so it gets powers that act on the race itself. */
+  adminPowers() {
+    const send = (power) => new Promise((resolve) => {
+      const win = this.hud.$panel?.querySelector?.('iframe')?.contentWindow;
+      if (!win) { resolve({ ok: false, msg: 'The race is not ready.' }); return; }
+      const done = (r) => { clearTimeout(timer); removeEventListener('message', on); resolve(r); };
+      const on = (e) => {
+        const d = e.data;
+        if (d?.source === 'kart-circuit' && d.type === 'power-result' && d.power === power) done(d.ok ? { ok: true } : { ok: false, msg: d.why });
+      };
+      const timer = setTimeout(() => done({ ok: false, msg: 'The race did not answer.' }), 1500);
+      addEventListener('message', on);
+      win.postMessage({ source: 'arcade', type: 'power', power }, '*');
+    });
+    return [
+      {
+        id: 'turbo', name: 'Turbo boost', icon: '🚀', cost: 12,
+        desc: 'A 3.5-second speed boost, right now. Offline races only.',
+        run: async () => { const r = await send('boost'); return r.ok ? 'Boost!' : r; },
+      },
+      {
+        id: 'item', name: 'Free item', icon: '🎁', cost: 6,
+        desc: 'Fills your empty item slot with a random item. Offline races only.',
+        run: async () => { const r = await send('item'); return r.ok ? 'Item ready.' : r; },
+      },
+    ];
   }
 
   dispose() {

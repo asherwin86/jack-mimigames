@@ -1100,6 +1100,69 @@ function publicSessions(entry, currentId) {
     .map((s) => ({ id: s.id, label: s.label, createdAt: s.createdAt, lastSeen: s.lastSeen, current: s.id === currentId }));
 }
 
+// --- Rocoins wallet backup (arcade) ---
+// The arcade's Rocoin wallet is kept on the account so it follows you between devices. It is built so
+// that merging never loses anything: challenges done are a union, and each browser keeps its own
+// counters (spent, runs, ...) which only ever grow, so two devices that both earned or spent while apart
+// combine correctly. The browser (src/engine/Rocoins.js) uses the same merge; every push is merged
+// with what is stored here rather than replacing it.
+const WALLET_MAX_SLOTS = 40;
+const WALLET_MAX_DONE = 1500;
+function walletInt(v, max = 1e9) { v = Number(v); return Number.isFinite(v) && v > 0 ? Math.min(Math.floor(v), max) : 0; }
+function walletNum(v, max = 1e9) { v = Number(v); return Number.isFinite(v) && v > 0 ? Math.min(Math.round(v * 1000) / 1000, max) : 0; }
+function walletCounts(o, frac) {
+  const out = {};
+  if (o && typeof o === "object" && !Array.isArray(o)) {
+    for (const [k, v] of Object.entries(o).slice(0, 100)) if (k.length <= 60) out[k] = frac ? walletNum(v) : walletInt(v);
+  }
+  return out;
+}
+function cleanWallet(w) {
+  const out = { done: {}, slots: {} };
+  if (!w || typeof w !== "object") return out;
+  if (w.done && typeof w.done === "object" && !Array.isArray(w.done)) {
+    for (const [id, v] of Object.entries(w.done).slice(0, WALLET_MAX_DONE)) {
+      if (id.length <= 80 && Array.isArray(v)) out.done[id] = [walletInt(v[0], 4e12), walletInt(v[1], 1000)];
+    }
+  }
+  if (w.slots && typeof w.slots === "object" && !Array.isArray(w.slots)) {
+    for (const [sid, sl] of Object.entries(w.slots).slice(0, WALLET_MAX_SLOTS * 2)) {
+      if (sid.length > 40 || !sl || typeof sl !== "object") continue;
+      out.slots[sid] = {
+        spent: walletInt(sl.spent), refunded: walletInt(sl.refunded), bonus: walletInt(sl.bonus),
+        runs: walletInt(sl.runs), pbs: walletInt(sl.pbs), t: walletInt(sl.t, 4e12),
+        played: walletCounts(sl.played, false), minutes: walletCounts(sl.minutes, true),
+      };
+    }
+  }
+  return out;
+}
+function mergeCounts(a, b) {
+  const out = { ...a };
+  for (const [k, v] of Object.entries(b)) out[k] = Math.max(out[k] || 0, v);
+  return out;
+}
+function mergeWallets(a, b) {
+  const x = cleanWallet(a);
+  const y = cleanWallet(b);
+  const out = { done: { ...x.done }, slots: { ...x.slots } };
+  for (const [id, v] of Object.entries(y.done)) if (!out.done[id] || v[0] < out.done[id][0]) out.done[id] = v;
+  for (const [sid, sl] of Object.entries(y.slots)) {
+    const m = out.slots[sid];
+    out.slots[sid] = !m ? sl : {
+      spent: Math.max(m.spent, sl.spent), refunded: Math.max(m.refunded, sl.refunded), bonus: Math.max(m.bonus, sl.bonus),
+      runs: Math.max(m.runs, sl.runs), pbs: Math.max(m.pbs, sl.pbs), t: Math.max(m.t, sl.t),
+      played: mergeCounts(m.played, sl.played), minutes: mergeCounts(m.minutes, sl.minutes),
+    };
+  }
+  const ids = Object.keys(out.slots);
+  if (ids.length > WALLET_MAX_SLOTS) {
+    ids.sort((p, q) => out.slots[q].t - out.slots[p].t);
+    for (const sid of ids.slice(WALLET_MAX_SLOTS)) delete out.slots[sid];
+  }
+  return out;
+}
+
 async function handleProfilesApi(req, res, action) {
   if (req.method !== "POST") {
     sendJson(res, 405, { ok: false, msg: "Method not allowed." });
@@ -1126,6 +1189,19 @@ async function handleProfilesApi(req, res, action) {
   const entry = profiles[key];
   function wrongPassword() {
     return !entry || !isNonEmptyString(passwordHash, 200) || entry.passwordHash !== passwordHash;
+  }
+
+  // --- Rocoins wallet (arcade): read it, or merge a device's copy in and get the combined one back ---
+  if (action === "wallet" || action === "wallet-put") {
+    const auth = authenticate(body);
+    if (!auth) { sendJson(res, 200, { ok: false, authFailed: true, msg: "Sign in again." }); return; }
+    if (action === "wallet-put") {
+      auth.entry.wallet = mergeWallets(auth.entry.wallet, body.wallet);
+      auth.entry.updatedAt = Date.now();
+      saveProfilesToDisk();
+    }
+    sendJson(res, 200, { ok: true, wallet: auth.entry.wallet ? cleanWallet(auth.entry.wallet) : null });
+    return;
   }
 
   // --- devices (arcade): who is signed in, and signing devices out ---

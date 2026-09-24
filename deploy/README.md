@@ -70,6 +70,7 @@ A second service, separate from the PvP arena: `hub-server/server.js`, adapted f
 
 - **accounts** (name + password, `/api/profiles/*`) — the **Sign in** button in the menu,
 - **devices** — signing in registers the device and gives it a random token (the device keeps that, not the password hash), so the account can list where it's signed in and sign any device out (`/api/profiles/devices`, `revoke-device`, `revoke-others`, `logout`); up to 10 devices per account, idle for 90 days = signed out,
+- **Rocoin wallet backup** (`/api/profiles/wallet`, `wallet-put`) — the arcade's currency, merged rather than overwritten so several devices can earn and spend independently (kept in the profile, so it persists the same way accounts do),
 - **cloud Blockcraft worlds** (`/api/worlds/*`) — while signed in, every world is also saved to your
   account (up to 8 per account, 900 KB each) and shows up on any device you sign in on,
 - the **`/mp` relay** Kart Circuit uses for *Play with Friends* and *Play Online*,

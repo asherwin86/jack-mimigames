@@ -2,6 +2,10 @@
  *  menu, under the trailer. Keep entries brief; this isn't a commit log. */
 export const CHANGELOG = [
   {
+    title: 'Rocoins and powers',
+    detail: 'Beat challenges — three targets in every game, three new daily ones, and one-off badges — to earn Rocoins, then spend them on powers in any game: slow-mo, wide view, wireframe, disco, confetti, plus Blockcraft and Kart Circuit specials. Press ` (or the coin button) to open the panel; type commands if you like. Signed in, your Rocoins are backed up to your account and follow you to other devices.',
+  },
+  {
     title: 'See where you\'re signed in',
     detail: 'Open your account (top of the menu) to see every device signed in — "Chrome on Windows", "Desktop app" and so on, with when each was last active — and sign any of them out, or all the others at once.',
   },

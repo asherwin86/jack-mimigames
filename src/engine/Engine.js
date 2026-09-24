@@ -29,9 +29,16 @@ export class Engine {
     this.paused = false;
     this.size = { w: innerWidth, h: innerHeight };
 
+    // Admin-panel powers (see Powers.js): a temporary slow-motion, and on/off
+    // effects keyed by id whose value undoes them. All reset with the game.
+    this.slow = null;               // { left (real seconds), scale }
+    this.fx = new Map();
+
     this.onEnd = null;      // (entry, score, detail) => void
     this.onExit = null;     // back-to-menu button
     this.hud.onExit = () => this.onExit?.();
+    this.onAdmin = null;    // opens the Rocoins / powers panel
+    this.hud.onAdmin = () => this.onAdmin?.();
 
     // The FPS readout lives outside #hud and #ui so it survives every screen
     // change; it is measured off the wall clock, not the clamped frame delta.
@@ -79,6 +86,17 @@ export class Engine {
     cam.updateProjectionMatrix();
   }
 
+  /** Runs the game at `scale` speed for `seconds` of real time (a power). */
+  setSlowmo(seconds, scale = 0.5) { this.slow = { left: seconds, scale }; }
+
+  /** Undoes every power effect and returns time to normal. */
+  clearEffects() {
+    for (const undo of [...this.fx.values()]) { try { undo(); } catch (e) { console.error(e); } }
+    this.fx.clear();
+    this.slow = null;
+    this.hud?.removeStat?.('Slow-mo');
+  }
+
   /** Show an ambient scene while no game is mounted (the menu backdrop). */
   setIdle(builder) {
     this.unmount();
@@ -124,6 +142,7 @@ export class Engine {
 
   unmount() {
     this.running = false;
+    this.clearEffects();
     // The idle scene may hold window listeners (the backdrop tracks the pointer).
     try { this.idleScene?.dispose?.(); } catch (e) { console.error(e); }
     this.idleScene = null;
@@ -194,9 +213,16 @@ export class Engine {
     this.input.tick(dt);
 
     if (this.running && this.game) {
-      this.game.time += dt;
+      let gdt = dt;
+      if (this.slow) {
+        gdt = dt * this.slow.scale;
+        this.slow.left -= dt;   // real time, so slow-mo lasts the same however slow the game is
+        if (this.slow.left <= 0) { this.slow = null; this.hud.removeStat('Slow-mo'); }
+        else this.hud.stat('Slow-mo', `${Math.ceil(this.slow.left)}s`);
+      }
+      this.game.time += gdt;
       try {
-        this.game.update(dt, this.game.time);
+        this.game.update(gdt, this.game.time);
       } catch (e) {
         console.error('[game crashed]', e);
         this.running = false;

@@ -9,6 +9,10 @@ import * as THREE from 'three';
  *   dispose()      optional; scene contents are torn down for you
  *
  * Call `this.end(score)` to finish a run and show the results card.
+ *
+ * Rocoin powers (the admin panel, ` key): every game gets the generic ones. To
+ * add powers of your own define `adminPowers()` returning power objects (see
+ * engine/Powers.js); set `this.genericPowers = false` to hide the generic set.
  */
 export class Game {
   constructor(ctx) {
@@ -50,6 +54,9 @@ export class Game {
     this.finished = true;
     this.ctx.end(score, detail);
   }
+
+  /** Extra powers this game sells in the admin panel; see engine/Powers.js. */
+  adminPowers() { return []; }
 
   start() {}
   update() {}

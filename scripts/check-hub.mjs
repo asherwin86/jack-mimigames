@@ -82,6 +82,24 @@ try {
   ok('an account remembers at most 10 devices (the oldest drop off)', capped.json.devices.length === 10 && capped.json.devices.some((d) => d.label === 'Newest') && !capped.json.devices.some((d) => d.label === 'Device 0'), `${capped.json.devices.length} devices`);
   ok('device labels are cleaned up', (await post('/api/profiles/login', { key, passwordHash: h, device: { label: '<b>evil</b>\u0000 ' + 'x'.repeat(200) } })).json?.ok === true && !(await post('/api/profiles/devices', { key, token: last.json.token })).json.devices.some((d) => /[<>]/.test(d.label) || d.label.length > 60));
 
+  // ---- Rocoin wallet backup: merged, never overwritten
+  const wt = { key, token: last.json.token };
+  ok('the wallet needs sign-in', (await post('/api/profiles/wallet', { key, token: 'x'.repeat(43) })).json?.authFailed === true);
+  ok('a new account has no wallet yet', (await post('/api/profiles/wallet', wt)).json?.wallet === null);
+  const devA = { done: { 'all:first-run': [100, 5] }, slots: { aaaa: { spent: 0, refunded: 0, bonus: 10, runs: 1, pbs: 1, t: 100, played: { 'cube-dodger': 1 }, minutes: {} } } };
+  const devB = { done: { 'goal:cube-dodger:0': [200, 5] }, slots: { bbbb: { spent: 7, refunded: 0, bonus: 0, runs: 2, pbs: 0, t: 200, played: { 'sky-hoops': 2 }, minutes: { blockcraft: 1.5 } } } };
+  const w1 = await post('/api/profiles/wallet-put', { ...wt, wallet: devA });
+  ok('device A backs its wallet up', w1.json?.ok && w1.json.wallet.slots.aaaa.bonus === 10 && w1.json.wallet.done['all:first-run'][1] === 5);
+  const w2 = await post('/api/profiles/wallet-put', { ...wt, wallet: devB });
+  ok('device B\'s upload is merged with A\'s, not written over it', w2.json?.ok && w2.json.wallet.slots.aaaa && w2.json.wallet.slots.bbbb && Object.keys(w2.json.wallet.done).length === 2, JSON.stringify(Object.keys(w2.json?.wallet?.slots || {})));
+  ok('...and B gets the combined wallet back', w2.json.wallet.slots.aaaa.bonus === 10 && w2.json.wallet.slots.bbbb.minutes.blockcraft === 1.5);
+  const oldCopy = await post('/api/profiles/wallet-put', { ...wt, wallet: { done: {}, slots: { bbbb: { ...devB.slots.bbbb, spent: 3 } } } });
+  ok('an older copy never lowers what was already recorded', oldCopy.json.wallet.slots.bbbb.spent === 7);
+  const evil = await post('/api/profiles/wallet-put', { ...wt, wallet: { done: { x: 'no', ['y'.repeat(200)]: [1, 1] }, slots: { z: { spent: -5, bonus: 1e30, runs: 'many' } } } });
+  ok('nonsense in an upload is cleaned up', evil.json.ok && !evil.json.wallet.done.x && evil.json.wallet.slots.z.spent === 0 && evil.json.wallet.slots.z.bonus === 1e9 && evil.json.wallet.slots.z.runs === 0);
+  ok('reading the wallet back returns the same thing', JSON.stringify((await post('/api/profiles/wallet', wt)).json.wallet) === JSON.stringify(evil.json.wallet));
+  ok('a second account cannot see it', (await post('/api/profiles/wallet', { key: 'nobody', token: last.json.token })).json?.authFailed === true);
+
   // ---- switched-off endpoints
   for (const p of ['/api/feedback/list', '/api/messages/inbox', '/api/friends/list', '/api/cakes/list', '/api/videos/list', '/api/fetch-page', '/api/latest-release', '/index.html', '/games/mario-kart/game.js', '/data/profiles.json']) {
     const r = await fetch(base + p, { method: p.startsWith('/api') ? 'POST' : 'GET', headers: { 'Content-Type': 'application/json' }, body: p.startsWith('/api') ? '{}' : undefined });
@@ -127,6 +145,7 @@ try {
   await new Promise((r) => server.once('exit', r));
   const server2 = spawn(process.execPath, ['hub-server/server.js'], { cwd: new URL('..', import.meta.url).pathname, env: { ...process.env, PORT: String(PORT), MIMI_DATA_DIR: DATA, HASH_PEPPER: 'test-pepper', RATE_LIMIT_STRICT_MAX: '1000', UPSTASH_REDIS_REST_URL: '', UPSTASH_REDIS_REST_TOKEN: '' }, stdio: 'ignore' });
   for (let i = 0; i < 40; i++) { try { await fetch(base + '/health'); break; } catch { await sleep(150); } }
+  ok('the Rocoin wallet survives a restart', (await post('/api/profiles/wallet', { key, passwordHash: h })).json?.wallet?.slots?.bbbb?.spent === 7);
   ok('accounts and worlds survive a restart', (await post('/api/profiles/login', { key, passwordHash: h })).json?.ok === true && (await post('/api/worlds/list', auth)).json.worlds.length === 7);
   ok('...including the world\'s contents', (await post('/api/worlds/get', { ...auth, id: 'w1' })).json?.data === worldData);
 

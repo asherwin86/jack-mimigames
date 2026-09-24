@@ -2529,6 +2529,21 @@ export default class Blockcraft extends Game {
     }
   }
 
+  /** Powers sold in the admin panel. Hearts only exist in PvP worlds, and topping up is only
+   *  fair when nobody else is playing — so not on a server, and not while hosting friends. */
+  adminPowers() {
+    return [{
+      id: 'heal', name: 'Full heal', icon: '❤️', cost: 10,
+      desc: 'Refill all your hearts. Only in your own PvP world, with nobody else connected.',
+      available: () => {
+        if (!this.pvp) return 'Hearts only exist in PvP worlds.';
+        if (this.net || this.hostPeer || !this.arena) return 'Not while connected to a server or hosting friends.';
+        return true;
+      },
+      run: () => { this.setHp(this.maxHp); return 'Hearts full.'; },
+    }];
+  }
+
   setHp(hp) {
     this.hp = clamp(Number(hp) || 0, 0, this.maxHp);
     this.refreshHearts();

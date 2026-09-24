@@ -5,6 +5,10 @@ import { showStart, showPause } from './ui/Overlay.js';
 import { loadGame } from './games/index.js';
 import { buildBackdrop } from './ui/Backdrop.js';
 import { Settings } from './engine/Settings.js';
+import { Rocoins } from './engine/Rocoins.js';
+import { runFinished, onEarned, minutesPlayed } from './engine/challenges.js';
+import { createAdmin, notifyEarned } from './ui/AdminPanel.js';
+import { startRocoinSync } from './engine/RocoinSync.js';
 
 const canvas = document.getElementById('stage');
 const hudRoot = document.getElementById('hud');
@@ -20,6 +24,29 @@ menu.onMusic = (on) => engine.idleScene?.setMusic?.(on);
 let current = null;
 let currentEntry = null;
 let paused = false;
+
+// ---------- Rocoins: the wallet, the admin panel (` key) and challenge pay-outs ----------
+let adminWasRunning = false;
+const admin = createAdmin({
+  engine,
+  getEntry: () => currentEntry,
+  // Opening the panel freezes the game underneath (like a pause) and closing it carries on.
+  onOpen: () => { adminWasRunning = engine.running; if (adminWasRunning) engine.pause(); },
+  onClose: () => { if (adminWasRunning && current) engine.resume(); adminWasRunning = false; },
+});
+engine.onAdmin = () => admin.toggle();
+menu.onAdmin = () => admin.toggle();
+const syncCoins = () => { engine.hud.coins(Rocoins.balance()); menu.setCoins?.(Rocoins.balance()); };
+Rocoins.onChange(syncCoins);
+syncCoins();
+onEarned(notifyEarned);
+startRocoinSync();   // signed in: the wallet is backed up to the account and follows you between devices
+addEventListener('mimi:admin', () => admin.toggle());   // Kart Circuit forwards the key from inside its frame
+
+// Sandbox games (Blockcraft) have no score, so their challenge is time spent playing.
+setInterval(() => {
+  if (currentEntry?.sandbox && engine.running && !document.hidden) minutesPlayed(currentEntry, 10 / 60);
+}, 10000);
 
 /** Lets a gamepad "click" whichever card is up (Start, Pause, Results,
  *  Error) — A for the primary button, B for the secondary one, if there is
@@ -53,6 +80,7 @@ engine.onEnd = (entry, score, detail) => {
   paused = false;
   engine.freeze();
   engine.input.exitLock();
+  runFinished(entry, score);   // before showResults stores the score, so it can tell a personal best; pays out via onEarned
   showResults(uiRoot, entry, score, detail, {
     onReplay: () => play(entry.id),
     onMenu: () => { location.hash = ''; },
@@ -124,6 +152,12 @@ function route() {
 
 addEventListener('hashchange', route);
 addEventListener('keydown', (e) => {
+  // ` opens/closes the Rocoins panel from anywhere — except while typing somewhere else (Blockcraft's chat).
+  if (e.code === 'Backquote' && !e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
+    if (!typing || e.target.closest?.('.rc-card')) { e.preventDefault(); admin.toggle(); }
+    return;
+  }
   if (e.key === 'Escape') {
     if (current) togglePause();
     else if (location.hash) location.hash = '';

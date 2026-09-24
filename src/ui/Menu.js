@@ -1,3 +1,4 @@
+import { Rocoins } from '../engine/Rocoins.js';
 import { CATALOG, ALL_TAGS, TARGET } from '../games/catalog.js';
 import { isImplemented } from '../games/index.js';
 import { Scores } from '../engine/Storage.js';
@@ -55,6 +56,9 @@ export class Menu {
             <button class="settings-btn" aria-expanded="${settingsOpen}" aria-controls="settings-box">
               <span class="gear" aria-hidden="true">&#9881;</span>Settings
             </button>
+            <button class="coins-btn" type="button" aria-haspopup="dialog" title="Rocoins, powers and challenges (\`)">
+              <span class="rc-coin" aria-hidden="true"></span><span class="coins-n">0</span>
+            </button>
             <button class="account-btn" type="button" aria-haspopup="dialog">
               <span class="acct-icon" aria-hidden="true">&#128100;</span><span class="acct-label">Sign in</span>
             </button>
@@ -108,6 +112,7 @@ export class Menu {
     // flips its own Settings key and applies the matching effect.
     this.root.querySelector('.menu-tools').addEventListener('click', (e) => {
       if (e.target.closest('.account-btn')) { openAccountDialog(); return; }
+      if (e.target.closest('.coins-btn')) { this.onAdmin?.(); return; }
       const opener = e.target.closest('.settings-btn');
       if (opener) {
         const box = this.root.querySelector('.settings-box');
@@ -131,7 +136,14 @@ export class Menu {
 
     this.render();
     this._syncAccountButton();
+    this.setCoins(Rocoins.balance());
     this._startGamepadNav();
+  }
+
+  /** The coin button shows your Rocoin balance. */
+  setCoins(n) {
+    const el = this.root.querySelector('.coins-n');
+    if (el) el.textContent = String(n);
   }
 
   /** The menu's account button says who you're signed in as (or invites you to sign in). */
@@ -238,7 +250,7 @@ export class Menu {
    *  thing to a real `:hover` a script can drive — CSS :hover only follows
    *  the actual mouse, never something moved by JS. */
   _setHover(el) {
-    const target = el?.closest?.('.tile, .toggle, .chip, .settings-btn, .account-btn') ?? null;
+    const target = el?.closest?.('.tile, .toggle, .chip, .settings-btn, .account-btn, .coins-btn') ?? null;
     if (target === this._hoverEl) return;
     this._hoverEl?.classList.remove('gp-hover');
     this._hoverEl = target;

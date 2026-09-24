@@ -332,6 +332,7 @@ html, body {
   transition: border-color .15s ease, background .15s ease;
 }
 .menu-tools .account-btn:hover, .account-btn.gp-hover { border-color: var(--accent); }
+.menu-tools .coins-btn:hover, .coins-btn.gp-hover { border-color: #ffd166; }
 .menu-tools .account-btn.signed-in { border-color: var(--accent); background: rgba(110,231,255,.12); }
 .acct-backdrop {
   position: fixed; inset: 0; z-index: 9000; display: grid; place-items: center; padding: 16px;
@@ -377,3 +378,81 @@ html, body {
 .acct-dev-name { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .acct-badge { padding: 1px 7px; border-radius: 999px; font-size: 10px; font-weight: 700; color: #04121a; background: var(--accent, #6ee7ff); }
 .acct-btn.small { padding: 6px 10px; font-size: 12px; flex: none; }
+
+/* ---------- Rocoins: coin button, admin panel, pay-out toasts, effects ---------- */
+.menu-tools .coins-btn {
+  display: inline-flex; align-items: center; gap: 7px; cursor: pointer;
+  background: rgba(255,209,102,.1); border: 1px solid rgba(255,209,102,.45); color: var(--text);
+  border-radius: 999px; padding: 9px 16px; font: 700 13px var(--font);
+  transition: border-color .15s ease, background .15s ease;
+}
+.hud-coins {
+  pointer-events: auto; border: 1px solid rgba(255,209,102,.5); background: rgba(255,209,102,.12); color: var(--text);
+  border-radius: 999px; padding: 7px 12px; font: 700 13px var(--font); cursor: pointer;
+}
+.hud-coins:hover { border-color: #ffd166; }
+.rc-card { width: min(520px, 100%); }
+.rc-bal { margin-left: 6px; padding: 2px 12px; border-radius: 999px; background: rgba(255,209,102,.16); color: #ffd166; font-size: 18px; }
+.rc-card kbd { padding: 0 6px; border: 1px solid rgba(255,255,255,.25); border-radius: 5px; font: 600 12px ui-monospace, monospace; }
+.rc-cmd { display: flex; gap: 8px; margin-bottom: 6px; }
+.rc-cmd input { flex: 1; }
+.rc-out { min-height: 18px; margin: 0 0 10px; font-size: 13px; color: rgba(255,255,255,.7); }
+.rc-out.ok { color: #7ee081; }
+.rc-out.bad { color: #ff8fa3; }
+.rc-list, .rc-chs, .rc-games { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.rc-row, .rc-ch {
+  display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 12px;
+  border: 1px solid rgba(255,255,255,.12); background: rgba(255,255,255,.04);
+}
+.rc-row.on { border-color: #7ee081; background: rgba(126,224,129,.08); }
+.rc-row.locked .rc-ico, .rc-row.locked strong { opacity: .55; }
+.rc-ico { font-size: 22px; width: 30px; text-align: center; flex: none; }
+.rc-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.rc-txt strong { font-size: 14px; }
+.rc-txt strong em { font: 600 10px var(--font); font-style: normal; letter-spacing: .06em; text-transform: uppercase; color: #ffd166; margin-left: 4px; }
+.rc-txt strong code { font: 500 11px ui-monospace, monospace; color: rgba(255,255,255,.4); margin-left: 4px; }
+.rc-txt small { font-size: 12px; color: rgba(255,255,255,.6); line-height: 1.35; }
+.rc-txt small.rc-why { color: #ffb86b; }
+.rc-use { flex: none; min-width: 74px; }
+.rc-use[disabled] { opacity: .45; cursor: not-allowed; }
+.rc-h { margin: 16px 0 8px; font-size: 13px; letter-spacing: .04em; text-transform: uppercase; color: rgba(255,255,255,.7); }
+.rc-h small { text-transform: none; letter-spacing: 0; color: rgba(255,255,255,.45); margin-left: 6px; }
+.rc-ch.done { opacity: .6; }
+.rc-tick { width: 22px; height: 22px; flex: none; border-radius: 50%; border: 1.5px solid rgba(255,255,255,.3); display: grid; place-items: center; font-size: 13px; color: #04121a; }
+.rc-ch.done .rc-tick { background: #7ee081; border-color: #7ee081; }
+.rc-pay { flex: none; font: 700 13px ui-monospace, monospace; color: #ffd166; }
+.rc-ch.done .rc-pay { color: rgba(255,255,255,.5); }
+.rc-all { margin-top: 14px; }
+.rc-all summary { cursor: pointer; font-size: 13px; color: rgba(255,255,255,.7); }
+.rc-games { margin-top: 8px; gap: 4px; }
+.rc-games li { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; padding: 3px 4px; }
+.rc-chips { display: flex; gap: 4px; }
+.rc-chips i { font: 700 10px ui-monospace, monospace; font-style: normal; width: 20px; height: 20px; display: grid; place-items: center; border-radius: 6px; border: 1px solid rgba(255,255,255,.2); color: rgba(255,255,255,.5); }
+.rc-chips i.done { background: #7ee081; border-color: #7ee081; color: #04121a; }
+.rc-toasts { position: fixed; left: 50%; bottom: 84px; transform: translateX(-50%); z-index: 9500; display: flex; flex-direction: column; gap: 8px; align-items: center; pointer-events: none; }
+.rc-toast {
+  display: flex; flex-direction: column; gap: 2px; padding: 10px 18px; border-radius: 14px; text-align: center;
+  background: rgba(16,19,28,.95); border: 1px solid rgba(255,209,102,.6); box-shadow: 0 10px 34px rgba(0,0,0,.5);
+  animation: rc-pop .35s ease-out;
+}
+.rc-toast b { color: #ffd166; font-size: 15px; }
+.rc-toast span { font-size: 12px; color: rgba(255,255,255,.75); }
+@keyframes rc-pop { from { transform: translateY(14px) scale(.96); opacity: 0; } to { transform: none; opacity: 1; } }
+.rc-confetti { position: fixed; inset: 0; z-index: 9400; pointer-events: none; overflow: hidden; }
+.rc-confetti i { position: absolute; top: -12px; width: 9px; height: 14px; border-radius: 2px; animation: rc-fall linear forwards; }
+@keyframes rc-fall { to { transform: translate(var(--dx), 105vh) rotate(720deg); } }
+#stage.fx-disco { animation: fx-disco 4s linear infinite; }
+@keyframes fx-disco { from { filter: hue-rotate(0deg) saturate(1.4); } to { filter: hue-rotate(360deg) saturate(1.4); } }
+#stage.fx-retro { filter: sepia(.65) contrast(1.1) saturate(.8) brightness(1.05); }
+
+.rc-sync { margin: -4px 0 10px; font-size: 12px; color: rgba(255,255,255,.6); }
+.rc-sync.saved { color: #7ee081; }
+.rc-sync.error { color: #ffb86b; }
+.rc-link { border: 0; background: none; padding: 0; color: var(--accent, #6ee7ff); font: inherit; text-decoration: underline; cursor: pointer; }
+
+.rc-coin {
+  display: inline-block; width: 1.05em; height: 1.05em; border-radius: 50%; vertical-align: -0.16em; flex: none;
+  background: radial-gradient(circle at 35% 30%, #fff1b8 0%, #ffd166 45%, #e0a526 100%);
+  box-shadow: inset 0 0 0 .13em #b8801a, inset 0 0 0 .25em rgba(255,241,184,.55);
+}
+.rc-h2 .rc-coin, .rc-card h2 .rc-coin { width: .9em; height: .9em; margin-right: 2px; }
