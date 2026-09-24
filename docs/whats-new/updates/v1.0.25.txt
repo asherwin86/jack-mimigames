@@ -1,0 +1,13 @@
+v1.0.25  -  25 Sep 2026
+New in Whack-a-Cube, Fruit Slice, Wrecking Ball, Frog Hopper and Artillery Duel
+-------------------------------------------------------------------------------
+- Whack-a-Cube: white CLOCK cubes add 4 seconds when smashed.
+- Fruit Slice: GOLDEN fruit starts a 6-second frenzy (twice the fruit, twice
+  the points). Pink HEART fruit gives a life back (only appears when you are
+  missing one).
+- Wrecking Ball: red TNT blocks. Knock one loose and it blows up the blocks
+  around it.
+- Frog Hopper: a golden FLY appears on a safe strip when you have lost a life.
+  Catch it to get the life back.
+- Artillery Duel: some targets SLIDE side to side (worth 50% more) after your
+  first few hits. A bullseye earns a spare shell (up to 15).

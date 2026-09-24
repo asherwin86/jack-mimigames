@@ -1,0 +1,6 @@
+v1.0.0  -  20 Sep 2026
+Windows app that updates itself
+-------------------------------
+- The desktop app: an installer (100-Mimi-Games-Setup.exe) with an icon that
+  checks for new versions itself, asks before installing, and only opens one
+  copy at a time.

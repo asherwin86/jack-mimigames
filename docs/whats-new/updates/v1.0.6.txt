@@ -1,0 +1,5 @@
+v1.0.6  -  20 Sep 2026
+PvP arena AI bots
+-----------------
+- The PvP arena has AI bots with five difficulty levels (Super easy to
+  Extreme), so there is always someone to fight.

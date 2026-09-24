@@ -1,0 +1,8 @@
+v1.0.16  -  24 Sep 2026
+Accounts, cloud worlds and Kart online
+--------------------------------------
+- Sign in (top of the menu) with a name and password - no email needed.
+- Your Blockcraft worlds are saved to your account (up to 8) and appear with a
+  cloud badge on any device you sign in on.
+- Kart Circuit's Play with Friends and Play Online modes work again, through
+  the new account server.

@@ -1,0 +1,4 @@
+v1.0.5  -  20 Sep 2026
+No flying on PvP servers
+------------------------
+- Flying is switched off on PvP servers so fights are fair.

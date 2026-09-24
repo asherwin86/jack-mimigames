@@ -1,0 +1,16 @@
+v1.0.26  -  25 Sep 2026
+(build failed - its changes shipped in v1.0.27)
+-----------------------------------------------
+- This version's automatic build failed on a Wrecking Ball crash, so no
+  installer was made for it. Everything in it is included in v1.0.27.
+  Its changes were:
+- Hurdle Runner: COINS on the track (+10 m each); the high ones need a jump.
+- Free Throw: two makes in a row and the next ball is a gold MONEY BALL
+  (double points, +5 seconds).
+- Plate Spinner: six saves in a row send a CALM pulse through every plate.
+- Grapple Gap: white SLINGSHOT anchors fling you much harder, and a SAFETY NET
+  catches one fall (comes back as you progress).
+- Skeet Range: GOLD clays count 3 and forgive 2 misses; red DECOYS cost 2
+  misses if you shoot them (letting them fall is fine).
+- Arena Fighter: land hits to fill a SUPER meter, then press L (or Y on a pad)
+  for a super strike that mostly punches through a block.

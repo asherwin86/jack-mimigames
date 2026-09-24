@@ -1,0 +1,7 @@
+v1.0.19  -  25 Sep 2026
+Kart Circuit: laps count up
+---------------------------
+- A Laps counter in the top bar goes up every lap you finish and never resets.
+  It is Kart Circuit's arcade score.
+- Kart Circuit challenges are now "Complete 8 / 25 / 60 laps".
+- Race wins still show the "RACE WON" message.

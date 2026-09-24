@@ -1,0 +1,4 @@
+v1.0.2  -  20 Sep 2026
+Shooting stars on the menu
+--------------------------
+- Shooting stars now cross the menu background.

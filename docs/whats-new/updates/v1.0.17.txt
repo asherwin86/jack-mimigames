@@ -1,0 +1,14 @@
+v1.0.17  -  24 Sep 2026
+See which devices you are signed in on
+--------------------------------------
+- Open your account (the button at the top of the menu). There is now a
+  "Signed in on" list: every device with a plain name like "Chrome on
+  Windows" or "Desktop app (Windows)", when it signed in and when it was
+  last used. The one you are on says "This device".
+- Sign any device out, or press "Sign out all other devices". The signed-out
+  device notices the next time it talks to the server and shows the sign-in
+  form again.
+- Up to 10 devices per account; a device not used for 90 days is signed out.
+- Signing in now gives each device its own random key instead of keeping a
+  hash of your password on the device (safer, and it is what makes remote
+  sign-out possible). Existing sign-ins switch over on their own.

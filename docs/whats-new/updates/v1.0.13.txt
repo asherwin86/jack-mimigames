@@ -1,0 +1,4 @@
+v1.0.13  -  24 Sep 2026
+Kart Circuit score
+------------------
+- Kart Circuit counts race wins as its arcade score.

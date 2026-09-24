@@ -1,0 +1,5 @@
+v1.0.1  -  20 Sep 2026
+Fix: app crashed on launch
+--------------------------
+- Fixed the Windows app closing straight after opening (a code-loading
+  mistake in the updater).

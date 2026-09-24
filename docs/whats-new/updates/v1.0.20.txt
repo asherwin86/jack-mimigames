@@ -1,0 +1,7 @@
+v1.0.20  -  25 Sep 2026
+Kart Circuit: no more sudden last place
+---------------------------------------
+- Fixed your position dropping from 1st to last (24th in the big races) for a
+  few seconds after every lap, and the same jump at the start of a race.
+  Positions now follow how far round the track each racer really is.
+- This also fixes the bots' catch-up speed, which used the same wrong number.

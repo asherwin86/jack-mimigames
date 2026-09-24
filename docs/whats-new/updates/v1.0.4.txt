@@ -1,0 +1,5 @@
+v1.0.4  -  20 Sep 2026
+Settings box
+------------
+- Background props, Music, Black sky, Stop spinning, High contrast and Compact
+  moved into one Settings box (the gear button by the search bar).

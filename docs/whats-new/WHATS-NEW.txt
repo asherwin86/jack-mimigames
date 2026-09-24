@@ -1,0 +1,266 @@
+100 MIMI GAMES - WHAT'S BEEN ADDED
+==================================
+
+Newest update first. Every update is also in its own file in the "updates"
+folder. Each one is released to the website and the Windows app together
+(the app updates itself the next time you open it).
+
+v1.0.28  -  25 Sep 2026
+New in Orbit Dodge and Blockcraft
+---------------------------------
+- Orbit Dodge: GOLD stars count 3. White CHRONO stars slow the debris rings to
+  about a third for 5 seconds.
+- Blockcraft: seven new blocks - Glowstone (always bright; small pockets deep
+  underground), Ice, Red Wool, Blue Wool, Yellow Wool, Green Wool and
+  Bookshelf.
+- The Blockcraft hotbar now has 18 slots. Slots 12-18 have no number key:
+  click them or scroll the mouse wheel (or use the controller bumpers).
+- The multiplayer server accepts the new blocks. (An old copy of the app that
+  has not updated yet can crash opening a world that contains them - the app
+  updates itself when restarted.)
+
+v1.0.27  -  25 Sep 2026
+Fix: Wrecking Ball crash (plus the v1.0.26 additions)
+-----------------------------------------------------
+- Fixed Wrecking Ball crashing when a TNT block set off its neighbours in the
+  middle of a swing.
+- Includes everything listed under v1.0.26 (Hurdle Runner, Free Throw, Plate
+  Spinner, Grapple Gap, Skeet Range, Arena Fighter).
+
+v1.0.26  -  25 Sep 2026
+(build failed - its changes shipped in v1.0.27)
+-----------------------------------------------
+- This version's automatic build failed on a Wrecking Ball crash, so no
+  installer was made for it. Everything in it is included in v1.0.27.
+  Its changes were:
+- Hurdle Runner: COINS on the track (+10 m each); the high ones need a jump.
+- Free Throw: two makes in a row and the next ball is a gold MONEY BALL
+  (double points, +5 seconds).
+- Plate Spinner: six saves in a row send a CALM pulse through every plate.
+- Grapple Gap: white SLINGSHOT anchors fling you much harder, and a SAFETY NET
+  catches one fall (comes back as you progress).
+- Skeet Range: GOLD clays count 3 and forgive 2 misses; red DECOYS cost 2
+  misses if you shoot them (letting them fall is fine).
+- Arena Fighter: land hits to fill a SUPER meter, then press L (or Y on a pad)
+  for a super strike that mostly punches through a block.
+
+v1.0.25  -  25 Sep 2026
+New in Whack-a-Cube, Fruit Slice, Wrecking Ball, Frog Hopper and Artillery Duel
+-------------------------------------------------------------------------------
+- Whack-a-Cube: white CLOCK cubes add 4 seconds when smashed.
+- Fruit Slice: GOLDEN fruit starts a 6-second frenzy (twice the fruit, twice
+  the points). Pink HEART fruit gives a life back (only appears when you are
+  missing one).
+- Wrecking Ball: red TNT blocks. Knock one loose and it blows up the blocks
+  around it.
+- Frog Hopper: a golden FLY appears on a safe strip when you have lost a life.
+  Catch it to get the life back.
+- Artillery Duel: some targets SLIDE side to side (worth 50% more) after your
+  first few hits. A bullseye earns a spare shell (up to 15).
+
+v1.0.24  -  25 Sep 2026
+New in Beat Lanes, Colour Rush, Lava Floor, Maze Escape and Brick Wall
+----------------------------------------------------------------------
+- Beat Lanes: white STAR notes (every 24th). Hit one for +1 life and 5 seconds
+  of double points. Missing a star costs no life.
+- Colour Rush: big GOLD rounds (every eighth) pay triple and give a bit more
+  time. Every 15 streak wins a life back.
+- Lava Floor: blue COOLANT orbs on the tiles. Grab one and the lava drops
+  1.8 m.
+- Maze Escape: three cyan SHARDS hidden in far rooms. Each takes 4 seconds off.
+- Brick Wall: some bricks drop CAPSULES. Green = wide paddle (12 s), cyan =
+  slow ball (9 s), pink = extra life.
+
+v1.0.23  -  25 Sep 2026
+New in Paddle Rally, Platform Hop, Sumo Arena and Tunnel Run
+------------------------------------------------------------
+- Paddle Rally: a glowing TARGET moves about the far wall. Bounce the ball off
+  it for +2 bonus points; every third hit buys back a lost life. Your score is
+  your best rally plus the bonus.
+- Platform Hop: cyan SPRINGS on every sixth platform fire you about two floors
+  up.
+- Sumo Arena: a huge BOSS rolls in every fifth wave. It is heavy and slow to
+  turn; shoving it off counts as 3.
+- Tunnel Run: fly through the blue ORBS (one in every eighth wall) to slow the
+  tunnel to 70% for 4 seconds.
+
+v1.0.22  -  25 Sep 2026
+New in Block Stacker, Asteroid Blaster, Marble Maze and Simon Cubes
+-------------------------------------------------------------------
+- Block Stacker: three PERFECT drops in a row win some width back (up to the
+  starting width). There is a Streak counter.
+- Asteroid Blaster: glowing rocks now and then. Green = mends one hull point,
+  cyan = 7 seconds of rapid fire. They do not split; worth 150.
+- Marble Maze: four cyan TIME CRYSTALS on the board. Each takes 2 seconds off
+  your clock.
+- Simon Cubes: every fifth round you must play the sequence BACKWARDS
+  (the round announces it).
+
+v1.0.21  -  25 Sep 2026
+New in Cube Dodger, Sky Hoops, Snake Cube and Gem Grab
+------------------------------------------------------
+- Cube Dodger: SHIELD pickups (cyan ring) soak up one crash and shatter the
+  block. STARS add 40 m to your distance.
+- Sky Hoops: every seventh ring is a small GOLDEN ring. Harder to thread, but
+  it counts as 3 rings and adds 5 seconds.
+- Snake Cube: GOLDEN APPLES appear now and then (+3 length, no speed-up, they
+  flicker and vanish after 7 seconds). ROCKS start to appear once you have
+  eaten 4 apples - hit one and you are out.
+- Gem Grab: MAGNET power-up reels in gems for 7 seconds. ICE CRYSTAL freezes
+  every drone for 4 seconds (frozen drones cannot hurt you).
+
+v1.0.20  -  25 Sep 2026
+Kart Circuit: no more sudden last place
+---------------------------------------
+- Fixed your position dropping from 1st to last (24th in the big races) for a
+  few seconds after every lap, and the same jump at the start of a race.
+  Positions now follow how far round the track each racer really is.
+- This also fixes the bots' catch-up speed, which used the same wrong number.
+
+v1.0.19  -  25 Sep 2026
+Kart Circuit: laps count up
+---------------------------
+- A Laps counter in the top bar goes up every lap you finish and never resets.
+  It is Kart Circuit's arcade score.
+- Kart Circuit challenges are now "Complete 8 / 25 / 60 laps".
+- Race wins still show the "RACE WON" message.
+
+v1.0.18  -  24 Sep 2026
+Rocoins, powers and challenges
+------------------------------
+- New currency: Rocoins. The coin button (top bar in every game, and on the
+  menu) shows your balance. Press the ` key (under Esc) in any game to open the
+  Rocoins panel.
+- EARN them by beating challenges: three score targets in every game
+  (easy 5, medium 12, hard 30 coins), three new daily challenges (10 each,
+  reset at midnight) and one-off badges (finish 1/25/100 runs, play 5/15/all
+  games, beat your personal best 5/25 times).
+- SPEND them on powers, by button or by typing a command (slowmo, /heal, help,
+  coins). Each power costs Rocoins and you can only use what you can afford:
+    Slow-mo 15, Wide view 8, Wireframe world 5, Disco colours 4,
+    Retro screen 4, Confetti 3.
+  Blockcraft: Full heal 10 (own PvP world only). Kart Circuit: Turbo boost 12,
+  Free item 6 (offline races only).
+- Powers never change a score, so they cannot be used to fake a challenge.
+- Signed in, your Rocoins are backed up to your account and follow you to
+  other devices (two devices can earn and spend at once and still add up).
+  A different account on the same browser gets its own wallet.
+
+v1.0.17  -  24 Sep 2026
+See which devices you are signed in on
+--------------------------------------
+- Open your account (the button at the top of the menu). There is now a
+  "Signed in on" list: every device with a plain name like "Chrome on
+  Windows" or "Desktop app (Windows)", when it signed in and when it was
+  last used. The one you are on says "This device".
+- Sign any device out, or press "Sign out all other devices". The signed-out
+  device notices the next time it talks to the server and shows the sign-in
+  form again.
+- Up to 10 devices per account; a device not used for 90 days is signed out.
+- Signing in now gives each device its own random key instead of keeping a
+  hash of your password on the device (safer, and it is what makes remote
+  sign-out possible). Existing sign-ins switch over on their own.
+
+v1.0.16  -  24 Sep 2026
+Accounts, cloud worlds and Kart online
+--------------------------------------
+- Sign in (top of the menu) with a name and password - no email needed.
+- Your Blockcraft worlds are saved to your account (up to 8) and appear with a
+  cloud badge on any device you sign in on.
+- Kart Circuit's Play with Friends and Play Online modes work again, through
+  the new account server.
+
+v1.0.15  -  24 Sep 2026
+Newer Kart Circuit
+------------------
+- Kart Circuit updated to the newer version of the game (racers renamed to
+  generic dinos).
+
+v1.0.14  -  24 Sep 2026
+Fix: Kart Circuit in the desktop app
+------------------------------------
+- Fixed the controller and fullscreen being refused inside the desktop app.
+
+v1.0.13  -  24 Sep 2026
+Kart Circuit score
+------------------
+- Kart Circuit counts race wins as its arcade score.
+
+v1.0.12  -  24 Sep 2026
+New game: Kart Circuit (#31)
+----------------------------
+- A 3D arcade kart racer: drift for mini-turbos, grab items and coins, race
+  rivals across 14 tracks and cups, solo or split-screen for up to 4.
+
+v1.0.11  -  20 Sep 2026
+PvP worlds
+----------
+- Tick "PvP mode" when you make a New World and it gets hearts, fighting,
+  loot and AI bots - solo, or hosted for friends.
+- The public PvP arena is now people-only (no bots).
+
+v1.0.10  -  20 Sep 2026
+Loot from bots
+--------------
+- Bots spawn closer and drop loot when killed: armour (each piece takes 10%
+  off hits), golden apples (heal + 2 extra hearts) and, rarely, an enchanted
+  golden apple (+8 extra hearts).
+
+v1.0.9  -  20 Sep 2026
+Smarter bots
+------------
+- Bots start a fair distance away, wander until they find you, and shoot
+  bows from range.
+
+v1.0.8  -  20 Sep 2026
+Choose how many bots
+--------------------
+- A Bots slider (0 to 50) in the Multiplayer panel: each player chooses how
+  many bots fight them.
+
+v1.0.7  -  20 Sep 2026
+Blockcraft bow
+--------------
+- Slot 2 is a bow: hold to draw, release to shoot. Arrows arc and stick in
+  blocks; other players see them fly; in PvP a longer draw hits harder.
+
+v1.0.6  -  20 Sep 2026
+PvP arena AI bots
+-----------------
+- The PvP arena has AI bots with five difficulty levels (Super easy to
+  Extreme), so there is always someone to fight.
+
+v1.0.5  -  20 Sep 2026
+No flying on PvP servers
+------------------------
+- Flying is switched off on PvP servers so fights are fair.
+
+v1.0.4  -  20 Sep 2026
+Settings box
+------------
+- Background props, Music, Black sky, Stop spinning, High contrast and Compact
+  moved into one Settings box (the gear button by the search bar).
+
+v1.0.3  -  20 Sep 2026
+Public server list
+------------------
+- Blockcraft: host a game from the app or the website and it appears in a
+  public list on the website, so anyone can join with one click.
+
+v1.0.2  -  20 Sep 2026
+Shooting stars on the menu
+--------------------------
+- Shooting stars now cross the menu background.
+
+v1.0.1  -  20 Sep 2026
+Fix: app crashed on launch
+--------------------------
+- Fixed the Windows app closing straight after opening (a code-loading
+  mistake in the updater).
+
+v1.0.0  -  20 Sep 2026
+Windows app that updates itself
+-------------------------------
+- The desktop app: an installer (100-Mimi-Games-Setup.exe) with an icon that
+  checks for new versions itself, asks before installing, and only opens one
+  copy at a time.

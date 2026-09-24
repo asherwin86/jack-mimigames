@@ -1,0 +1,5 @@
+v1.0.12  -  24 Sep 2026
+New game: Kart Circuit (#31)
+----------------------------
+- A 3D arcade kart racer: drift for mini-turbos, grab items and coins, race
+  rivals across 14 tracks and cups, solo or split-screen for up to 4.

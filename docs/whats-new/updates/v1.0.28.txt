@@ -1,0 +1,13 @@
+v1.0.28  -  25 Sep 2026
+New in Orbit Dodge and Blockcraft
+---------------------------------
+- Orbit Dodge: GOLD stars count 3. White CHRONO stars slow the debris rings to
+  about a third for 5 seconds.
+- Blockcraft: seven new blocks - Glowstone (always bright; small pockets deep
+  underground), Ice, Red Wool, Blue Wool, Yellow Wool, Green Wool and
+  Bookshelf.
+- The Blockcraft hotbar now has 18 slots. Slots 12-18 have no number key:
+  click them or scroll the mouse wheel (or use the controller bumpers).
+- The multiplayer server accepts the new blocks. (An old copy of the app that
+  has not updated yet can crash opening a world that contains them - the app
+  updates itself when restarted.)

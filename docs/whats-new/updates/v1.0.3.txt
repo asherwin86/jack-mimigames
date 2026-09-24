@@ -1,0 +1,5 @@
+v1.0.3  -  20 Sep 2026
+Public server list
+------------------
+- Blockcraft: host a game from the app or the website and it appears in a
+  public list on the website, so anyone can join with one click.

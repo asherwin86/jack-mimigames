@@ -1,0 +1,4 @@
+v1.0.14  -  24 Sep 2026
+Fix: Kart Circuit in the desktop app
+------------------------------------
+- Fixed the controller and fullscreen being refused inside the desktop app.

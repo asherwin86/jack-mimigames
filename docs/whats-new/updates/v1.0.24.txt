@@ -1,0 +1,12 @@
+v1.0.24  -  25 Sep 2026
+New in Beat Lanes, Colour Rush, Lava Floor, Maze Escape and Brick Wall
+----------------------------------------------------------------------
+- Beat Lanes: white STAR notes (every 24th). Hit one for +1 life and 5 seconds
+  of double points. Missing a star costs no life.
+- Colour Rush: big GOLD rounds (every eighth) pay triple and give a bit more
+  time. Every 15 streak wins a life back.
+- Lava Floor: blue COOLANT orbs on the tiles. Grab one and the lava drops
+  1.8 m.
+- Maze Escape: three cyan SHARDS hidden in far rooms. Each takes 4 seconds off.
+- Brick Wall: some bricks drop CAPSULES. Green = wide paddle (12 s), cyan =
+  slow ball (9 s), pink = extra life.

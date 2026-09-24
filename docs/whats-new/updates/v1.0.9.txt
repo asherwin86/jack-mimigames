@@ -1,0 +1,5 @@
+v1.0.9  -  20 Sep 2026
+Smarter bots
+------------
+- Bots start a fair distance away, wander until they find you, and shoot
+  bows from range.

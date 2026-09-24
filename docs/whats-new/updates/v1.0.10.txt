@@ -1,0 +1,6 @@
+v1.0.10  -  20 Sep 2026
+Loot from bots
+--------------
+- Bots spawn closer and drop loot when killed: armour (each piece takes 10%
+  off hits), golden apples (heal + 2 extra hearts) and, rarely, an enchanted
+  golden apple (+8 extra hearts).

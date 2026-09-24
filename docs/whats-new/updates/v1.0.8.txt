@@ -1,0 +1,5 @@
+v1.0.8  -  20 Sep 2026
+Choose how many bots
+--------------------
+- A Bots slider (0 to 50) in the Multiplayer panel: each player chooses how
+  many bots fight them.

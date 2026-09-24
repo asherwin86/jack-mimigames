@@ -1,0 +1,20 @@
+v1.0.18  -  24 Sep 2026
+Rocoins, powers and challenges
+------------------------------
+- New currency: Rocoins. The coin button (top bar in every game, and on the
+  menu) shows your balance. Press the ` key (under Esc) in any game to open the
+  Rocoins panel.
+- EARN them by beating challenges: three score targets in every game
+  (easy 5, medium 12, hard 30 coins), three new daily challenges (10 each,
+  reset at midnight) and one-off badges (finish 1/25/100 runs, play 5/15/all
+  games, beat your personal best 5/25 times).
+- SPEND them on powers, by button or by typing a command (slowmo, /heal, help,
+  coins). Each power costs Rocoins and you can only use what you can afford:
+    Slow-mo 15, Wide view 8, Wireframe world 5, Disco colours 4,
+    Retro screen 4, Confetti 3.
+  Blockcraft: Full heal 10 (own PvP world only). Kart Circuit: Turbo boost 12,
+  Free item 6 (offline races only).
+- Powers never change a score, so they cannot be used to fake a challenge.
+- Signed in, your Rocoins are backed up to your account and follow you to
+  other devices (two devices can earn and spend at once and still add up).
+  A different account on the same browser gets its own wallet.

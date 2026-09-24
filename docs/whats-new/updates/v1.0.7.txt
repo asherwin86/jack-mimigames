@@ -1,0 +1,5 @@
+v1.0.7  -  20 Sep 2026
+Blockcraft bow
+--------------
+- Slot 2 is a bow: hold to draw, release to shoot. Arrows arc and stick in
+  blocks; other players see them fly; in PvP a longer draw hits harder.

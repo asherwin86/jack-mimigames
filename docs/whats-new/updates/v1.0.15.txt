@@ -1,0 +1,5 @@
+v1.0.15  -  24 Sep 2026
+Newer Kart Circuit
+------------------
+- Kart Circuit updated to the newer version of the game (racers renamed to
+  generic dinos).

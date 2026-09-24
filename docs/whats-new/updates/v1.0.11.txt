@@ -1,0 +1,6 @@
+v1.0.11  -  20 Sep 2026
+PvP worlds
+----------
+- Tick "PvP mode" when you make a New World and it gets hearts, fighting,
+  loot and AI bots - solo, or hosted for friends.
+- The public PvP arena is now people-only (no bots).

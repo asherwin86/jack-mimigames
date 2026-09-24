@@ -1,0 +1,11 @@
+v1.0.22  -  25 Sep 2026
+New in Block Stacker, Asteroid Blaster, Marble Maze and Simon Cubes
+-------------------------------------------------------------------
+- Block Stacker: three PERFECT drops in a row win some width back (up to the
+  starting width). There is a Streak counter.
+- Asteroid Blaster: glowing rocks now and then. Green = mends one hull point,
+  cyan = 7 seconds of rapid fire. They do not split; worth 150.
+- Marble Maze: four cyan TIME CRYSTALS on the board. Each takes 2 seconds off
+  your clock.
+- Simon Cubes: every fifth round you must play the sequence BACKWARDS
+  (the round announces it).

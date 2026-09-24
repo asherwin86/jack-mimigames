@@ -1,0 +1,12 @@
+v1.0.23  -  25 Sep 2026
+New in Paddle Rally, Platform Hop, Sumo Arena and Tunnel Run
+------------------------------------------------------------
+- Paddle Rally: a glowing TARGET moves about the far wall. Bounce the ball off
+  it for +2 bonus points; every third hit buys back a lost life. Your score is
+  your best rally plus the bonus.
+- Platform Hop: cyan SPRINGS on every sixth platform fire you about two floors
+  up.
+- Sumo Arena: a huge BOSS rolls in every fifth wave. It is heavy and slow to
+  turn; shoving it off counts as 3.
+- Tunnel Run: fly through the blue ORBS (one in every eighth wall) to slow the
+  tunnel to 70% for 4 seconds.

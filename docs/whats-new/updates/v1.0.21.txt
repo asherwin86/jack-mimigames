@@ -1,0 +1,12 @@
+v1.0.21  -  25 Sep 2026
+New in Cube Dodger, Sky Hoops, Snake Cube and Gem Grab
+------------------------------------------------------
+- Cube Dodger: SHIELD pickups (cyan ring) soak up one crash and shatter the
+  block. STARS add 40 m to your distance.
+- Sky Hoops: every seventh ring is a small GOLDEN ring. Harder to thread, but
+  it counts as 3 rings and adds 5 seconds.
+- Snake Cube: GOLDEN APPLES appear now and then (+3 length, no speed-up, they
+  flicker and vanish after 7 seconds). ROCKS start to appear once you have
+  eaten 4 apples - hit one and you are out.
+- Gem Grab: MAGNET power-up reels in gems for 7 seconds. ICE CRYSTAL freezes
+  every drone for 4 seconds (frozen drones cannot hurt you).
