@@ -596,6 +596,16 @@ import { boot, check, finish } from './lib/game-harness.mjs';
   check(near.every((o) => !o.userData.standing), 'wrecking-ball: knocking a TNT block blows every block within reach loose');
   check(far.every((o) => o.userData.standing), 'wrecking-ball: ...and leaves distant ones alone');
   check(game.score === before + 1 + near.length, 'wrecking-ball: each one scores', `${game.score - before} vs ${1 + near.length}`);
+  // a TNT block hit by the ball itself, mid-update, must not upset the loop that found it
+  const u = await boot('wrecking-ball', 6);
+  for (const o of u.game.blocks) o.userData.tnt = false;
+  const bomb = u.game.blocks[7]; bomb.userData.tnt = true;
+  const tip = new u.game.pivot.position.constructor(0, -9, 0).applyEuler(u.game.pivot.rotation).add(u.game.pivot.position);
+  bomb.position.copy(tip);                        // right where the ball is
+  u.input.pointer.set(-0.9, 0);
+  let threw = null;
+  try { u.step(40); } catch (e) { threw = e; }
+  check(!threw && !bomb.userData.standing, 'wrecking-ball: a TNT block struck during a swing goes off without breaking the update loop', String(threw));
   // fresh towers: TNT is rare but present, and never leaks from a recycled block
   const t = await boot('wrecking-ball', 11);
   let tnt = 0, total = 0;

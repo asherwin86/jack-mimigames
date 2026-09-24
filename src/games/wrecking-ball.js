@@ -77,8 +77,8 @@ export default class WreckingBall extends Game {
 
     // Fast enough, and close enough, knocks a standing block loose.
     if (speed > 1.2) {
-      for (let i = this.blocks.length - 1; i >= 0; i--) {
-        const b = this.blocks[i];
+      // (a snapshot, since a TNT block knocks its neighbours out of this.blocks mid-loop)
+      for (const b of [...this.blocks]) {
         if (!b.userData.standing) continue;
         if (b.position.distanceTo(tip) < 1.7) this.knock(b, tip, speed);
       }
