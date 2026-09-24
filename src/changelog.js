@@ -2,6 +2,10 @@
  *  menu, under the trailer. Keep entries brief; this isn't a commit log. */
 export const CHANGELOG = [
   {
+    title: 'New in Paddle Rally, Platform Hop, Sumo Arena and Tunnel Run',
+    detail: 'Paddle Rally: a glowing target on the far wall — bounce the ball off it for bonus points, and every third buys back a life. Platform Hop: cyan springs that fire you two floors up. Sumo Arena: a huge boss rolls in every fifth wave (worth 3 shoves). Tunnel Run: fly through the blue orbs to slow the tunnel down.',
+  },
+  {
     title: 'New in Block Stacker, Asteroid Blaster, Marble Maze and Simon Cubes',
     detail: 'Block Stacker: three perfect drops in a row win some width back. Asteroid Blaster: glowing rocks that mend your hull or give 7 seconds of rapid fire. Marble Maze: cyan time crystals take 2 seconds off. Simon Cubes: every fifth round you play the sequence backwards.',
   },

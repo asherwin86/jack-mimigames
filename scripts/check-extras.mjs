@@ -268,4 +268,111 @@ import { boot, check, finish } from './lib/game-harness.mjs';
   check(!!result.ended, 'simon-cubes: playing a backwards round forwards is wrong');
 }
 
+// ---------- Paddle Rally: bonus target ----------
+{
+  const { game, step, result } = await boot('paddle-rally');
+  const shootAtTarget = () => {
+    const t = game.target.position;
+    game.ball.position.set(t.x, t.y, -46 + 0.2);
+    game.vel.set(0, 0, -20);
+    game.serving = 0;
+    step(1);
+  };
+  const first = game.target.position.clone();
+  shootAtTarget();
+  check(game.bonus === 2 && game.targets === 1, 'paddle-rally: bouncing the ball off the target scores 2');
+  check(game.vel.z > 0, 'paddle-rally: ...and the ball still comes back');
+  check(!game.target.position.equals(first), 'paddle-rally: the target moves after a hit');
+  // a hit that misses the target scores nothing
+  const t2 = game.target.position;
+  game.ball.position.set(t2.x > 0 ? t2.x - 6 : t2.x + 6, t2.y, -46 + 0.2);
+  game.vel.set(0, 0, -20);
+  step(1);
+  check(game.bonus === 2, 'paddle-rally: hitting the wall beside the target scores nothing');
+  game.lives = 2;
+  shootAtTarget(); shootAtTarget();
+  check(game.targets === 3 && game.lives === 3, 'paddle-rally: every third target buys back a life', `lives ${game.lives}`);
+  game.lives = 3;
+  shootAtTarget();
+  check(game.lives === 3, 'paddle-rally: lives never go above 3');
+  game.best = 4; game.lives = 1;
+  game.miss();
+  check(result.ended?.score === 4 + game.bonus, 'paddle-rally: the final score is the best rally plus the bonus', JSON.stringify(result.ended));
+}
+
+// ---------- Platform Hop: spring pads ----------
+{
+  const { game, step } = await boot('platform-hop');
+  const springs = game.platforms.filter((p) => p.userData.spring);
+  check(springs.length >= 2 && springs.every((p) => p.userData.index % 6 === 3), 'platform-hop: every sixth platform has a spring (from floor 3)');
+  check(!game.platforms[0].userData.spring && !game.platforms[1].userData.spring, 'platform-hop: none on the first few floors');
+  const sp = springs[0];
+  const rest = sp.position.y + 0.9;
+  game.player.position.set(sp.position.x, rest + 0.04, sp.position.z);
+  game.vel.set(0, -4, 0);
+  game.grounded = false;
+  game.standing = null;
+  step(1);
+  check(game.vel.y > 20, 'platform-hop: landing on a spring fires you upward much harder than a jump', String(game.vel.y));
+  check(game.grounded === false, 'platform-hop: ...so you are airborne, not stuck to the platform');
+  const plain = game.platforms.find((p) => !p.userData.spring && p.userData.index > 0);
+  game.player.position.set(plain.position.x, plain.position.y + 0.9 + 0.04, plain.position.z);
+  game.vel.set(0, -4, 0);
+  step(1);
+  check(game.vel.y < 1 && game.grounded, 'platform-hop: a normal platform still just catches you');
+}
+
+// ---------- Sumo Arena: boss ----------
+{
+  const { game } = await boot('sumo-arena');
+  game.wave = 3; game.spawnWave();
+  check(!game.foes.some((f) => f.userData.boss), 'sumo-arena: no boss on wave 4');
+  game.foes.length = 0;
+  game.wave = 4; game.spawnWave();
+  const boss = game.foes.find((f) => f.userData.boss);
+  check(game.wave === 5 && boss && boss.userData.mass > 3 && boss.userData.r > 1.5, 'sumo-arena: wave 5 brings a big, heavy boss');
+  const before = game.pushed;
+  const i = game.foes.indexOf(boss);
+  game.eject(boss, i);
+  check(game.pushed === before + 3, 'sumo-arena: shoving the boss off counts as 3');
+  // collisions use the real radii: the player cannot sit inside the boss
+  const b2 = game.foes.length ? game.foes[0] : null;
+  const big = { position: new game.player.position.constructor(0, 1.6, 0), userData: { vel: new game.player.position.constructor(), mass: 3.4, r: 1.6 } };
+  game.player.position.set(2.0, 1, 0);
+  game.collide(game.player, big);
+  check(game.player.position.distanceTo(big.position) >= 2.55, 'sumo-arena: a boss keeps the player out to the sum of the radii', String(game.player.position.distanceTo(big.position)));
+  void b2;
+}
+
+// ---------- Tunnel Run: slow-mo orbs ----------
+{
+  const { game, step } = await boot('tunnel-run');
+  game.spawned = 4;
+  game.spawnWall();                       // the fifth wall carries an orb
+  const w = game.walls[0];
+  check(!!w.orb, 'tunnel-run: every eighth wall has a slow-mo orb in its gap');
+  game.spawned = 0;
+  game.spawnWall();
+  check(!game.walls[1].orb, 'tunnel-run: most walls do not');
+  const fast = game.speed;
+  game.ship.position.set(w.gap.cx, w.gap.cy, 0);
+  w.z = -0.5;
+  for (const part of w.parts) part.position.z = w.z;
+  step(1);
+  check(game.slowT > 3 && !w.orb, 'tunnel-run: flying through the orb slows the tunnel for 4 seconds');
+  step(1);
+  check(game.speed < fast * 0.75, 'tunnel-run: ...to about 70% speed', `${fast} -> ${game.speed}`);
+  step(60 * 5);
+  check(game.slowT === 0, 'tunnel-run: and it wears off');
+  // an orb that is missed does not slow anything
+  const b = await boot('tunnel-run', 8);
+  b.game.spawned = 4; b.game.spawnWall();
+  const w2 = b.game.walls[0];
+  b.game.ship.position.set(w2.gap.cx + (w2.gap.gapW / 2 - 0.8) * Math.sign(w2.gap.cx || 1) * 0.0, w2.gap.cy, 0);
+  b.game.ship.position.x = w2.gap.cx + 1.9;    // inside the gap (half-width ~2.6 - 0.5) but not through the orb
+  w2.z = -0.5;
+  b.step(1);
+  if (!b.result.ended) check(b.game.slowT === 0, 'tunnel-run: passing the gap without touching the orb does nothing');
+}
+
 finish('extras');

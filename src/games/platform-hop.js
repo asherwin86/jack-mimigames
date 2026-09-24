@@ -32,7 +32,7 @@ export default class PlatformHop extends Game {
     this.coyote = 0;
 
     this.camera.position.set(0, 8, 13);
-    this.hud.hint('WASD to move · Space to jump · platforms drift, so time it');
+    this.hud.hint('WASD to move · Space to jump · platforms drift, so time it · cyan springs fire you two floors up');
   }
 
   makePlatform(x, y, z, w, d, index) {
@@ -46,6 +46,13 @@ export default class PlatformHop extends Game {
       home: new THREE.Vector3(x, y, z),
       range: index === 0 ? 0 : clamp(1 + index * 0.18, 1, 5),
     };
+    // Every sixth platform carries a spring that fires you two floors up.
+    if (index > 2 && index % 6 === 3) {
+      p.userData.spring = true;
+      const coil = cyl(0.55, 0.7, 0.35, glow(PALETTE.cyan, { emissiveIntensity: 0.9 }), { cast: false });
+      coil.position.y = 0.45;
+      p.add(coil);
+    }
     this.platforms.push(this.add(p));
     return p;
   }
@@ -109,6 +116,13 @@ export default class PlatformHop extends Game {
           this.coyote = 0.12;
           if (this.standing !== plat) this.land(plat);
           this.standing = plat;
+          if (d.spring) {   // boing
+            this.vel.y = JUMP * 1.85;
+            this.grounded = false;
+            this.coyote = 0;
+            this.burst.burst(p, PALETTE.cyan, 12, 6);
+            this.audio.tone([300, 900], 0.18, { type: 'triangle', gain: 0.14 });
+          }
           break;
         }
       }

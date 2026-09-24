@@ -39,6 +39,13 @@ export default class PaddleRally extends Game {
     this.paddle = this.add(box(PAD.w, PAD.h, 0.4, glow(PALETTE.lime, { transparent: true, opacity: 0.55 }), { cast: false }));
     this.paddle.position.set(0, 0, 0);
 
+    // A glowing target moves about the far wall: bounce the ball off it for bonus points
+    // (and every third one buys back a lost life).
+    this.target = this.add(box(2.4, 2.4, 0.2, glow(PALETTE.amber, { emissiveIntensity: 0.9 }), { cast: false }));
+    this.bonus = 0;
+    this.targets = 0;
+    this.moveTarget();
+
     this.ball = this.add(ball(BALL_R, glow(PALETTE.amber)));
     this.burst = new Burst(this.scene, 70, 0.18);
 
@@ -51,7 +58,11 @@ export default class PaddleRally extends Game {
 
     this.camera.position.set(0, 1.2, 9);
     this.camera.lookAt(0, 0, -DEPTH * 0.5);
-    this.hud.hint('Move the mouse to slide the paddle · keep the rally alive');
+    this.hud.hint('Move the mouse to slide the paddle · keep the rally alive · hit the glowing target on the far wall for bonus points');
+  }
+
+  moveTarget() {
+    this.target.position.set(rand(-W + 2, W - 2), rand(-H + 2, H - 2), -DEPTH + 0.35);
   }
 
   serve(dir) {
@@ -86,6 +97,8 @@ export default class PaddleRally extends Game {
       this.vel.z *= -1;
       this.burst.burst(p, PALETTE.cyan, 8, 5);
       this.audio.tone(330, 0.07, { type: 'square', gain: 0.1 });
+      const t = this.target.position;
+      if (Math.abs(p.x - t.x) < 1.2 + BALL_R && Math.abs(p.y - t.y) < 1.2 + BALL_R) this.hitTarget();
       // The wall adds a little unpredictability as the rally heats up.
       const chaos = clamp(this.rally * 0.25, 0, 5);
       this.vel.x += rand(-chaos, chaos);
@@ -109,8 +122,23 @@ export default class PaddleRally extends Game {
     this.camera.lookAt(p.x * 0.25, p.y * 0.25, -DEPTH * 0.5);
 
     this.hud.stat('Rally', this.rally);
+    this.hud.stat('Bonus', this.bonus);
     this.hud.stat('Lives', '●'.repeat(this.lives) || '—', this.lives === 1);
     this.hud.stat('Ball', `${Math.round(this.vel.length())} u/s`);
+  }
+
+  hitTarget() {
+    this.bonus += 2;
+    this.targets++;
+    this.burst.burst(this.target.position, PALETTE.amber, 18, 8);
+    this.audio.good();
+    if (this.targets % 3 === 0 && this.lives < 3) {
+      this.lives++;
+      this.hud.toast('TARGET ×3 · EXTRA LIFE', 900);
+    } else {
+      this.hud.toast('TARGET +2', 600);
+    }
+    this.moveTarget();
   }
 
   ping(g = 1) { this.audio.tone(220, 0.05, { type: 'sine', gain: 0.06 * g }); }
@@ -139,7 +167,7 @@ export default class PaddleRally extends Game {
     this.burst.burst(this.ball.position, PALETTE.red, 16, 7);
     if (this.lives <= 0) {
       this.audio.lose();
-      return this.end(this.best, `Longest rally: ${this.best}.`);
+      return this.end(this.best + this.bonus, `Longest rally: ${this.best}${this.bonus ? ` + ${this.bonus} target bonus` : ''}.`);
     }
     this.hud.toast(`${this.lives} left`, 800);
     this.rally = 0;

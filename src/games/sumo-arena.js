@@ -19,7 +19,7 @@ export default class SumoArena extends Game {
 
     this.player = this.add(ball(1, glow(PALETTE.cyan)));
     this.player.position.set(0, 1, 6);
-    this.player.userData = { vel: new THREE.Vector3(), mass: 1.15 };
+    this.player.userData = { vel: new THREE.Vector3(), mass: 1.15, r: 1 };
 
     this.foes = [];
     this.burst = new Burst(this.scene, 90, 0.24);
@@ -29,7 +29,7 @@ export default class SumoArena extends Game {
     this.nextWave = 0;
 
     this.camera.position.set(0, 22, 20);
-    this.hud.hint('WASD to shove · Space to dash · last one standing wins the round');
+    this.hud.hint('WASD to shove · Space to dash · last one standing wins the round · every fifth wave a huge boss rolls in (worth 3)');
   }
 
   sizeArena() {
@@ -46,8 +46,16 @@ export default class SumoArena extends Game {
       const a = rand(0, Math.PI * 2);
       const f = ball(0.95, glow(PALETTE.red, { emissiveIntensity: 0.55 }));
       f.position.set(Math.cos(a) * (this.radius - 2), 1, Math.sin(a) * (this.radius - 2));
-      f.userData = { vel: new THREE.Vector3(), mass: 1, speed: 7 + this.wave * 0.7 };
+      f.userData = { vel: new THREE.Vector3(), mass: 1, speed: 7 + this.wave * 0.7, r: 0.95 };
       this.foes.push(this.add(f));
+    }
+    if (this.wave % 5 === 0) {   // a boss: big, heavy, slow to turn, worth three
+      const a = rand(0, Math.PI * 2);
+      const boss = ball(1.6, glow(PALETTE.amber, { emissiveIntensity: 0.6 }));
+      boss.position.set(Math.cos(a) * (this.radius - 3), 1.6, Math.sin(a) * (this.radius - 3));
+      boss.userData = { vel: new THREE.Vector3(), mass: 3.4, speed: 4.6 + this.wave * 0.25, r: 1.6, boss: true };
+      this.foes.push(this.add(boss));
+      this.hud.toast(`BOSS · wave ${this.wave}`, 1200);
     }
     this.hud.toast(`Wave ${this.wave}`, 800);
     this.audio.tone([160, 320], 0.28, { type: 'sawtooth', gain: 0.1 });
@@ -88,7 +96,7 @@ export default class SumoArena extends Game {
     for (const o of all) {
       o.userData.vel.multiplyScalar(Math.exp(-2.8 * dt));
       o.position.addScaledVector(o.userData.vel, dt);
-      o.position.y = 1;
+      o.position.y = o.userData.r || 1;
       o.rotation.x += o.userData.vel.z * dt * 0.6;
       o.rotation.z -= o.userData.vel.x * dt * 0.6;
     }
@@ -116,7 +124,7 @@ export default class SumoArena extends Game {
   collide(a, b) {
     const d = a.position.clone().sub(b.position).setY(0);
     const dist = d.length();
-    const min = 1.95;
+    const min = a.userData.r + b.userData.r;
     if (dist >= min || dist < 0.0001) return;
 
     const n = d.divideScalar(dist);
@@ -133,7 +141,7 @@ export default class SumoArena extends Game {
   }
 
   eject(f, i) {
-    this.pushed++;
+    this.pushed += f.userData.boss ? 3 : 1;
     this.burst.burst(f.position, PALETTE.red, 16, 8);
     this.audio.blip(clamp(this.pushed, 0, 20));
     this.scene.remove(f);

@@ -1,3 +1,4 @@
+import * as THREE from 'three';
 import { Game } from '../engine/Game.js';
 import {
   box, lights, sky, glow, mat, Burst, clamp, damp, rand, PALETTE, COLORS,
@@ -38,9 +39,11 @@ export default class TunnelRun extends Game {
     this.speed = 34;
     this.passed = 0;
     this.nextWall = 1.2;
+    this.spawned = 0;
+    this.slowT = 0;        // a slow-mo orb eases the tunnel speed back for a few seconds
 
     this.camera.position.set(0, 0.6, 9);
-    this.hud.hint('WASD or arrows to fly · thread the gap in each wall');
+    this.hud.hint('WASD or arrows to fly · thread the gap in each wall · fly through the blue orbs to slow the tunnel down');
   }
 
   /** A wall is four slabs framing a rectangular hole. */
@@ -67,11 +70,19 @@ export default class TunnelRun extends Game {
       slab.position.set(x, y, SPAWN_Z);
       group.push(this.add(slab));
     }
-    this.walls.push({ parts: group, gap: { cx, cy, gapW, gapH }, z: SPAWN_Z, scored: false });
+    // Every eighth wall has a slow-mo orb floating in its gap.
+    let orb = null;
+    if (++this.spawned % 8 === 5) {
+      orb = new THREE.Mesh(new THREE.IcosahedronGeometry(0.7), glow(PALETTE.cyan, { emissiveIntensity: 1 }));
+      orb.position.set(cx, cy, SPAWN_Z);
+      this.add(orb);
+    }
+    this.walls.push({ parts: group, gap: { cx, cy, gapW, gapH }, z: SPAWN_Z, scored: false, orb });
   }
 
   update(dt) {
-    this.speed = 34 + Math.min(40, this.passed * 1.1);
+    this.slowT = Math.max(0, this.slowT - dt);
+    this.speed = (34 + Math.min(40, this.passed * 1.1)) * (this.slowT > 0 ? 0.7 : 1);
     const dz = this.speed * dt;
 
     const p = this.ship.position;
@@ -95,6 +106,7 @@ export default class TunnelRun extends Game {
       const w = this.walls[i];
       w.z += dz;
       for (const part of w.parts) part.position.z = w.z;
+      if (w.orb) { w.orb.position.z = w.z; w.orb.rotation.y += dt * 3; w.orb.rotation.x += dt * 1.7; }
 
       if (!w.scored && w.z > p.z - 0.8) {
         w.scored = true;
@@ -102,12 +114,23 @@ export default class TunnelRun extends Game {
         const inside = Math.abs(p.x - g.cx) < g.gapW / 2 - 0.5
           && Math.abs(p.y - g.cy) < g.gapH / 2 - 0.35;
         if (!inside) return this.crash();
+        if (w.orb && Math.hypot(p.x - g.cx, p.y - g.cy) < 1.7) {
+          this.slowT = 4;
+          this.burst.burst(w.orb.position, PALETTE.cyan, 14, 7);
+          this.hud.toast('SLOW-MO', 700);
+          this.audio.good();
+          this.scene.remove(w.orb);
+          w.orb.geometry.dispose();
+          w.orb.material.dispose();
+          w.orb = null;
+        }
         this.passed++;
         this.audio.blip(clamp(this.passed, 0, 20));
         if (this.passed % 10 === 0) { this.hud.toast(`${this.passed} walls`); this.audio.good(); }
       }
 
       if (w.z > 14) {
+        if (w.orb) { this.scene.remove(w.orb); w.orb.geometry.dispose(); w.orb.material.dispose(); }
         for (const part of w.parts) {
           this.scene.remove(part);
           part.geometry.dispose();
@@ -124,6 +147,7 @@ export default class TunnelRun extends Game {
 
     this.hud.stat('Walls', this.passed);
     this.hud.stat('Speed', `${Math.round(this.speed * 3.6)} kph`);
+    if (this.slowT > 0) this.hud.stat('Slow-mo', `${Math.ceil(this.slowT)}s`); else this.hud.removeStat('Slow-mo');
   }
 
   crash() {
