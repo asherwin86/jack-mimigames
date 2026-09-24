@@ -2,6 +2,10 @@
  *  menu, under the trailer. Keep entries brief; this isn't a commit log. */
 export const CHANGELOG = [
   {
+    title: 'New in Hurdle Runner, Free Throw, Plate Spinner, Grapple Gap, Skeet Range and Arena Fighter',
+    detail: 'Hurdle Runner: coins on the track (+10 m) — the high ones need a jump. Free Throw: two makes in a row and the next ball is a gold money ball (double points, +5 s). Plate Spinner: six saves in a row calm every plate. Grapple Gap: white slingshot anchors and a safety net that catches one fall. Skeet Range: gold clays (count 3, forgive 2 misses) and red decoys you must not shoot. Arena Fighter: land hits to fill a super meter, then press L.',
+  },
+  {
     title: 'New in Whack-a-Cube, Fruit Slice, Wrecking Ball, Frog Hopper and Artillery Duel',
     detail: 'Whack-a-Cube: white clock cubes add 4 seconds. Fruit Slice: golden fruit starts a frenzy (double fruit, double points) and pink hearts give a life back. Wrecking Ball: red TNT blocks blow up their neighbours. Frog Hopper: catch the golden fly to win a life back. Artillery Duel: some targets slide side to side (worth 50% more) and a bullseye earns a spare shell.',
   },

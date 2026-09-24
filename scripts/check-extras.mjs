@@ -663,4 +663,188 @@ import { boot, check, finish } from './lib/game-harness.mjs';
   check(game.shellsLeft === 15, 'artillery-duel: ...and never beyond 15');
 }
 
+// ---------- Hurdle Runner: coins ----------
+{
+  const { game, step, result } = await boot('hurdle-runner');
+  const drop = (high) => {
+    const c = game.coinPool.pop();
+    c.userData = { high };
+    c.position.set(game.player.position.x, high ? 2.4 : 1.0, game.player.position.z);
+    c.visible = true;
+    game.coinLive.push(c);
+    return c;
+  };
+  drop(false);
+  step(1);
+  check(game.bonus === 10 && game.coinLive.length === 0, 'hurdle-runner: a ground-level coin is +10 m');
+  const hi = drop(true);
+  step(1);
+  check(game.bonus === 10 && game.coinLive.includes(hi), 'hurdle-runner: a high coin cannot be reached from the ground');
+  game.player.position.y = 2.3; game.velY = 0;
+  step(1);
+  check(game.bonus === 20, 'hurdle-runner: ...but a jump collects it');
+  const o = game.pool.pop(); o.visible = true; o.scale.set(1, 0.6, 1);
+  o.position.set(game.player.position.x, 0.4, game.player.position.z); o.userData = { bar: false }; game.live.push(o);
+  game.player.position.y = 0.75;
+  step(1);
+  check(result.ended && result.ended.score >= 20, 'hurdle-runner: coins count towards the final distance', JSON.stringify(result.ended));
+  let coins = 0;
+  const b = await boot('hurdle-runner', 4);
+  for (let i = 0; i < 100; i++) { b.game.coinLive.forEach((c) => { c.visible = false; b.game.coinPool.push(c); }); b.game.coinLive.length = 0; b.game.spawnRow(); coins += b.game.coinLive.length; b.game.live.forEach((x) => { x.visible = false; b.game.pool.push(x); }); b.game.live.length = 0; }
+  check(coins > 15 && coins < 70, 'hurdle-runner: a coin turns up with a bit under half of the rows', `${coins}/100`);
+}
+
+// ---------- Free Throw: money ball ----------
+{
+  const { game } = await boot('free-throw');
+  const shot = (money) => ({ userData: { vel: new game.spot.constructor(), money }, position: game.spot.clone() });
+  game.shots.push(game.add(game.ballMesh.clone()));
+  const fake = (money) => { const m = game.add(game.ballMesh.clone()); m.userData = { vel: game.spot.clone().multiplyScalar(0), money }; game.shots.push(m); return game.shots.length - 1; };
+  void shot;
+  game.shots.length = 0;
+  const pts = game.points;
+  game.make(...(() => { const i = fake(false); return [game.shots[i], i]; })());
+  check(game.streak === 1 && game.score === pts, 'free-throw: a normal make scores its points and starts a streak');
+  const pts2 = game.points;
+  game.make(...(() => { const i = fake(false); return [game.shots[i], i]; })());
+  check(game.streak === 2 && game.ballMesh.material.color.getHex() === 0xffe066, 'free-throw: after two makes the next ball is gold');
+  const t0 = game.timeLeft, s0 = game.score, pts3 = game.points;
+  const idx = fake(true);
+  game.make(game.shots[idx], idx);
+  check(game.score === s0 + pts3 * 2, 'free-throw: a money ball is worth double', `${game.score - s0} vs ${pts3 * 2}`);
+  check(game.timeLeft > t0 + 4.9, 'free-throw: ...and adds 5 seconds');
+  check(game.streak === 0, 'free-throw: ...then the streak starts over');
+  void pts2;
+  game.streak = 2;
+  const j = fake(true);
+  game.miss(game.shots[j], j);
+  check(game.streak === 0, 'free-throw: a miss breaks the streak');
+  game.streak = 2; game.newSpot();
+  game.power = 0.8; game.fire();
+  check(game.shots[game.shots.length - 1].userData.money === true, 'free-throw: the ball fired with a streak of two is the money ball');
+}
+
+// ---------- Plate Spinner: calm pulse ----------
+{
+  const { game } = await boot('plate-spinner');
+  const live = game.slots.filter((s) => s.active);
+  live.forEach((s) => { s.wobble = 0.9; });
+  for (let i = 0; i < 5; i++) game.save(live[0]);
+  check(game.saveStreak === 5 && live[1].wobble === 0.9, 'plate-spinner: five saves in a row change nothing yet');
+  game.save(live[0]);
+  check(game.saveStreak === 6 && live[1].wobble <= 0.3 && live[2].wobble <= 0.3, 'plate-spinner: the sixth calms every plate');
+  live[1].wobble = 1.0;
+  game.drop(live[1]);
+  check(game.saveStreak === 0, 'plate-spinner: a dropped plate resets the streak');
+  const before = game.slots.map((s) => s.wobble);
+  game.save(live[0]);
+  check(game.slots.every((s, i) => s.wobble === before[i] || s === live[0]), 'plate-spinner: (and the pulse has not fired again)');
+}
+
+// ---------- Grapple Gap: slingshot anchors + safety net ----------
+{
+  const { game, step, result } = await boot('grapple-gap');
+  const slings = game.anchors.filter((a) => a.userData.sling);
+  check(slings.length === Math.floor(22 / 5) && game.anchors.indexOf(slings[0]) === 4, 'grapple-gap: every fifth anchor is a slingshot', `${slings.length}`);
+  const plain = game.anchors[0];
+  const boostOf = (anchor) => {
+    game.player.position.copy(anchor.position).add(new game.player.position.constructor(-0.2, 0, 0));
+    game.grounded = false; game.vel.set(0, 0, 0);
+    game.grapple = { anchor, dir: new game.player.position.constructor(1, 0, 0) };
+    step(1);
+    return game.vel.length();
+  };
+  const normal = boostOf(plain);
+  const sling = boostOf(slings[0]);
+  check(sling > normal * 1.5, 'grapple-gap: a slingshot flings you much harder', `${normal.toFixed(1)} vs ${sling.toFixed(1)}`);
+  // safety net
+  const b = await boot('grapple-gap', 3);
+  b.game.player.position.set(7.5, -11, 0);
+  b.game.grounded = false;
+  b.step(1);
+  check(!b.result.ended && b.game.net === 0, 'grapple-gap: the first fall is caught by the net');
+  check(b.game.player.position.y >= 0.9 && b.game.grounded, 'grapple-gap: ...and puts you back on a platform');
+  b.game.player.position.set(7.5, -11, 0);
+  b.step(1);
+  check(!!b.result.ended, 'grapple-gap: the second fall ends the run');
+  // the net comes back as you progress
+  const c = await boot('grapple-gap', 2);
+  c.game.net = 0;
+  for (const plat of c.game.platforms.slice(1, 7)) {
+    c.game.player.position.set(plat.userData.x0 + 1, 1.0, 0);
+    c.game.vel.set(0, -1, 0);
+    c.step(1);
+  }
+  check(c.game.net === 1, 'grapple-gap: reaching six more platforms restores the net', `net ${c.game.net}, passed ${c.game.platformsPassed}`);
+}
+
+// ---------- Skeet Range: gold clays + decoys ----------
+{
+  const { game } = await boot('skeet-range');
+  const launch = (roll) => {
+    const real = Math.random; const seq = [0.1, 0.9, 0.5, roll]; let i = 0;   // launcher choice, no second launcher, the speed roll, then the kind roll
+    Math.random = () => (i < seq.length ? seq[i++] : 0.5);
+    game.launchPair();
+    Math.random = real;
+    return game.live[game.live.length - 1];
+  };
+  const gold = launch(0.05);
+  check(gold.userData.kind === 'gold', 'skeet-range: a gold clay can launch');
+  game.misses = 4;
+  game.shoot(gold);
+  check(game.hits === 3 && game.misses === 2, 'skeet-range: shooting it counts 3 and forgives 2 misses', `${game.hits} hits, ${game.misses} misses`);
+  game.hits = 0;
+  const early = launch(0.15);
+  check(early.userData.kind === 'clay', 'skeet-range: no decoys until you have a few hits');
+  game.hits = 5;
+  const decoy = launch(0.15);
+  check(decoy.userData.kind === 'decoy', 'skeet-range: later, red decoys appear');
+  game.misses = 1;
+  game.shoot(decoy);
+  check(game.misses === 3 && game.hits === 5, 'skeet-range: shooting a decoy costs 2 misses and scores nothing');
+  const decoy2 = launch(0.15);
+  decoy2.position.y = 0.05; decoy2.userData.vel.y = -5;
+  game.misses = 1;
+  game.update(1 / 60);
+  check(game.misses === 1, 'skeet-range: a decoy that falls is not a miss');
+  const clay = launch(0.5);
+  clay.position.y = 0.05; clay.userData.vel.y = -5;
+  game.update(1 / 60);
+  check(game.misses === 2, 'skeet-range: a clay that falls is a miss');
+}
+
+// ---------- Arena Fighter: super strike ----------
+{
+  const { game, step, input } = await boot('arena-fighter');
+  game.player.position.set(0.6, 1.3, 0); game.cpu.position.set(-0.6, 1.3, 0);
+  game.cpuCd = 99;
+  game.time = 1.5;                            // (the rival is not blocking around here)
+  const hp0 = game.cpuHP;
+  game.playerAttack = { kind: { name: 'punch', windup: 0.1, reach: 0.9, arm: 0.55, dmg: 6, knock: 3, cd: 0.35 }, t: 0, dealt: false };
+  step(20);
+  check(game.rage > 5 && game.cpuHP < hp0, 'arena-fighter: landing a punch charges the super meter');
+  input.press('KeyL');
+  step(1);
+  check(game.playerAttack === null || game.playerAttack.kind.name !== 'super', 'arena-fighter: L does nothing until the meter is full');
+  game.rage = 100; game.cpuHP = 100; game.playerAttack = null; game.punchCd = game.kickCd = 0;
+  game.player.position.set(0.6, 1.3, 0); game.cpu.position.set(-0.6, 1.3, 0);
+  input.release();
+  input.press('KeyL');
+  step(1);
+  check(game.playerAttack?.kind.name === 'super' && game.rage === 0, 'arena-fighter: with a full meter L throws the super strike and empties it');
+  input.release();
+  step(30);
+  check(game.cpuHP <= 100 - 25, 'arena-fighter: the super strike hits for about 30', String(game.cpuHP));
+  // blocked: mostly goes through
+  game.cpuHP = 100; game.cpuBlocking = true; game.cpuCd = 99;
+  game.player.position.set(0.6, 1.3, 0); game.cpu.position.set(-0.6, 1.3, 0);
+  game.rage = 100; game.playerAttack = null; game.punchCd = game.kickCd = 0;
+  input.press('KeyL'); step(1); input.release();
+  game.cpuBlocking = true;
+  const before = game.cpuHP;
+  for (let i = 0; i < 30; i++) { game.cpuBlocking = true; step(1); }
+  check(before - game.cpuHP >= 15, 'arena-fighter: a block only soaks part of a super strike', String(before - game.cpuHP));
+  check(game.rage <= 100, 'arena-fighter: the meter never exceeds 100');
+}
+
 finish('extras');

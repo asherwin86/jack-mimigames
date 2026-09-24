@@ -34,13 +34,14 @@ export default class PlateSpinner extends Game {
 
     this.activeCount = 0;
     this.lost = 0;
+    this.saveStreak = 0;   // every sixth save in a row sends a calming pulse through every plate
     this.burst = new Burst(this.scene, 90, 0.18);
     this.activateNext(); this.activateNext(); this.activateNext();
     this.nextActivate = ACTIVATE_EVERY;
 
     this.camera.position.set(0, 9, 10);
     this.camera.lookAt(0, 2, 0);
-    this.hud.hint('Click a wobbling plate before it tips over · new pedestals join over time');
+    this.hud.hint('Click a wobbling plate before it tips over · new pedestals join over time · six saves in a row calm every plate');
   }
 
   activateNext() {
@@ -122,6 +123,7 @@ export default class PlateSpinner extends Game {
     this.hud.stat('Survived', `${this.time.toFixed(1)}s`);
     this.hud.stat('Spinning', this.slots.filter((s) => s.active && !s.falling).length);
     this.hud.stat('Dropped', this.lost, this.lost >= LOSS_LIMIT - 1);
+    this.hud.stat('Saves', this.saveStreak);
 
     if (this.lost >= LOSS_LIMIT) return this.finish();
   }
@@ -131,6 +133,12 @@ export default class PlateSpinner extends Game {
     slot.spin = 8;
     this.audio.blip(4);
     this.burst.burst(slot.plate.position, PALETTE.cyan, 8, 4);
+    if (++this.saveStreak % 6 === 0) {
+      for (const o of this.slots) if (o.active && !o.falling) o.wobble = Math.min(o.wobble, 0.3);
+      this.hud.toast('CALM', 800);
+      this.audio.good();
+      this.burst.burst(new slot.plate.position.constructor(0, 3, 0), PALETTE.lime, 24, 9);
+    }
   }
 
   drop(slot) {
@@ -138,6 +146,7 @@ export default class PlateSpinner extends Game {
     slot.falling = true;
     slot.fallVel = 0;
     this.lost++;
+    this.saveStreak = 0;
     this.burst.burst(slot.plate.position, PALETTE.red, 14, 6);
     this.audio.bad();
   }

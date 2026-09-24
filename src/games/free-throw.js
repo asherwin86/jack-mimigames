@@ -32,8 +32,9 @@ export default class FreeThrow extends Game {
     this.made = 0;
     this.attempts = 0;
     this.timeLeft = 45;
+    this.streak = 0;       // two makes in a row and the next ball is a gold "money ball": double points, +5 s
     this.newSpot();
-    this.hud.hint('Hold click and release at the right power to sink the shot');
+    this.hud.hint('Hold click and release at the right power to sink the shot · two makes in a row and the next ball is a gold money ball');
   }
 
   newSpot() {
@@ -44,6 +45,11 @@ export default class FreeThrow extends Game {
     this.points = Math.round(dist / 1.5) + 2;
     this.ballMesh.position.copy(this.spot);
     this.ballMesh.visible = true;
+    const money = this.streak >= 2;
+    this.ballMesh.material.color.set(money ? 0xffe066 : PALETTE.amber);
+    this.ballMesh.material.emissive.set(money ? 0xffe066 : PALETTE.amber);
+    this.ballMesh.material.emissiveIntensity = money ? 1 : 0.2;
+    if (money) this.hud.toast('MONEY BALL', 800);
     // High and well back of the shooting spot: close in, a low camera can't
     // pitch down far enough to keep both the ball and the hoop in frame.
     this.camera.position.set(this.spot.x * 0.6, 6, this.spot.z + 7);
@@ -85,6 +91,7 @@ export default class FreeThrow extends Game {
 
     this.hud.stat('Score', this.score);
     this.hud.stat('Made', `${this.made}/${this.attempts}`);
+    this.hud.stat('Streak', this.streak);
     this.hud.stat('Power', this.charging ? `${Math.round(this.power * 100)}%` : '—');
     this.hud.stat('Time', Math.ceil(Math.max(0, this.timeLeft)));
   }
@@ -99,9 +106,10 @@ export default class FreeThrow extends Game {
       Math.sin(ANGLE) * speed,
       dir.z * Math.cos(ANGLE) * speed,
     );
-    const s = ball(0.32, glow(PALETTE.amber, { emissiveIntensity: 0.2 }));
+    const money = this.streak >= 2;
+    const s = ball(0.32, glow(money ? 0xffe066 : PALETTE.amber, { emissiveIntensity: money ? 1 : 0.2 }));
     s.position.copy(this.spot);
-    s.userData = { vel };
+    s.userData = { vel, money };
     this.shots.push(this.add(s));
     this.ballMesh.visible = false;
     this.audio.tone([500, 700], 0.08, { type: 'triangle', gain: 0.1 });
@@ -110,15 +118,19 @@ export default class FreeThrow extends Game {
 
   make(s, i) {
     this.made++;
-    this.score += this.points;
-    this.burst.burst(HOOP, PALETTE.amber, 22, 8);
+    const money = s.userData.money;
+    const pts = this.points * (money ? 2 : 1);
+    this.score += pts;
+    if (money) { this.timeLeft += 5; this.streak = 0; } else this.streak++;
+    this.burst.burst(HOOP, money ? 0xffe066 : PALETTE.amber, money ? 34 : 22, 8);
     this.audio.good();
-    this.hud.toast(`+${this.points}`, 700);
+    this.hud.toast(money ? `MONEY BALL +${pts} · +5 s` : `+${pts}`, 900);
     this.removeShot(i);
     if (this.timeLeft > 0) this.newSpot();
   }
 
   miss(s, i) {
+    this.streak = 0;
     this.burst.burst(s.position, 0x777777, 8, 4);
     this.audio.bad();
     this.removeShot(i);

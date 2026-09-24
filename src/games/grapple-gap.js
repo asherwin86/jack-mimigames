@@ -24,7 +24,10 @@ export default class GrappleGap extends Game {
     for (let i = 0; i < GAPS; i++) {
       const gap = clamp(5 + i * 0.16, 5, 9);
       const midX = x + gap / 2;
-      const a = this.add(ball(0.4, glow(PALETTE.amber, { emissiveIntensity: 0.6 })));
+      // Every fifth anchor is a white slingshot: it flings you much harder.
+      const sling = i % 5 === 4;
+      const a = this.add(ball(sling ? 0.55 : 0.4, glow(sling ? PALETTE.white : PALETTE.amber, { emissiveIntensity: sling ? 1 : 0.6 })));
+      a.userData.sling = sling;
       a.position.set(midX, GROUND_Y + rand(2, 3.4), 0);
       this.anchors.push(a);
       x += gap;
@@ -39,10 +42,13 @@ export default class GrappleGap extends Game {
     this.grounded = true;
     this.grapple = null;
     this.bestX = this.player.position.x;
+    this.net = 1;              // a safety net: fall once and you are put back on the last platform
+    this.platformsPassed = 0;
+    this.lastPlatform = this.platforms[0];
 
     this.burst = new Burst(this.scene, 90, 0.2);
     this.camera.position.set(this.player.position.x, 5, 9);
-    this.hud.hint('A / D to move · Space near a glowing anchor to grapple across the gap');
+    this.hud.hint('A / D to move · Space near a glowing anchor to grapple across the gap · white anchors sling you far · a safety net catches one fall');
   }
 
   makePlatform(x0, len) {
@@ -86,8 +92,10 @@ export default class GrappleGap extends Game {
       const d = to.length();
       if (d < 0.35) {
         this.grapple.dir = this.grapple.dir || to.clone().normalize();
-        this.vel.copy(this.grapple.dir).multiplyScalar(BOOST_SPEED);
-        this.vel.y = Math.max(this.vel.y, 2);
+        const sling = this.grapple.anchor.userData.sling;
+        this.vel.copy(this.grapple.dir).multiplyScalar(BOOST_SPEED * (sling ? 1.8 : 1));
+        this.vel.y = Math.max(this.vel.y, sling ? 5 : 2);
+        if (sling) { this.hud.toast('SLINGSHOT', 700); this.audio.good(); }
         this.grapple = null;
       } else {
         to.normalize();
@@ -103,13 +111,35 @@ export default class GrappleGap extends Game {
         this.player.position.y = GROUND_Y;
         this.vel.y = 0;
         this.grounded = true;
+        const here = this.platforms.find((p) => this.player.position.x >= p.userData.x0 && this.player.position.x <= p.userData.x1);
+        if (here && here !== this.lastPlatform && this.platforms.indexOf(here) > this.platforms.indexOf(this.lastPlatform)) {
+          this.lastPlatform = here;
+          this.platformsPassed++;
+          if (this.platformsPassed % 6 === 0 && this.net < 2) {
+            this.net++;
+            this.hud.toast('SAFETY NET RESTORED', 900);
+          }
+        }
       } else {
         this.grounded = false;
       }
     }
 
     this.bestX = Math.max(this.bestX, this.player.position.x);
-    if (this.player.position.y < -10) return this.fall();
+    if (this.player.position.y < -10) {
+      if (this.net > 0) {   // the net catches you: back onto the platform you last stood on
+        this.net--;
+        const p = this.lastPlatform.userData;
+        this.player.position.set(p.x0 + Math.min(1.5, p.len / 2), GROUND_Y, 0);
+        this.vel.set(0, 0, 0);
+        this.grapple = null;
+        this.grounded = true;
+        this.hud.toast('NET SAVED YOU', 900);
+        this.audio.bad();
+      } else {
+        return this.fall();
+      }
+    }
     if (this.player.position.x >= this.finishX) return this.win();
 
     this.burst.update(dt);
@@ -117,6 +147,7 @@ export default class GrappleGap extends Game {
     this.camera.lookAt(this.player.position.x, this.player.position.y, 0);
 
     this.hud.stat('Distance', `${Math.floor(this.bestX)} m`);
+    this.hud.stat('Net', '▮'.repeat(this.net) || '—', this.net === 0);
     this.hud.stat('Status', this.grapple ? 'GRAPPLING' : this.grounded ? 'on ground' : 'airborne');
   }
 

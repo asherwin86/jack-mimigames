@@ -1,6 +1,6 @@
 import { Game } from '../engine/Game.js';
 import {
-  box, ground, lights, sky, glow, Burst, clamp, damp, rand, pick, shuffle, overlaps,
+  box, ball, ground, lights, sky, glow, Burst, clamp, damp, rand, pick, shuffle, overlaps,
   PALETTE, COLORS,
 } from '../engine/utils.js';
 
@@ -42,6 +42,18 @@ export default class HurdleRunner extends Game {
     this.pool = [...this.obstacles];
     this.live = [];
 
+    // Coins: some float at head height (grab them on the ground), some high up (you have to jump). +10 m each.
+    this.coinPool = [];
+    for (let i = 0; i < 10; i++) {
+      const c = ball(0.42, glow(PALETTE.amber, { emissiveIntensity: 1 }), { cast: false });
+      c.scale.set(1, 1, 0.35);
+      c.visible = false;
+      c.position.z = 999;
+      this.coinPool.push(this.add(c));
+    }
+    this.coinLive = [];
+    this.bonus = 0;
+
     this.burst = new Burst(this.scene, 70, 0.2);
     this.speed = 20;
     this.distance = 0;
@@ -49,7 +61,7 @@ export default class HurdleRunner extends Game {
 
     this.camera.position.set(0, 4, 8);
     this.camera.lookAt(0, 1.4, -10);
-    this.hud.hint('A / D to change lane · Space to jump hurdles · S to duck under bars');
+    this.hud.hint('A / D to change lane · Space to jump hurdles · S to duck under bars · grab coins (+10 m) — the high ones need a jump');
   }
 
   spawnRow() {
@@ -70,6 +82,16 @@ export default class HurdleRunner extends Game {
       o.userData = { bar: isBar };
       o.visible = true;
       this.live.push(o);
+    }
+    // Sometimes a coin in a lane with nothing in it.
+    if (Math.random() < 0.4) {
+      const c = this.coinPool.pop();
+      if (c) {
+        c.userData = { high: Math.random() < 0.5 };
+        c.position.set(LANES[lanes[2]], c.userData.high ? 2.4 : 1.0, SPAWN_Z - 4);
+        c.visible = true;
+        this.coinLive.push(c);
+      }
     }
   }
 
@@ -126,11 +148,30 @@ export default class HurdleRunner extends Game {
       }
     }
 
+    for (let i = this.coinLive.length - 1; i >= 0; i--) {
+      const c = this.coinLive[i];
+      c.position.z += dz;
+      c.rotation.y += dt * 5;
+      const got = Math.abs(c.position.z - this.player.position.z) < 1.3
+        && Math.abs(c.position.x - this.player.position.x) < 1.1
+        && Math.abs(c.position.y - this.player.position.y) < 1.15;
+      if (got) {
+        this.bonus += 10;
+        this.audio.pickup();
+        this.burst.burst(c.position, PALETTE.amber, 8, 5);
+      }
+      if (got || c.position.z > 12) {
+        c.visible = false;
+        this.coinLive.splice(i, 1);
+        this.coinPool.push(c);
+      }
+    }
+
     this.burst.update(dt);
     this.camera.position.x = damp(this.camera.position.x, this.player.position.x * 0.4, 5, dt);
     this.camera.lookAt(this.player.position.x * 0.4, 1.4, -10);
 
-    this.hud.stat('Distance', `${Math.floor(this.distance)} m`);
+    this.hud.stat('Distance', `${Math.floor(this.distance + this.bonus)} m`);
     this.hud.stat('Speed', `${Math.round(this.speed * 3.6)} kph`);
   }
 
@@ -140,6 +181,7 @@ export default class HurdleRunner extends Game {
     this.player.visible = false;
     this.audio.boom();
     this.audio.lose();
-    this.end(Math.floor(this.distance), `You covered ${Math.floor(this.distance)} metres.`);
+    const total = Math.floor(this.distance + this.bonus);
+    this.end(total, `You covered ${total} metres.`);
   }
 }

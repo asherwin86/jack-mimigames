@@ -10,6 +10,9 @@ const MIN_SEP = 1.3;   // fighters can close to punching range, but not through 
 const RECOVER = 0.15;   // seconds of "cool down" after a swing lands, before another can start
 const PUNCH = { name: 'punch', windup: 0.1, reach: 0.9, arm: 0.55, dmg: 6, knock: 3, cd: 0.35 };
 const KICK = { name: 'kick', windup: 0.22, reach: 1.15, arm: 0.85, dmg: 12, knock: 6, cd: 0.7 };
+// Landing hits fills a meter; when it is full, L (or Y on a pad) throws a super strike that mostly punches through a block.
+const SUPER = { name: 'super', windup: 0.28, reach: 1.5, arm: 1.1, dmg: 30, knock: 9, cd: 1.0, pierce: 0.6 };
+const RAGE_MAX = 100;
 
 /** A small blocky fighter: torso, head, a lunging arm, simple legs. */
 function fighter(color) {
@@ -61,11 +64,12 @@ export default class ArenaFighter extends Game {
     this.playerBlocking = false;
     this.cpuBlocking = false;
     this.timeLeft = 60;
+    this.rage = 0;
     this.burst = new Burst(this.scene, 90, 0.2);
 
     this.camera.position.set(0, 6, 9);
     this.camera.lookAt(0, 1, 0);
-    this.hud.hint('WASD to move · click or J to punch · K to kick · hold Shift to block');
+    this.hud.hint('WASD to move · click or J to punch · K to kick · hold Shift to block · land hits to fill the meter, then press L for a super strike');
   }
 
   update(dt) {
@@ -87,6 +91,12 @@ export default class ArenaFighter extends Game {
       } else if ((this.input.hit('KeyK') || this.input.gpHit(2)) && this.kickCd <= 0) {
         this.playerAttack = { kind: KICK, t: 0, dealt: false };
         this.kickCd = KICK.cd;
+      } else if ((this.input.hit('KeyL') || this.input.gpHit(3)) && this.rage >= RAGE_MAX) {
+        this.playerAttack = { kind: SUPER, t: 0, dealt: false };
+        this.rage = 0;
+        this.punchCd = this.kickCd = SUPER.cd;
+        this.hud.toast('SUPER STRIKE', 700);
+        this.audio.tone([200, 900], 0.25, { type: 'sawtooth', gain: 0.12 });
       }
     }
 
@@ -118,6 +128,7 @@ export default class ArenaFighter extends Game {
     this.hud.stat('You', Math.max(0, Math.round(this.playerHP)), this.playerHP < 30);
     this.hud.stat('Rival', Math.max(0, Math.round(this.cpuHP)), this.cpuHP < 30);
     this.hud.stat('Time', Math.ceil(Math.max(0, this.timeLeft)));
+    this.hud.stat('Super', this.rage >= RAGE_MAX ? 'READY (L)' : `${Math.round(this.rage)}%`);
 
     if (this.playerHP <= 0) return this.finish(false);
     if (this.cpuHP <= 0) return this.finish(true);
@@ -183,8 +194,10 @@ export default class ArenaFighter extends Game {
       const dist = attacker.position.distanceTo(defender.position);
       if (dist <= kind.reach + 1.1) {
         const blocked = isPlayer ? this.cpuBlocking : this.playerBlocking;
-        const dmg = kind.dmg * (blocked ? 0.25 : 1);
+        const dmg = kind.dmg * (blocked ? (kind.pierce ?? 0.25) : 1);
         if (isPlayer) { this.cpuHP -= dmg; this.dealt += dmg; } else { this.playerHP -= dmg; }
+        // Hits you land (blocked or not) charge the meter; taking one charges it a little too.
+        this.rage = Math.min(RAGE_MAX, this.rage + (isPlayer ? (blocked ? 4 : kind.dmg * 1.6) : kind.dmg * 0.5));
         if (!blocked) {
           const push = defender.position.clone().sub(attacker.position).setY(0).normalize()
             .multiplyScalar(kind.knock);

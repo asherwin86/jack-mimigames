@@ -39,7 +39,7 @@ export default class SkeetRange extends Game {
 
     this.camera.position.set(0, 4, 14);
     this.camera.lookAt(0, 5, -14);
-    this.hud.hint(`Click a clay while it is in the air · ${MISS_LIMIT} misses ends the round`);
+    this.hud.hint(`Click a clay while it is in the air · ${MISS_LIMIT} misses ends the round · gold clays count 3 and forgive 2 misses · never shoot the red decoys`);
   }
 
   launchPair() {
@@ -51,9 +51,16 @@ export default class SkeetRange extends Game {
       d.position.set(l.x, 1, -18);
       d.rotation.set(Math.PI / 2, 0, 0);
       const speed = rand(14, 19);
+      const roll = Math.random();
+      const kind = roll < 0.08 ? 'gold' : roll < 0.2 && this.hits >= 3 ? 'decoy' : 'clay';
+      const col = kind === 'gold' ? 0xffe066 : kind === 'decoy' ? PALETTE.red : PALETTE.amber;
+      d.material.color.set(col);
+      d.material.emissive.set(col);
+      d.material.emissiveIntensity = kind === 'clay' ? 0.35 : 0.9;
       d.userData = {
         vel: new THREE.Vector3(l.dir * speed * 0.6, rand(9, 12), speed * 0.55),
         hit: false,
+        kind,
       };
       d.visible = true;
       this.live.push(d);
@@ -74,8 +81,10 @@ export default class SkeetRange extends Game {
       d.position.addScaledVector(u.vel, dt);
       d.rotation.z += dt * 10;
       if (d.position.y <= 0.1) {
-        this.misses++;
-        this.audio.tone([180, 90], 0.12, { type: 'sawtooth', gain: 0.08 });
+        if (u.kind !== 'decoy') {   // letting a decoy drop is exactly right
+          this.misses++;
+          this.audio.tone([180, 90], 0.12, { type: 'sawtooth', gain: 0.08 });
+        }
         this.recycle(d, i);
       }
     }
@@ -99,6 +108,21 @@ export default class SkeetRange extends Game {
   shoot(d) {
     const i = this.live.indexOf(d);
     if (i < 0) return;
+    const kind = d.userData.kind;
+    if (kind === 'decoy') {
+      this.misses += 2;
+      this.burst.burst(d.position, PALETTE.red, 14, 6);
+      this.audio.boom();
+      this.hud.toast('DECOY · +2 misses', 800);
+      this.recycle(d, i);
+      return;
+    }
+    if (kind === 'gold') {
+      this.hits += 2;    // (plus the 1 below)
+      this.misses = Math.max(0, this.misses - 2);
+      this.hud.toast('GOLD · +3', 800);
+      this.audio.win();
+    }
     this.hits++;
     this.burst.burst(d.position, pick([PALETTE.amber, PALETTE.white]), 16, 7);
     this.audio.thud();
