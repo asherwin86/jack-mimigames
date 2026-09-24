@@ -48,12 +48,15 @@ export default class BrickWall extends Game {
     this.score = 0;
     this.lives = 3;
     this.speed = 17;
+    this.caps = [];        // falling capsules: wide paddle / slow ball / extra life
+    this.wideT = 0;
+    this.slowT = 0;
     this.showCursor = true;   // a gamepad has no cursor of its own — see Engine._updateCursor()
     this.launch();
 
     this.camera.position.set(0, 1.5, 24);
     this.camera.lookAt(0, 1, 0);
-    this.hud.hint('Move the mouse to slide the paddle · clear every brick');
+    this.hud.hint('Move the mouse to slide the paddle · clear every brick · catch the falling capsules: wide paddle, slow ball, extra life');
   }
 
   launch() {
@@ -62,9 +65,46 @@ export default class BrickWall extends Game {
     this.stuck = 0.7;
   }
 
+  spawnCapsule(at) {
+    const r = Math.random();
+    const kind = r < 0.45 ? 'wide' : r < 0.85 ? 'slow' : 'life';
+    const col = kind === 'wide' ? PALETTE.lime : kind === 'slow' ? PALETTE.cyan : PALETTE.pink;
+    const c = box(1.3, 0.6, 0.6, glow(col, { emissiveIntensity: 0.9 }), { cast: false });
+    c.position.set(at.x, at.y, 0.2);
+    c.userData = { kind };
+    this.caps.push(this.add(c));
+  }
+
+  catchCapsule(kind) {
+    if (kind === 'wide') { this.wideT = 12; this.hud.toast('WIDE PADDLE', 800); }
+    else if (kind === 'slow') { this.slowT = 9; this.hud.toast('SLOW BALL', 800); }
+    else { this.lives = Math.min(5, this.lives + 1); this.hud.toast('EXTRA LIFE', 800); }
+    this.audio.good();
+  }
+
   update(dt) {
-    const tx = clamp(this.input.activePointer().x * (W + 2), -W + 2, W - 2);
+    this.wideT = Math.max(0, this.wideT - dt);
+    this.slowT = Math.max(0, this.slowT - dt);
+    this.widen = this.wideT > 0 ? 1.6 : 1;
+    this.paddle.scale.x = damp(this.paddle.scale.x, this.widen, 12, dt);
+    const half = W - 2 - (this.widen - 1) * 1.6;
+    const tx = clamp(this.input.activePointer().x * (W + 2), -half, half);
     this.paddle.position.x = damp(this.paddle.position.x, tx, 18, dt);
+
+    for (let i = this.caps.length - 1; i >= 0; i--) {
+      const c = this.caps[i];
+      c.position.y -= 6 * dt;
+      c.rotation.y += dt * 3;
+      const caught = c.position.y < BOTTOM + 0.7 && c.position.y > BOTTOM - 0.7
+        && Math.abs(c.position.x - this.paddle.position.x) < 2.4 * this.widen + 0.6;
+      if (caught) this.catchCapsule(c.userData.kind);
+      if (caught || c.position.y < BOTTOM - 3) {
+        this.scene.remove(c);
+        c.geometry.dispose();
+        c.material.dispose();
+        this.caps.splice(i, 1);
+      }
+    }
 
     if (this.stuck > 0) {
       this.stuck -= dt;
@@ -74,7 +114,7 @@ export default class BrickWall extends Game {
       // Small substeps stop the ball tunnelling through bricks when fast.
       const steps = 3;
       for (let i = 0; i < steps; i++) {
-        this.ball.position.addScaledVector(this.vel, dt / steps);
+        this.ball.position.addScaledVector(this.vel, (dt * (this.slowT > 0 ? 0.7 : 1)) / steps);
         this.collide();
         if (this.finished) return;
       }
@@ -89,6 +129,8 @@ export default class BrickWall extends Game {
     this.hud.stat('Score', this.score);
     this.hud.stat('Bricks', this.bricks.length);
     this.hud.stat('Lives', '●'.repeat(this.lives) || '—', this.lives === 1);
+    if (this.wideT > 0) this.hud.stat('Wide', `${Math.ceil(this.wideT)}s`); else this.hud.removeStat('Wide');
+    if (this.slowT > 0) this.hud.stat('Slow', `${Math.ceil(this.slowT)}s`); else this.hud.removeStat('Slow');
   }
 
   collide() {
@@ -100,7 +142,7 @@ export default class BrickWall extends Game {
 
     // Paddle: contact point sets the outgoing angle.
     if (this.vel.y < 0 && p.y < BOTTOM + 0.9 && p.y > BOTTOM - 0.9) {
-      const off = (p.x - this.paddle.position.x) / 2.4;
+      const off = (p.x - this.paddle.position.x) / (2.4 * this.widen);
       if (Math.abs(off) <= 1.15) {
         p.y = BOTTOM + 0.9;
         const angle = off * 1.05;
@@ -143,6 +185,7 @@ export default class BrickWall extends Game {
       return;
     }
     this.score += b.userData.points;
+    if (Math.random() < 0.16) this.spawnCapsule(b.position);   // some bricks drop a capsule
     this.audio.blip(clamp(ROWS * 2 - i % 10, 0, 18));
     this.scene.remove(b);
     b.geometry.dispose();

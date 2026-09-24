@@ -37,6 +37,22 @@ export default class MazeEscape extends Game {
     this.beacon = this.add(box(0.5, 8, 0.5, glow(PALETTE.lime, { transparent: true, opacity: 0.35 }), { cast: false }));
     this.beacon.position.set(ex, 4, ez);
 
+    // Three time shards in far-flung rooms: each one takes 4 seconds off your clock.
+    this.shards = [];
+    const rooms = [];
+    for (let z = 1; z < GRID; z += 2) {
+      for (let x = 1; x < GRID; x += 2) {
+        if ((x === 1 && z === 1) || (x === this.exitCell.x && z === this.exitCell.z)) continue;
+        if (Math.hypot(x - 1, z - 1) < 6) continue;   // not right beside the start
+        rooms.push([x, z]);
+      }
+    }
+    shuffle(rooms).slice(0, 3).forEach(([x, z]) => {
+      const m = new THREE.Mesh(new THREE.OctahedronGeometry(0.6), glow(PALETTE.cyan, { emissiveIntensity: 1 }));
+      m.position.set(...this.world(x, z, 1.4));
+      this.shards.push(this.add(m));
+    });
+
     const [sx, , sz] = this.world(1, 1, 0);
     this.pos = new THREE.Vector3(sx, EYE, sz);
     this.yaw = -Math.PI / 4;
@@ -49,7 +65,7 @@ export default class MazeEscape extends Game {
     this.camera.updateProjectionMatrix();
 
     this.hud.panel('<div style="position:absolute;left:50%;top:50%;width:14px;height:14px;margin:-7px 0 0 -7px;border:2px solid rgba(255,255,255,.55);border-radius:50%"></div>');
-    this.hud.hint('Click to capture the mouse · WASD to walk · Q / E to turn without the mouse');
+    this.hud.hint('Click to capture the mouse · WASD to walk · Q / E to turn without the mouse · cyan shards take 4 seconds off');
   }
 
   /** Grid square -> world centre. */
@@ -97,6 +113,21 @@ export default class MazeEscape extends Game {
 
     this.beacon.material.opacity = 0.25 + Math.sin(this.elapsed * 3) * 0.12;
     this.exit.material.emissiveIntensity = 0.7 + Math.sin(this.elapsed * 5) * 0.3;
+
+    for (let i = this.shards.length - 1; i >= 0; i--) {
+      const m = this.shards[i];
+      m.rotation.y += dt * 2.5;
+      m.position.y = 1.4 + Math.sin(this.elapsed * 3 + i) * 0.2;
+      if (Math.hypot(this.pos.x - m.position.x, this.pos.z - m.position.z) < 1.6) {
+        this.elapsed = Math.max(0, this.elapsed - 4);
+        this.audio.pickup();
+        this.hud.toast('−4s', 800);
+        this.scene.remove(m);
+        m.geometry.dispose();
+        m.material.dispose();
+        this.shards.splice(i, 1);
+      }
+    }
 
     const [ex, , ez] = this.world(this.exitCell.x, this.exitCell.z, 0);
     if (Math.hypot(this.pos.x - ex, this.pos.z - ez) < S * 0.5) return this.escape();

@@ -375,4 +375,144 @@ import { boot, check, finish } from './lib/game-harness.mjs';
   if (!b.result.ended) check(b.game.slowT === 0, 'tunnel-run: passing the gap without touching the orb does nothing');
 }
 
+// ---------- Beat Lanes: star notes ----------
+{
+  const { game, step, result } = await boot('beat-lanes');
+  game.noteCount = 23;
+  game.nextBeat = 0;
+  game.rng = () => 0.1;                     // always spawn one note (never a double: 0.1 < 0.16 would, so use two calls)
+  let calls = 0;
+  game.rng = () => (calls++ % 2 === 0 ? 0.1 : 0.9);   // density check passes, double-note check fails
+  step(1);
+  const star = game.notes.find((n) => n.userData.gold);
+  check(!!star, 'beat-lanes: every 24th note is a star');
+  check(game.notes.filter((n) => n.userData.gold).length === 1, 'beat-lanes: and only that one');
+  game.lives = 3;
+  star.position.z = 0;
+  game.strike(star.userData.lane);
+  check(game.lives === 4 && game.fever > 4, 'beat-lanes: hitting a star gives +1 life and 5 seconds of double points');
+  const before = game.score;
+  game.spawnNote(1); const n = game.notes[game.notes.length - 1]; n.position.z = 0;
+  game.strike(1);
+  const plain = game.score - before;
+  game.fever = 0;
+  const b2 = game.score;
+  game.spawnNote(2); const n2 = game.notes[game.notes.length - 1]; n2.position.z = 0;
+  game.strike(2);
+  check(plain >= 2 * (game.score - b2) - 1 && plain > game.score - b2, 'beat-lanes: notes are worth double while the star power lasts', `${plain} vs ${game.score - b2}`);
+  game.lives = 5;
+  game.strike(0); game.lives = 5;
+  game.spawnNote(3, true); const g2 = game.notes[game.notes.length - 1]; g2.position.z = 1.7;
+  game.combo = 7;
+  step(1);
+  check(game.lives === 5 && game.combo === 0 && !result.ended, 'beat-lanes: missing a star costs no life (just the combo)');
+  game.fever = 0; game.lives = 5;
+  const g3 = game.notes.find((x) => !x.userData.judged);
+  void g3;
+}
+
+// ---------- Colour Rush: gold rounds and life regen ----------
+{
+  const { game } = await boot('colour-rush');
+  game.round = 7; game.newRound();
+  check(game.round === 8 && game.golden === true && game.beacon.scale.x > 1.3, 'colour-rush: round 8 is a big gold round');
+  const padOf = () => game.pads.find((p) => p.userData.colour === game.target);
+  game.clock = game.limit;                    // full speed bonus for a like-for-like comparison
+  const s0 = game.score;
+  game.choose(padOf());
+  const goldGain = game.score - s0;
+  check(game.golden === false || game.round === 9, 'colour-rush: the round after is normal');
+  game.inverted = false; game.golden = false; game.clock = game.limit;
+  const s1 = game.score;
+  game.choose(padOf());
+  const plainGain = game.score - s1;
+  check(goldGain >= plainGain * 2.5, 'colour-rush: a gold round pays about triple', `${goldGain} vs ${plainGain}`);
+  game.lives = 2; game.streak = 14; game.inverted = false; game.golden = false;
+  game.choose(padOf());
+  check(game.lives === 3 && game.streak === 15, 'colour-rush: a 15 streak wins a life back');
+  game.lives = 3; game.streak = 29; game.inverted = false; game.golden = false;
+  game.choose(padOf());
+  check(game.lives === 3, 'colour-rush: never above 3 lives');
+}
+
+// ---------- Lava Floor: coolant ----------
+{
+  const { game, step } = await boot('lava-floor');
+  game.spawnCoolant();
+  check(game.coolants.length === 1, 'lava-floor: a coolant orb can spawn');
+  const orb = game.coolants[0];
+  const tile = game.tiles.find((t) => Math.abs(t.position.x - orb.position.x) < 0.01 && Math.abs(t.position.z - orb.position.z) < 0.01);
+  check(!!tile && tile.userData.state === 'solid', 'lava-floor: and it sits on a solid tile');
+  orb.position.copy(game.player.position);
+  const before = game.lavaY;
+  step(1);
+  check(game.lavaY < before - 1.5 && game.coolants.length === 0, 'lava-floor: grabbing it pushes the lava down about 1.8 m', `${before} -> ${game.lavaY}`);
+  game.spawnCoolant(); game.spawnCoolant(); game.spawnCoolant();
+  game.nextCoolant = 0;
+  step(1);
+  check(game.coolants.length <= 4, 'lava-floor: orbs do not pile up without limit');
+  const o2 = game.coolants[0];
+  o2.userData.left = 0.01;
+  o2.position.set(50, 1.9, 50);
+  step(2);
+  check(!game.coolants.includes(o2), 'lava-floor: an orb you ignore disappears');
+}
+
+// ---------- Maze Escape: time shards ----------
+{
+  const { game, step } = await boot('maze-escape');
+  check(game.shards.length === 3, 'maze-escape: three time shards');
+  const open = game.shards.every((m) => !game.solid(m.position.x, m.position.z));
+  check(open, 'maze-escape: every shard is in an open room, not inside a wall');
+  check(game.shards.every((m) => Math.hypot(m.position.x - game.pos.x, m.position.z - game.pos.z) > 10), 'maze-escape: none right at the start');
+  game.elapsed = 20;
+  const m = game.shards[0];
+  game.pos.set(m.position.x, game.pos.y, m.position.z);
+  step(1);
+  check(game.shards.length === 2 && game.elapsed > 16 && game.elapsed < 16.1, 'maze-escape: a shard takes 4 seconds off', String(game.elapsed));
+  game.elapsed = 2;
+  const m2 = game.shards[0];
+  game.pos.set(m2.position.x, game.pos.y, m2.position.z);
+  step(1);
+  check(game.elapsed >= 0 && game.elapsed < 0.1, 'maze-escape: the clock never goes below zero');
+  for (let seed = 1; seed <= 6; seed++) {
+    const b = await boot('maze-escape', seed);
+    if (!b.game.shards.every((s) => !b.game.solid(s.position.x, s.position.z))) check(false, `maze-escape: shard inside a wall (seed ${seed})`);
+  }
+}
+
+// ---------- Brick Wall: capsules ----------
+{
+  const { game, step } = await boot('brick-wall');
+  const drop = (kind) => {
+    const c = game.add(game.bricks[0].clone());
+    c.geometry = game.bricks[0].geometry.clone(); c.material = game.bricks[0].material.clone();
+    c.userData = { kind };
+    c.position.set(game.paddle.position.x, -8 + 0.2, 0.2);
+    game.caps.push(c);
+  };
+  drop('wide'); step(1);
+  check(game.wideT > 11 && game.caps.length === 0, 'brick-wall: catching a wide capsule widens the paddle for 12 s');
+  step(30);
+  check(game.paddle.scale.x > 1.3, 'brick-wall: ...and the paddle actually gets wider');
+  drop('slow'); step(1);
+  check(game.slowT > 8, 'brick-wall: a slow capsule slows the ball for 9 s');
+  game.lives = 2; drop('life'); step(1);
+  check(game.lives === 3, 'brick-wall: a life capsule gives a life');
+  game.lives = 5; drop('life'); step(1);
+  check(game.lives === 5, 'brick-wall: never more than 5 lives');
+  // a capsule that falls past the paddle is lost
+  const c = game.add(game.bricks[0].clone()); c.geometry = game.bricks[0].geometry.clone(); c.material = game.bricks[0].material.clone();
+  c.userData = { kind: 'life' }; c.position.set(game.paddle.position.x + 9, -7, 0.2); game.caps.push(c);
+  game.lives = 2;
+  step(60);
+  check(game.lives === 2 && !game.caps.includes(c), 'brick-wall: a capsule you miss is gone and does nothing');
+  // some bricks drop capsules when broken
+  const b = await boot('brick-wall', 3);
+  let dropped = 0;
+  for (let i = 0; i < 40 && b.game.bricks.length; i++) { const br = b.game.bricks[0]; br.userData.hp = 1; b.game.hitBrick(br, 0); }
+  dropped = b.game.caps.length;
+  check(dropped > 0 && dropped < 40, 'brick-wall: some (not all) broken bricks drop capsules', `${dropped} of 40`);
+}
+
 finish('extras');

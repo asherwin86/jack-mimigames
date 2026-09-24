@@ -2,6 +2,10 @@
  *  menu, under the trailer. Keep entries brief; this isn't a commit log. */
 export const CHANGELOG = [
   {
+    title: 'New in Beat Lanes, Colour Rush, Lava Floor, Maze Escape and Brick Wall',
+    detail: 'Beat Lanes: white star notes give a life and 5 seconds of double points. Colour Rush: big gold rounds pay triple, and every 15 streak wins a life back. Lava Floor: blue coolant orbs push the lava down. Maze Escape: cyan shards take 4 seconds off. Brick Wall: bricks drop capsules — wide paddle, slow ball or an extra life.',
+  },
+  {
     title: 'New in Paddle Rally, Platform Hop, Sumo Arena and Tunnel Run',
     detail: 'Paddle Rally: a glowing target on the far wall — bounce the ball off it for bonus points, and every third buys back a life. Platform Hop: cyan springs that fire you two floors up. Sumo Arena: a huge boss rolls in every fifth wave (worth 3 shoves). Tunnel Run: fly through the blue orbs to slow the tunnel down.',
   },

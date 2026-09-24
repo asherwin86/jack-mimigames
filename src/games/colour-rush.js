@@ -30,6 +30,7 @@ export default class ColourRush extends Game {
     this.bestStreak = 0;
     this.lives = 3;
     this.inverted = false;
+    this.golden = false;   // every eighth round is a big, slower gold one worth triple
     this.limit = 2.2;
     this.clock = 0;
     this.round = 0;
@@ -37,7 +38,7 @@ export default class ColourRush extends Game {
 
     this.camera.position.set(0, 11, 15);
     this.camera.lookAt(0, 2, 0);
-    this.hud.hint('Click the pad matching the beacon · when the beacon flashes white, click any pad that does NOT match');
+    this.hud.hint('Click the pad matching the beacon · when the beacon flashes white, click any pad that does NOT match · big gold beacons pay triple · every 15 streak wins a life back');
   }
 
   newRound() {
@@ -57,7 +58,11 @@ export default class ColourRush extends Game {
     this.beacon.material.emissive.set(this.inverted ? PALETTE.white : this.target);
     this.beaconTint = this.target;
 
-    this.limit = clamp(2.3 - this.round * 0.035, 0.85, 2.3);
+    this.golden = !this.inverted && this.round % 8 === 0;
+    this.beacon.scale.setScalar(this.golden ? 1.45 : 1);
+    if (this.golden) this.hud.toast('GOLD ROUND · ×3', 900);
+
+    this.limit = clamp(2.3 - this.round * 0.035, 0.85, 2.3) + (this.golden ? 0.5 : 0);
     this.clock = this.limit;
     this.audio.tone(this.inverted ? 300 : 520, 0.07, { type: 'sine', gain: 0.08 });
   }
@@ -66,7 +71,7 @@ export default class ColourRush extends Game {
     this.clock -= dt;
     if (this.clock <= 0) return this.wrong('Too slow.');
 
-    this.beacon.rotation.y += dt * (this.inverted ? 4 : 1.4);
+    this.beacon.rotation.y += dt * (this.inverted ? 4 : this.golden ? 3 : 1.4);
     this.beacon.rotation.x += dt * 0.6;
     this.beacon.position.y = 5.5 + Math.sin(this.time * 3) * 0.25;
     if (this.inverted) {
@@ -110,10 +115,14 @@ export default class ColourRush extends Game {
     this.streak++;
     this.bestStreak = Math.max(this.bestStreak, this.streak);
     const speedBonus = Math.round((this.clock / this.limit) * 60);
-    this.score += 40 + speedBonus + (this.inverted ? 40 : 0);
+    this.score += (40 + speedBonus + (this.inverted ? 40 : 0)) * (this.golden ? 3 : 1);
     this.burst.burst(pad.position, pad.userData.colour, 10, 5);
     this.audio.blip(clamp(this.streak, 0, 18));
-    if (this.streak % 10 === 0) { this.hud.toast(`${this.streak} STREAK`); this.audio.good(); }
+    if (this.streak % 15 === 0 && this.lives < 3) {
+      this.lives++;
+      this.hud.toast(`${this.streak} STREAK · +1 LIFE`, 900);
+      this.audio.win();
+    } else if (this.streak % 10 === 0) { this.hud.toast(`${this.streak} STREAK`); this.audio.good(); }
     this.newRound();
   }
 

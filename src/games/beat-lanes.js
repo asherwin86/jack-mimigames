@@ -44,20 +44,23 @@ export default class BeatLanes extends Game {
     this.hits = 0;
     this.missed = 0;
     this.lives = 5;
+    this.noteCount = 0;
+    this.fever = 0;        // seconds of double points left (set by a star note)
 
     this.camera.position.set(0, 6.5, 12);
     this.camera.lookAt(0, 0, -14);
-    this.hud.hint('D F J K (or arrow keys) as the notes cross the pads');
+    this.hud.hint('D F J K (or arrow keys) as the notes cross the pads · white star notes: +1 life and 5 seconds of double points (missing one is free)');
   }
 
-  spawnNote(lane) {
-    const n = box(SPACING - 0.5, 0.5, 1.2, glow(COLORS[lane], { emissiveIntensity: 0.8 }), { cast: false });
+  spawnNote(lane, gold = false) {
+    const n = box(SPACING - 0.5, 0.5, 1.2, glow(gold ? 0xffffff : COLORS[lane], { emissiveIntensity: gold ? 1.4 : 0.8 }), { cast: false });
     n.position.set(this.lanes[lane].x, 0.4, HIT_Z - TRAVEL);
-    n.userData = { lane, judged: false };
+    n.userData = { lane, judged: false, gold };
     this.notes.push(this.add(n));
   }
 
   update(dt) {
+    this.fever = Math.max(0, this.fever - dt);
     // Chart generation: a steady pulse with occasional doubles, seeded so the
     // same song plays every run.
     this.nextBeat -= dt;
@@ -65,7 +68,8 @@ export default class BeatLanes extends Game {
       this.beatIndex++;
       const density = clamp(0.55 + this.time * 0.006, 0.55, 0.95);
       if (this.rng() < density) {
-        this.spawnNote(Math.floor(this.rng() * LANES));
+        // Every 24th note is a star (counted, not random, so the chart stays the same every run).
+        this.spawnNote(Math.floor(this.rng() * LANES), ++this.noteCount % 24 === 0);
         if (this.rng() < 0.16) this.spawnNote(Math.floor(this.rng() * LANES));
       }
       this.nextBeat += this.beat / (this.beatIndex % 8 === 0 ? 2 : 1);
@@ -78,7 +82,8 @@ export default class BeatLanes extends Game {
       n.position.z += this.speed * dt;
       if (!n.userData.judged && n.position.z > HIT_Z + 1.6) {
         n.userData.judged = true;
-        this.miss();
+        if (n.userData.gold) this.combo = 0;   // a missed star only breaks the combo
+        else this.miss();
         if (this.finished) return;
       }
       if (n.position.z > HIT_Z + 6) this.removeNote(i);
@@ -95,6 +100,7 @@ export default class BeatLanes extends Game {
     this.burst.update(dt);
     this.hud.stat('Score', this.score);
     this.hud.stat('Combo', this.combo);
+    if (this.fever > 0) this.hud.stat('Star ×2', `${Math.ceil(this.fever)}s`); else this.hud.removeStat('Star ×2');
     this.hud.stat('Lives', '●'.repeat(this.lives) || '—', this.lives <= 2);
   }
 
@@ -122,7 +128,13 @@ export default class BeatLanes extends Game {
     this.combo++;
     this.bestCombo = Math.max(this.bestCombo, this.combo);
 
-    const mult = 1 + Math.floor(this.combo / 10);
+    const mult = (1 + Math.floor(this.combo / 10)) * (this.fever > 0 ? 2 : 1);
+    if (n.userData.gold) {
+      this.lives = Math.min(5, this.lives + 1);
+      this.fever = 5;
+      this.hud.toast('STAR POWER', 900);
+      this.audio.win();
+    }
     if (bestDist < 0.7) {
       this.perfect++;
       this.score += 100 * mult;

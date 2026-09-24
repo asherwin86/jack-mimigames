@@ -38,9 +38,11 @@ export default class LavaFloor extends Game {
     this.grounded = true;
     this.burst = new Burst(this.scene, 100, 0.22);
     this.survived = 0;
+    this.coolants = [];    // blue orbs on the tiles: grab one and the lava drops back
+    this.nextCoolant = 7;
 
     this.camera.position.set(0, 18, 18);
-    this.hud.hint('WASD to run · Space to jump · tiles crumble a moment after you touch them');
+    this.hud.hint('WASD to run · Space to jump · tiles crumble a moment after you touch them · grab the blue coolant orbs to push the lava back down');
   }
 
   tileAt(x, z) {
@@ -52,8 +54,30 @@ export default class LavaFloor extends Game {
     return t;
   }
 
+  spawnCoolant() {
+    const solid = this.tiles.filter((t) => t.userData.state === 'solid');
+    if (!solid.length) return;
+    const t = solid[Math.floor(Math.random() * solid.length)];
+    const orb = new THREE.Mesh(new THREE.OctahedronGeometry(0.55), glow(0x6ec8ff, { emissiveIntensity: 1 }));
+    orb.position.set(t.position.x, 1.9, t.position.z);
+    orb.userData.left = 10;
+    this.coolants.push(this.add(orb));
+  }
+
+  takeCoolant(orb) {
+    this.lavaY -= 1.8;
+    this.burst.burst(orb.position, 0x6ec8ff, 16, 7);
+    this.audio.good();
+    this.hud.toast('COOLANT · lava −1.8 m', 800);
+  }
+
   update(dt) {
     this.survived += dt;
+    this.nextCoolant -= dt;
+    if (this.nextCoolant <= 0) {
+      if (this.coolants.length < 2) this.spawnCoolant();
+      this.nextCoolant = rand(8, 13);
+    }
     this.lavaY += dt * 0.09 + this.survived * dt * 0.014;
     this.lava.position.y = this.lavaY;
     this.lava.material.emissiveIntensity = 0.75 + Math.sin(this.time * 3) * 0.25;
@@ -118,6 +142,22 @@ export default class LavaFloor extends Game {
     p.z = clamp(p.z, -OFF - CELL, OFF + CELL);
     this.player.scale.y = damp(this.player.scale.y, this.grounded ? 1 : 1.2, 10, dt);
     this.burst.update(dt);
+
+    for (let i = this.coolants.length - 1; i >= 0; i--) {
+      const o = this.coolants[i];
+      o.userData.left -= dt;
+      o.rotation.y += dt * 2.6;
+      o.position.y = 1.9 + Math.sin(this.time * 3 + i) * 0.2;
+      o.visible = o.userData.left > 3 || Math.sin(this.time * 22) > 0;
+      const taken = o.position.distanceTo(p) < 1.6;
+      if (taken) this.takeCoolant(o);
+      if (taken || o.userData.left <= 0) {
+        this.scene.remove(o);
+        o.geometry.dispose();
+        o.material.dispose();
+        this.coolants.splice(i, 1);
+      }
+    }
 
     if (p.y < this.lavaY + 0.5) return this.burn();
 
