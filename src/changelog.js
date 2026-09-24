@@ -3,7 +3,7 @@
 export const CHANGELOG = [
   {
     title: 'New game: Kart Circuit',
-    detail: 'An original arcade kart racer — three rivals, boost pads, eight tracks, three cups, three difficulty levels, day/night, and keyboard, mouse, touch or gamepad controls. Game #31.',
+    detail: 'An original arcade kart racer — three rivals, boost pads, eight tracks, three cups, three difficulty levels, day/night, and keyboard, mouse, touch or gamepad controls. Game #31 — every race you win counts toward its best score.',
   },
   {
     title: 'PvP worlds with bots',

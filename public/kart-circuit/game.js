@@ -1772,6 +1772,10 @@ function finishRace(message) {
     syncPauseButton();
     statusText.textContent = message;
     playFinishSound(message.startsWith("You win"));
+    // Arcade hook: when this page is inside 100 Mimi Games, tell it how the race ended (no effect on its own).
+    if (window.parent !== window) {
+        window.parent.postMessage({ source: "kart-circuit", type: "race-finished", won: message.startsWith("You win"), seconds: raceElapsed }, "*");
+    }
     overlay.classList.remove("hidden");
     const cup = getCupConfig();
     if (cup) {

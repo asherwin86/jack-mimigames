@@ -170,7 +170,7 @@ export const CATALOG = [
     id: 'kart-circuit', n: 31, name: 'Kart Circuit', tags: ['racing', 'arcade'],
     blurb: 'An original arcade kart racer: three rivals, boost pads, eight tracks and three cups.',
     controls: 'Arrows / WASD, mouse, touch or gamepad · Space boosts · P pauses · Esc for the menu',
-    unit: 'race', sandbox: true,
+    unit: 'wins',
     // It brings its own start screen (difficulty, cups, tracks), so skip the generic one — see main.js.
     customStart: true,
   },

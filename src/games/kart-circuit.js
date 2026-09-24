@@ -1,11 +1,22 @@
 import * as THREE from 'three';
 import { Game } from '../engine/Game.js';
+import { Scores } from '../engine/Storage.js';
+
+const WINS_KEY = 'mg.kart-circuit.wins';
+
+function readWins() {
+  try { return Number(localStorage.getItem(WINS_KEY)) || 0; } catch { return 0; }
+}
+
 
 /**
  * Kart Circuit — an original arcade kart racer (canvas-based, with its own
  * menus, cups, tracks, difficulty levels and gamepad/touch support). It lives
  * in public/kart-circuit/ exactly as it was written, and this wrapper just
  * puts it on screen inside the arcade: a full-window frame under the top bar.
+ *
+ * Scores: every race you win (the game tells us through a message) adds to a
+ * running win count, and the arcade keeps that as this game's best score.
  *
  * Escape (forwarded from inside the frame by bridge.js, or pressed while the
  * arcade itself has focus) returns to the menu rather than opening the
@@ -29,8 +40,14 @@ export default class KartCircuit extends Game {
     if (frame) frame.addEventListener('load', () => frame.contentWindow?.focus());
 
     this.onMessage = (e) => {
-      if (e.data?.source === 'kart-circuit' && e.data.type === 'exit' && (!frame || e.source === frame.contentWindow)) {
+      if (e.data?.source !== 'kart-circuit' || (frame && e.source !== frame.contentWindow)) return;
+      if (e.data.type === 'exit') {
         location.hash = '';
+      } else if (e.data.type === 'race-finished' && e.data.won === true) {
+        const wins = readWins() + 1;
+        try { localStorage.setItem(WINS_KEY, String(wins)); } catch { /* private mode: still counts this session */ }
+        Scores.submit('kart-circuit', wins, true);
+        this.hud.toast?.(`RACE WON · ${wins} win${wins === 1 ? '' : 's'}`, 2200);
       }
     };
     // Capture phase, so it runs before the arcade's own Escape handling (which would open its pause card).
