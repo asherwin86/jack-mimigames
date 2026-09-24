@@ -1,60 +1,7 @@
-/* Only applies when the page is embedded in the arcade (index.html adds the
-   "embedded" class): the same fill-the-window layout the game uses in fullscreen,
-   minus the intro block, so the track is on screen straight away. */
-html.embedded,
-html.embedded body {
-    height: 100%;
-    overflow: hidden;
-}
-
-html.embedded body {
-    display: block;
-    padding: 0;
-}
-
-html.embedded .shell {
-    width: 100vw;
-    height: 100vh;
-    max-width: none;
-    padding: 0;
-    gap: 0;
-    display: grid;
-    grid-template-rows: 1fr auto;
-    align-content: stretch;
-}
-
-html.embedded .hero {
+/* Applied only inside the arcade (frame.js adds this stylesheet): the two menu
+   choices that need the original site's own multiplayer server have nothing to
+   connect to here, so they're hidden rather than left to fail. */
+.mk-mode-card[data-mode="online"],
+.mk-mode-card[data-mode="friends"] {
     display: none;
-}
-
-html.embedded .game-frame {
-    width: 100vw;
-    height: 100%;
-    min-height: 0;
-    max-width: none;
-    border-radius: 0;
-    border: 0;
-}
-
-html.embedded canvas {
-    width: 100%;
-    height: 100%;
-    aspect-ratio: auto;
-    object-fit: contain;
-}
-
-html.embedded .overlay {
-    padding: 24px;
-}
-
-html.embedded .footer-bar {
-    border-radius: 0;
-    border-left: 0;
-    border-right: 0;
-    border-bottom: 0;
-    padding: 10px 14px;
-}
-
-html.embedded .overlay-card {
-    padding: 22px 26px;
 }

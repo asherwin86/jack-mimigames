@@ -168,10 +168,10 @@ export const CATALOG = [
   },
   {
     id: 'kart-circuit', n: 31, name: 'Kart Circuit', tags: ['racing', 'arcade'],
-    blurb: 'An original arcade kart racer: three rivals, boost pads, eight tracks and three cups.',
-    controls: 'Arrows / WASD, mouse, touch or gamepad · Space boosts · P pauses · Esc for the menu',
+    blurb: 'A 3D arcade kart racer: drift for mini-turbos, grab items and coins, race rivals across 14 tracks and cups.',
+    controls: 'Arrows / WASD, mouse, touch or gamepad · Shift to drift · Space uses an item · Esc for the menu',
     unit: 'wins',
-    // It brings its own start screen (difficulty, cups, tracks), so skip the generic one — see main.js.
+    // It brings its own front end (mode, driver, cup, track, difficulty), so skip the generic start card — see main.js.
     customStart: true,
   },
 ];

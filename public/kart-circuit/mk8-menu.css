@@ -1,0 +1,596 @@
+/* ===========================================================================
+   MK8-style menu skin — layered over styles.css.
+
+   Only the *menu* is restyled here: everything inside the overlay that shows
+   before a race (cup/track/driver pickers, the multiplayer and gamepad panels,
+   Start Race) plus the mode bar under the canvas. The race itself is drawn to
+   canvas by game.js and isn't touched by any stylesheet.
+
+   The look it's after is classic kart racers' front end, which has a very specific
+   vocabulary worth naming, because every rule below is one of these five things:
+     - a bright saturated blue field with light rays sweeping across it
+     - chunky panels with thick cream borders and a hard drop shadow
+     - a red banner headline in heavy uppercase
+     - gold as the one selection color, with a white ring around the choice
+     - buttons with a solid bottom "lip", so they read as physical and pressable
+   Kept in its own file (loaded after styles.css) so the menu's look is
+   separable from the layout rules it sits on.
+   =========================================================================== */
+
+:root {
+    --mk-blue-far: #06214f;
+    --mk-blue: #0b3f8f;
+    --mk-blue-lit: #1f6fd0;
+    --mk-cream: #fff6dd;
+    --mk-gold: #ffc32b;
+    --mk-gold-deep: #e08c00;
+    --mk-red: #e0273a;
+    --mk-red-deep: #9c0f22;
+    --mk-ink: #10203c;
+}
+
+/* ------------------------------------------------------------------ backdrop
+   MK8 never dims the menu behind plain black — it puts it on its own bright
+   blue stage. Two counter-rotating cones of light sweep across it; the
+   conic-gradient does the rays and the animation does the sweep, so there's no
+   image to ship and no JS driving it. */
+.overlay {
+    /* styles.css sets overflow:auto here as a safety net, but .overlay-card
+       already caps its own height and scrolls internally — so clipping is
+       safe, and it's what keeps the oversized ray layers below from adding
+       a scrollbar to the whole menu. */
+    overflow: hidden;
+    background:
+        radial-gradient(ellipse 90% 70% at 50% 8%, rgba(120, 205, 255, .55), transparent 62%),
+        radial-gradient(ellipse 120% 90% at 50% 110%, rgba(10, 24, 56, .96), transparent 70%),
+        linear-gradient(180deg, var(--mk-blue-lit) 0%, var(--mk-blue) 45%, var(--mk-blue-far) 100%);
+}
+.overlay::before,
+.overlay::after {
+    content: "";
+    position: absolute;
+    inset: -40%;
+    pointer-events: none;
+    background: conic-gradient(from 0deg,
+            rgba(255, 255, 255, .13) 0deg 8deg, transparent 8deg 34deg,
+            rgba(255, 255, 255, .09) 34deg 40deg, transparent 40deg 74deg,
+            rgba(255, 255, 255, .12) 74deg 80deg, transparent 80deg 120deg);
+    animation: mk-rays 46s linear infinite;
+}
+.overlay::after {
+    opacity: .55;
+    animation-duration: 71s;
+    animation-direction: reverse;
+}
+@keyframes mk-rays {
+    to { transform: rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+    .overlay::before, .overlay::after { animation: none; }
+}
+
+/* --------------------------------------------------------------------- card
+   The thick cream border is the single most identifiable thing about a kart-racer
+   menu panel — everything inside it is dark so the border stays the frame. */
+.overlay-card {
+    /* ::after is painted after its parent's children, so without a stacking
+       lift the outer ray layer would wash over the panel. */
+    position: relative;
+    z-index: 1;
+    width: min(760px, calc(100% - 40px));
+    padding: 30px 30px 34px;
+    border: 5px solid var(--mk-cream);
+    border-radius: 34px;
+    background:
+        linear-gradient(180deg, rgba(24, 48, 96, .96), rgba(9, 22, 50, .97));
+    backdrop-filter: blur(6px);
+    box-shadow:
+        0 0 0 4px rgba(9, 22, 50, .55),
+        0 30px 70px rgba(0, 0, 0, .55);
+}
+
+/* The kicker + headline become MK8's red title banner: a slightly tilted slab
+   with the mode name in heavy uppercase sitting on it. */
+.overlay-kicker {
+    display: inline-block;
+    margin: 0 0 12px;
+    padding: 7px 20px 6px;
+    transform: rotate(-1.4deg);
+    border: 3px solid var(--mk-cream);
+    border-radius: 12px;
+    background: linear-gradient(180deg, var(--mk-red), var(--mk-red-deep));
+    color: var(--mk-cream);
+    font-family: "Oswald", sans-serif;
+    font-size: .92rem;
+    font-weight: 700;
+    letter-spacing: .16em;
+    box-shadow: 0 5px 0 rgba(0, 0, 0, .35);
+}
+.overlay-card h2 {
+    font-size: clamp(2.2rem, 5vw, 3.4rem);
+    color: var(--mk-cream);
+    /* the hard offset shadow is what gives the menu type its weight —
+       an outline, not a blur */
+    text-shadow:
+        0 4px 0 var(--mk-red-deep),
+        0 6px 14px rgba(0, 0, 0, .5);
+}
+.overlay-card p { color: #d6e6ff; }
+
+/* Section labels ("Driver & Kart", "Wireless multiplayer…") get gold rules on
+   both sides, MK8's way of splitting a menu into named blocks. */
+.mp-kicker {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--mk-gold);
+    font-weight: 800;
+}
+.mp-kicker::before,
+.mp-kicker::after {
+    content: "";
+    flex: 1;
+    height: 3px;
+    border-radius: 3px;
+    background: linear-gradient(90deg, transparent, rgba(255, 195, 43, .75), transparent);
+}
+
+/* ------------------------------------------------------------------ pickers
+   Track/cup/difficulty tiles: cream-outlined slabs with a solid bottom lip, so
+   they look like something you press. Selected turns gold with dark text. */
+.difficulty-button,
+.cup-button,
+.map-button,
+.local-mp-button {
+    border: 3px solid rgba(255, 246, 221, .55);
+    border-radius: 16px;
+    background: linear-gradient(180deg, rgba(46, 92, 168, .95), rgba(20, 48, 104, .95));
+    color: var(--mk-cream);
+    font-weight: 700;
+    box-shadow: 0 4px 0 rgba(4, 14, 36, .8);
+    transition: transform .13s cubic-bezier(.2, .9, .3, 1.3), box-shadow .13s ease, background .13s ease, border-color .13s ease;
+}
+.difficulty-button:hover,
+.cup-button:hover,
+.map-button:hover,
+.local-mp-button:hover {
+    background: linear-gradient(180deg, rgba(66, 122, 208, .98), rgba(28, 66, 140, .98));
+    border-color: var(--mk-cream);
+    transform: translateY(-3px) scale(1.03);
+    box-shadow: 0 7px 0 rgba(4, 14, 36, .8), 0 12px 26px rgba(0, 0, 0, .4);
+}
+.difficulty-button:active,
+.cup-button:active,
+.map-button:active,
+.local-mp-button:active {
+    transform: translateY(1px) scale(.99);
+    box-shadow: 0 2px 0 rgba(4, 14, 36, .8);
+}
+.difficulty-button.is-selected,
+.cup-button.is-selected,
+.map-button.is-selected,
+.local-mp-button.is-selected {
+    background: linear-gradient(180deg, #ffe07a, var(--mk-gold) 55%, var(--mk-gold-deep));
+    border-color: #fff;
+    color: var(--mk-ink);
+    box-shadow:
+        0 0 0 3px rgba(255, 255, 255, .55),
+        0 5px 0 rgba(120, 68, 0, .85),
+        0 0 26px rgba(255, 195, 43, .55);
+}
+
+/* Each track's color chip becomes a round emblem with a cream rim — the cup
+   badge MK8 puts next to a course name. */
+.map-preview {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    border: 2px solid var(--mk-cream);
+    box-shadow: 0 0 10px rgba(0, 0, 0, .45), inset 0 -5px 8px rgba(0, 0, 0, .3);
+}
+
+.kart-color-swatch { border-width: 3px; border-color: rgba(255, 246, 221, .6); }
+.kart-color-swatch.is-selected {
+    border-color: #fff;
+    box-shadow: 0 0 0 3px var(--mk-gold), 0 0 16px rgba(255, 195, 43, .6);
+}
+
+/* --------------------------------------------------------------- sub-panels
+   The multiplayer / local / gamepad / driver blocks read as inset cards on the
+   main panel rather than as flat regions of it. */
+.mp-panel,
+.local-mp-panel,
+.gamepad-panel,
+.driver-panel,
+.cup-summary,
+.p1-prompt {
+    border: 2px solid rgba(255, 246, 221, .3);
+    border-radius: 20px;
+    background: rgba(6, 18, 44, .55);
+}
+.cup-summary { color: #cfe2ff; }
+
+.mp-controls input,
+.mp-chat-form input,
+.local-roster-solo select,
+#localSoloSelect {
+    border: 2px solid rgba(255, 246, 221, .4);
+    border-radius: 12px;
+    background: rgba(6, 18, 44, .8);
+    color: var(--mk-cream);
+}
+.mp-controls input:focus,
+.mp-chat-form input:focus { border-color: var(--mk-gold); outline: none; }
+
+/* --------------------------------------------------------------- the buttons
+   Base pill buttons (Host/Join/Send) go gold-on-cream with a lip. Start Race
+   is the one primary action on the screen, so it gets the red treatment, full
+   width, and a slow pulse to pull the eye. */
+button {
+    border: 3px solid var(--mk-cream);
+    background: linear-gradient(180deg, #ffe07a, var(--mk-gold) 55%, var(--mk-gold-deep));
+    color: var(--mk-ink);
+    font-weight: 800;
+    box-shadow: 0 5px 0 rgba(120, 68, 0, .85);
+}
+button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 7px 0 rgba(120, 68, 0, .85), 0 12px 26px rgba(255, 195, 43, .3);
+    filter: brightness(1.06);
+}
+button:active {
+    transform: translateY(2px);
+    box-shadow: 0 2px 0 rgba(120, 68, 0, .85);
+}
+
+/* styles.css styles these two by a class selector, which outranks the bare
+   `button` rule above — without naming them they'd stay the old cyan-glass
+   pills in the middle of an otherwise gold-and-cream menu. */
+.mp-controls button,
+.mp-chat-form button {
+    border: 3px solid var(--mk-cream);
+    background: linear-gradient(180deg, #ffe07a, var(--mk-gold) 55%, var(--mk-gold-deep));
+    color: var(--mk-ink);
+    font-weight: 800;
+    box-shadow: 0 5px 0 rgba(120, 68, 0, .85);
+}
+.mp-controls button:hover,
+.mp-chat-form button:hover {
+    background: linear-gradient(180deg, #ffe89a, #ffcf4a 55%, #ee9a06);
+    transform: translateY(-2px);
+    box-shadow: 0 7px 0 rgba(120, 68, 0, .85);
+}
+
+#startButton {
+    display: block;
+    width: 100%;
+    margin-top: 8px;
+    padding: 20px 24px;
+    font-family: "Oswald", sans-serif;
+    font-size: 1.5rem;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--mk-cream);
+    background: linear-gradient(180deg, #ff5a68, var(--mk-red) 55%, var(--mk-red-deep));
+    box-shadow: 0 6px 0 rgba(90, 8, 20, .9), 0 0 34px rgba(224, 39, 58, .45);
+    animation: mk-start-pulse 2.4s ease-in-out infinite;
+}
+#startButton:hover {
+    box-shadow: 0 9px 0 rgba(90, 8, 20, .9), 0 0 44px rgba(224, 39, 58, .6);
+}
+#startButton:active { box-shadow: 0 2px 0 rgba(90, 8, 20, .9); }
+@keyframes mk-start-pulse {
+    0%, 100% { filter: brightness(1); }
+    50% { filter: brightness(1.14); }
+}
+@media (prefers-reduced-motion: reduce) {
+    #startButton { animation: none; }
+}
+
+/* Secondary toggles stay quiet — cream outlines on translucent navy, no lip,
+   so they never compete with Start Race for attention. */
+.mode-button,
+.gamepad-claim-btn,
+.p1-prompt-choice {
+    border: 2px solid rgba(255, 246, 221, .35);
+    background: rgba(10, 30, 68, .75);
+    color: var(--mk-cream);
+    font-weight: 700;
+    box-shadow: none;
+}
+.mode-button:hover,
+.gamepad-claim-btn:hover,
+.p1-prompt-choice:hover {
+    background: rgba(24, 60, 128, .9);
+    border-color: var(--mk-gold);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(0, 0, 0, .35);
+}
+
+/* The bar under the canvas is the race's own chrome, so it picks up the same
+   cream-on-navy language rather than staying on the old dark-glass look. */
+.footer-bar {
+    border: 2px solid rgba(255, 246, 221, .22);
+    background: linear-gradient(180deg, rgba(14, 36, 78, .92), rgba(7, 18, 44, .95));
+}
+.difficulty-status,
+#statusText,
+#raceInfo { color: #cfe2ff; }
+#raceInfo { color: var(--mk-gold); font-weight: 800; }
+
+/* ===========================================================================
+   The step-by-step flow (see menu-flow.js and the markup in index.html).
+
+   One decision per screen. The panel keeps a fixed footprint across steps so
+   moving through the flow doesn't make the card jump around under the cursor,
+   and every screen is built from the same three parts classic kart racers' menus
+   are: a titled header, a grid of chunky pressable tiles, and a footer that
+   tells you where you are.
+   =========================================================================== */
+
+.mk-wizard {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    /* the card no longer scrolls as a whole — only .mk-stage does, so the
+       header and the Back/Next footer stay put while a step's contents move */
+    overflow: hidden;
+}
+
+.mk-wizard-head { flex: 0 0 auto; }
+.mk-step-hint {
+    margin: 10px 0 0;
+    font-size: .98rem;
+    color: #cfe2ff;
+    min-height: 1.4em;
+}
+
+/* Progress reads as a row of lozenges filling up left to right. */
+.mk-step-dots {
+    display: flex;
+    gap: 6px;
+    margin: 14px 0 0;
+    padding: 0;
+    list-style: none;
+}
+.mk-step-dot {
+    width: 26px;
+    height: 6px;
+    border-radius: 3px;
+    background: rgba(255, 246, 221, .22);
+    transition: background .2s ease, box-shadow .2s ease;
+}
+.mk-step-dot.is-done { background: rgba(255, 195, 43, .55); }
+.mk-step-dot.is-current {
+    background: var(--mk-gold);
+    box-shadow: 0 0 12px rgba(255, 195, 43, .65);
+}
+
+.mk-stage {
+    flex: 1 1 auto;
+    min-height: 300px;
+    max-height: min(52vh, 460px);
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding-right: 4px;
+}
+.mk-step { display: none; }
+.mk-step.is-active { display: block; animation: mk-step-in .22s cubic-bezier(.2, .9, .3, 1.1) both; }
+@keyframes mk-step-in {
+    from { opacity: 0; transform: translateX(14px); }
+    to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .mk-step.is-active { animation: none; }
+}
+
+/* A step's own panel is already inside the wizard's frame, so it drops the
+   second border it used to need when everything shared one long card. */
+.mk-step > .mp-panel,
+.mk-step > .local-mp-panel,
+.mk-step > .gamepad-panel,
+.mk-step > .driver-panel {
+    border: 0;
+    background: none;
+    padding: 0;
+    margin: 0;
+}
+.mk-step > .difficulty-picker,
+.mk-step > .cup-picker,
+.mk-step > .map-picker { margin: 0; }
+
+/* --------------------------------------------------------------- mode tiles
+   The front screen of the flow: four big pressable slabs, the same shape
+   language as the track tiles further in. */
+.mk-mode-grid,
+.mk-pool-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+}
+.mk-pool-grid { margin-bottom: 18px; }
+
+.mk-mode-card,
+.mk-pool-card {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 3px;
+    padding: 15px 18px;
+    text-align: left;
+    border: 3px solid rgba(255, 246, 221, .55);
+    border-radius: 20px;
+    background: linear-gradient(180deg, rgba(46, 92, 168, .95), rgba(20, 48, 104, .95));
+    color: var(--mk-cream);
+    box-shadow: 0 5px 0 rgba(4, 14, 36, .8);
+    transition: transform .13s cubic-bezier(.2, .9, .3, 1.3), box-shadow .13s ease, background .13s ease, border-color .13s ease;
+}
+.mk-mode-card:hover,
+.mk-pool-card:hover {
+    background: linear-gradient(180deg, rgba(66, 122, 208, .98), rgba(28, 66, 140, .98));
+    border-color: var(--mk-cream);
+    transform: translateY(-3px) scale(1.02);
+    box-shadow: 0 8px 0 rgba(4, 14, 36, .8), 0 14px 30px rgba(0, 0, 0, .4);
+    filter: none;
+}
+.mk-mode-card:active,
+.mk-pool-card:active {
+    transform: translateY(1px);
+    box-shadow: 0 2px 0 rgba(4, 14, 36, .8);
+}
+.mk-mode-card.is-selected,
+.mk-pool-card.is-selected {
+    background: linear-gradient(180deg, #ffe07a, var(--mk-gold) 55%, var(--mk-gold-deep));
+    border-color: #fff;
+    color: var(--mk-ink);
+    box-shadow: 0 0 0 3px rgba(255, 255, 255, .55), 0 5px 0 rgba(120, 68, 0, .85), 0 0 26px rgba(255, 195, 43, .55);
+}
+.mk-mode-icon,
+.mk-pool-icon { font-size: 1.7rem; line-height: 1; }
+.mk-mode-name {
+    font-family: "Oswald", sans-serif;
+    font-size: 1.15rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+}
+.mk-mode-desc { font-size: .88rem; opacity: .85; font-weight: 600; }
+
+.mk-secondary {
+    margin-top: 14px;
+    width: 100%;
+}
+
+/* -------------------------------------------------------------------- lobby */
+.mk-lobby {
+    border: 2px solid rgba(255, 246, 221, .3);
+    border-radius: 20px;
+    background: rgba(6, 18, 44, .55);
+    padding: 16px 18px;
+}
+.mk-lobby-status {
+    margin: 6px 0 0;
+    font-family: "Oswald", sans-serif;
+    font-size: 1.2rem;
+    color: var(--mk-gold);
+    letter-spacing: .02em;
+}
+.mk-lobby-racers {
+    margin: 6px 0 10px;
+    color: #cfe2ff;
+    font-size: .92rem;
+    min-height: 1.2em;
+}
+
+/* ------------------------------------------------------------------ summary
+   The one screen that shows every earlier choice at once — the debt a
+   step-by-step flow owes you before it asks you to commit. */
+.mk-summary {
+    display: grid;
+    gap: 2px;
+    margin-bottom: 16px;
+    border: 2px solid rgba(255, 246, 221, .3);
+    border-radius: 18px;
+    background: rgba(6, 18, 44, .55);
+    padding: 10px 16px;
+}
+.mk-summary-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 7px 0;
+    border-bottom: 1px solid rgba(255, 246, 221, .12);
+    font-size: .95rem;
+}
+.mk-summary-row:last-child { border-bottom: 0; }
+.mk-summary-row span { color: #a9c4e8; font-weight: 600; }
+.mk-summary-row strong { color: var(--mk-cream); }
+
+/* ---------------------------------------------------------------- nav footer */
+.mk-wizard-nav {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding-top: 14px;
+    border-top: 2px solid rgba(255, 246, 221, .18);
+}
+.mk-nav-button {
+    padding: 12px 24px;
+    font-family: "Oswald", sans-serif;
+    font-size: 1rem;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    border: 3px solid rgba(255, 246, 221, .5);
+    background: rgba(10, 30, 68, .8);
+    color: var(--mk-cream);
+    box-shadow: 0 4px 0 rgba(4, 14, 36, .8);
+}
+.mk-nav-button:hover {
+    background: rgba(24, 60, 128, .95);
+    border-color: var(--mk-cream);
+    box-shadow: 0 6px 0 rgba(4, 14, 36, .8);
+    filter: none;
+}
+.mk-nav-button.mk-nav-next {
+    background: linear-gradient(180deg, #ffe07a, var(--mk-gold) 55%, var(--mk-gold-deep));
+    border-color: var(--mk-cream);
+    color: var(--mk-ink);
+    box-shadow: 0 5px 0 rgba(120, 68, 0, .85);
+}
+/* visibility:hidden, not display:none — Back and Next hold their slots so the
+   step counter between them never slides sideways as they come and go */
+.mk-nav-button.is-hidden { visibility: hidden; }
+
+/* Start Race sits in the footer beside Next (only one of the two is ever
+   shown), so it drops the full-width block treatment it had inside the step. */
+.mk-wizard-nav #startButton {
+    width: auto;
+    margin: 0;
+    padding: 13px 34px;
+    font-size: 1.2rem;
+}
+.mk-wizard-nav #startButton.is-hidden { display: none; }
+.mk-step-count {
+    font-size: .82rem;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: rgba(255, 246, 221, .6);
+}
+
+@media (max-width: 720px), (pointer: coarse) {
+    .mk-mode-grid, .mk-pool-grid { grid-template-columns: minmax(0, 1fr); }
+    .mk-stage { max-height: 46vh; min-height: 200px; }
+    .mk-nav-button { padding: 10px 16px; font-size: .88rem; }
+}
+
+/* Chat and the camera strip, while parked inside a lobby step (menu-flow.js).
+   They keep their own ids and classes — this only undoes the absolute
+   positioning that makes sense over a track and not inside a panel. */
+.mk-lobby-dock { display: contents; }
+.mp-chat.is-docked,
+.mp-videos.is-docked {
+    position: static;
+    width: 100%;
+    margin-top: 16px;
+    z-index: auto;
+    pointer-events: auto;
+}
+.mp-videos.is-docked {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+.mp-chat.is-docked .mp-chat-log { max-height: 120px; }
+
+/* Very short frames — a phone in landscape, or the desktop app with the mode
+   bar wrapped onto three rows — can't afford the stage's minimum, so it gives
+   that up rather than pushing the Back/Start footer out of the card. */
+@media (max-height: 620px) {
+    .mk-stage { min-height: 0; max-height: 38vh; }
+    .mk-wizard { gap: 12px; }
+    .overlay-card { padding: 18px 20px 20px; }
+    .overlay-card h2 { font-size: clamp(1.5rem, 4vw, 2.1rem); }
+}

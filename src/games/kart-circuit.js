@@ -11,9 +11,10 @@ function readWins() {
 
 
 /**
- * Kart Circuit — an original arcade kart racer (canvas-based, with its own
- * menus, cups, tracks, difficulty levels and gamepad/touch support). It lives
- * in public/kart-circuit/ exactly as it was written, and this wrapper just
+ * Kart Circuit — a 3D arcade kart racer (its own front end, cups, 14 tracks,
+ * items, drifting, split-screen and gamepad/touch support). It lives
+ * in public/kart-circuit/ (a few small hooks aside, as it was written, with the
+ * character roster renamed to generic dinos), and this wrapper just
  * puts it on screen inside the arcade: a full-window frame under the top bar.
  *
  * Scores: every race you win (the game tells us through a message) adds to a
