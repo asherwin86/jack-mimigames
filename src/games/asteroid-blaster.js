@@ -34,6 +34,8 @@ export default class AsteroidBlaster extends Game {
     this.shots = 0;
     this.cooldown = 0;
     this.nextSpawn = 1;
+    this.nextSpecial = 15;   // a glowing rock now and then carries a bonus
+    this.rapidT = 0;
     this.wave = 1;
     this.shake = 0;
 
@@ -41,7 +43,7 @@ export default class AsteroidBlaster extends Game {
     this.camera.fov = 70;
     this.camera.updateProjectionMatrix();
     this._ray = new THREE.Raycaster();
-    this.hud.hint('Aim with the mouse, click to fire · big rocks break into smaller ones');
+    this.hud.hint('Aim with the mouse, click to fire · big rocks break into smaller ones · shoot the glowing ones for repairs and rapid fire');
   }
 
   spawn(tier = 2, at = null, vel = null) {
@@ -76,8 +78,27 @@ export default class AsteroidBlaster extends Game {
     return rock;
   }
 
+  /** A glowing rock: green mends the hull, cyan gives a few seconds of rapid fire. */
+  spawnSpecial() {
+    const kind = this.hull < 5 && Math.random() < 0.6 ? 'repair' : 'rapid';
+    const col = kind === 'repair' ? PALETTE.lime : PALETTE.cyan;
+    const rock = this.spawn(1);
+    rock.material.color.set(col);
+    rock.material.emissive.set(col);
+    rock.material.emissiveIntensity = 0.9;
+    rock.userData.special = kind;
+    return rock;
+  }
+
   update(dt) {
     this.wave = 1 + this.time / 20;
+    this.rapidT = Math.max(0, this.rapidT - dt);
+
+    this.nextSpecial -= dt;
+    if (this.nextSpecial <= 0) {
+      this.spawnSpecial();
+      this.nextSpecial = rand(18, 28);
+    }
 
     this.nextSpawn -= dt;
     if (this.nextSpawn <= 0) {
@@ -118,10 +139,11 @@ export default class AsteroidBlaster extends Game {
     this.hud.stat('Score', this.score);
     this.hud.stat('Hull', '▮'.repeat(this.hull) || '—', this.hull <= 2);
     this.hud.stat('Rocks', this.destroyed);
+    if (this.rapidT > 0) this.hud.stat('Rapid', `${Math.ceil(this.rapidT)}s`); else this.hud.removeStat('Rapid');
   }
 
   fire() {
-    this.cooldown = 0.16;
+    this.cooldown = this.rapidT > 0 ? 0.07 : 0.16;
     this.shots++;
     this.audio.tone([900, 260], 0.09, { type: 'square', gain: 0.09 });
 
@@ -144,6 +166,22 @@ export default class AsteroidBlaster extends Game {
 
   destroy(rock, point) {
     const tier = rock.userData.tier;
+    const special = rock.userData.special;
+    if (special) {   // a bonus rock doesn't split; it pays out
+      this.score += 150;
+      this.destroyed++;
+      this.burst.burst(point, special === 'repair' ? PALETTE.lime : PALETTE.cyan, 22, 9);
+      this.audio.good();
+      if (special === 'repair') {
+        this.hull = Math.min(5, this.hull + 1);
+        this.hud.toast(this.hull >= 5 ? 'HULL FULL' : 'HULL +1', 800);
+      } else {
+        this.rapidT = 7;
+        this.hud.toast('RAPID FIRE', 800);
+      }
+      this.remove(rock);
+      return;
+    }
     this.score += TIERS[tier].points;
     this.destroyed++;
     this.burst.burst(point, TIERS[tier].colour, 10 + tier * 5, 6 + tier * 2);

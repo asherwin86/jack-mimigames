@@ -24,6 +24,9 @@ const WALLS = [
   [-4.5, -4, 0.6, 3.4],
 ];
 
+// Time crystals: pick one up and 2 seconds come off your clock.
+const CRYSTALS = [[2, 8], [3, 4], [-4, 0.6], [5, -4.2]];
+
 const HOLES = [
   [-8, 4], [-1.5, 4.6], [7.5, 3.6], [8.6, 0.2], [0.5, -0.2],
   [-8.4, -0.4], [-6, -4.4], [2.5, -4.2], [8, -8], [-4, -8.2],
@@ -59,6 +62,13 @@ export default class MarbleMaze extends Game {
     this.board.add(goal);
     this.goalMesh = goal;
 
+    this.crystals = CRYSTALS.map(([x, z]) => {
+      const c = new THREE.Mesh(new THREE.OctahedronGeometry(0.5), glow(PALETTE.cyan, { emissiveIntensity: 0.8 }));
+      c.position.set(x, 0.9, z);
+      this.board.add(c);
+      return c;
+    });
+
     this.marble = ball(R, glow(PALETTE.amber, { emissiveIntensity: 0.35, metalness: 0.4, roughness: 0.25 }));
     this.board.add(this.marble);
 
@@ -69,7 +79,7 @@ export default class MarbleMaze extends Game {
 
     this.camera.position.set(0, 21, 15);
     this.camera.lookAt(0, 0, 0.5);
-    this.hud.hint('WASD / arrows tilt the board · a hole costs you 3 seconds');
+    this.hud.hint('WASD / arrows tilt the board · a hole costs you 3 seconds · cyan crystals take 2 seconds off');
   }
 
   reset() {
@@ -107,6 +117,21 @@ export default class MarbleMaze extends Game {
     // Holes swallow the marble once it is more than half over the lip.
     for (const h of this.holes) {
       if (Math.hypot(this.pos.x - h.x, this.pos.y - h.z) < h.r * 0.7) return this.fall();
+    }
+
+    for (let i = this.crystals.length - 1; i >= 0; i--) {
+      const c = this.crystals[i];
+      c.rotation.y += dt * 2.4;
+      c.position.y = 0.9 + Math.sin(this.time * 3 + i) * 0.12;
+      if (Math.hypot(this.pos.x - c.position.x, this.pos.y - c.position.z) < 0.95) {
+        this.elapsed = Math.max(0, this.elapsed - 2);
+        this.audio.pickup();
+        this.hud.toast('−2s', 700);
+        this.board.remove(c);
+        c.geometry.dispose();
+        c.material.dispose();
+        this.crystals.splice(i, 1);
+      }
     }
 
     this.goalMesh.material.emissiveIntensity = 0.7 + Math.sin(this.time * 5) * 0.3;

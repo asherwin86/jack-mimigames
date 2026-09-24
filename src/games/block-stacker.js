@@ -22,6 +22,7 @@ export default class BlockStacker extends Game {
     this.centre = { x: 0, z: 0 };
     this.floors = 0;
     this.perfects = 0;
+    this.streak = 0;       // perfect drops in a row: every third one widens the tower again
     this.axis = 'x';
     this.dir = 1;
     this.speed = 5.5;
@@ -30,7 +31,7 @@ export default class BlockStacker extends Game {
 
     this.camY = 6;
     this.camera.position.set(9, 7, 9);
-    this.hud.hint('Click or press Space to drop the slab');
+    this.hud.hint('Click or press Space to drop the slab · three perfect drops in a row widen the tower again');
   }
 
   makeSlab(sx, sz, index) {
@@ -96,6 +97,7 @@ export default class BlockStacker extends Game {
 
     this.hud.stat('Floors', this.floors);
     this.hud.stat('Perfect', this.perfects);
+    this.hud.stat('Streak', this.streak);
     this.hud.stat('Width', `${this.size.x.toFixed(1)} × ${this.size.z.toFixed(1)}`);
   }
 
@@ -125,9 +127,19 @@ export default class BlockStacker extends Game {
       if (ax === 'x') this.moving.position.x = basePos;
       else this.moving.position.z = basePos;
       this.perfects++;
-      this.hud.toast('PERFECT', 600);
-      this.audio.good();
+      this.streak++;
+      if (this.streak % 3 === 0 && (this.size.x < START || this.size.z < START)) {
+        // A streak pays off: win some of the lost width back (never beyond the starting width).
+        this.size.x = Math.min(START, this.size.x + 0.6);
+        this.size.z = Math.min(START, this.size.z + 0.6);
+        this.hud.toast('PERFECT ×3 · WIDER', 900);
+        this.audio.win();
+      } else {
+        this.hud.toast(this.streak > 1 ? `PERFECT ×${this.streak}` : 'PERFECT', 600);
+        this.audio.good();
+      }
     } else {
+      this.streak = 0;
       // Trim the slab down to the overlap and let the offcut fall.
       const keep = overlap;
       const scrapSize = span - keep;

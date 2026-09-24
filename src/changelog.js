@@ -2,6 +2,10 @@
  *  menu, under the trailer. Keep entries brief; this isn't a commit log. */
 export const CHANGELOG = [
   {
+    title: 'New in Block Stacker, Asteroid Blaster, Marble Maze and Simon Cubes',
+    detail: 'Block Stacker: three perfect drops in a row win some width back. Asteroid Blaster: glowing rocks that mend your hull or give 7 seconds of rapid fire. Marble Maze: cyan time crystals take 2 seconds off. Simon Cubes: every fifth round you play the sequence backwards.',
+  },
+  {
     title: 'New in Cube Dodger, Sky Hoops, Snake Cube and Gem Grab',
     detail: 'Cube Dodger: shield pickups soak up a crash, stars add 40 m. Sky Hoops: a small golden ring every seventh — worth 3 rings and 5 seconds. Snake Cube: golden apples (+3 length, vanish fast) and rocks that appear as you grow. Gem Grab: magnet and ice-crystal power-ups — reel in gems, or freeze the drones.',
   },

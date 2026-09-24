@@ -33,10 +33,11 @@ export default class SimonCubes extends Game {
     this.timer = 0.9;
     this.showIndex = 0;
     this.inputClock = 0;
+    this.reverse = false;   // every fifth round you must play the sequence backwards
 
     this.camera.position.set(0, 8.5, 15);
     this.camera.lookAt(0, 0.5, 1);
-    this.hud.hint('Watch the sequence, then click it back');
+    this.hud.hint('Watch the sequence, then click it back · every fifth round you play it BACKWARDS');
   }
 
   nextRound() {
@@ -46,7 +47,13 @@ export default class SimonCubes extends Game {
     this.showIndex = 0;
     this.timer = 0.45;
     this.step = 0;
-    this.hud.toast(`Round ${this.round}`, 700);
+    this.reverse = this.round % 5 === 0;
+    this.hud.toast(this.reverse ? `Round ${this.round} · BACKWARDS` : `Round ${this.round}`, this.reverse ? 1400 : 700);
+  }
+
+  /** The pad you should press next. */
+  expected() {
+    return this.reverse ? this.sequence[this.sequence.length - 1 - this.step] : this.sequence[this.step];
   }
 
   flash(i, dur = 0.42) {
@@ -92,7 +99,7 @@ export default class SimonCubes extends Game {
       else if (this.input.gpHit(4)) this.pressPad(4);
     }
 
-    const label = this.phase === 'show' ? 'watch' : this.phase === 'input' ? 'your turn' : '…';
+    const label = this.phase === 'show' ? 'watch' : this.phase === 'input' ? (this.reverse ? 'BACKWARDS' : 'your turn') : '…';
     this.hud.stat('Round', this.round);
     this.hud.stat('Sequence', `${this.step}/${this.sequence.length}`);
     this.hud.stat('Phase', label, this.phase === 'input' && this.inputClock < 2);
@@ -109,7 +116,7 @@ export default class SimonCubes extends Game {
     if (i >= PADS.length) return;
     this.flash(i, 0.3);
 
-    if (i !== this.sequence[this.step]) return this.fail('Wrong pad.');
+    if (i !== this.expected()) return this.fail('Wrong pad.');
 
     this.step++;
     if (this.step >= this.sequence.length) {

@@ -172,4 +172,100 @@ import { boot, check, finish } from './lib/game-harness.mjs';
   check(game.lives < 3, 'gem-grab: once the ice melts, drones hurt again');
 }
 
+// ---------- Block Stacker: a perfect streak widens the tower ----------
+{
+  const { game, result } = await boot('block-stacker');
+  const dropAt = (offset) => {
+    const ax = game.axis;
+    game.dropLock = 0;
+    game.moving.position[ax] = game.centre[ax] + offset;
+    game.drop();
+  };
+  dropAt(1.0);
+  check(Math.abs(game.size.x - 5) < 1e-6 || Math.abs(game.size.z - 5) < 1e-6, 'block-stacker: an off-centre drop trims the slab', `${game.size.x} x ${game.size.z}`);
+  const w = { x: game.size.x, z: game.size.z };
+  dropAt(0); dropAt(0);
+  check(game.streak === 2 && game.size.x === w.x && game.size.z === w.z, 'block-stacker: two perfect drops build a streak but change nothing yet');
+  dropAt(0);
+  check(game.streak === 3 && Math.abs(game.size.x - Math.min(6, w.x + 0.6)) < 1e-6 && Math.abs(game.size.z - Math.min(6, w.z + 0.6)) < 1e-6, 'block-stacker: the third perfect drop in a row widens the slab by 0.6', `${game.size.x} x ${game.size.z}`);
+  dropAt(0.9);
+  check(game.streak === 0, 'block-stacker: a sloppy drop breaks the streak');
+  check(!result.ended, 'block-stacker: (still standing)');
+  for (let i = 0; i < 40; i++) { dropAt(0); }
+  check(game.size.x <= 6 && game.size.z <= 6, 'block-stacker: it never grows beyond the starting width', `${game.size.x} x ${game.size.z}`);
+}
+
+// ---------- Asteroid Blaster: repair + rapid-fire rocks ----------
+{
+  const { game } = await boot('asteroid-blaster');
+  game.hull = 3;
+  const realRandom = Math.random;
+  Math.random = () => 0.1;                    // hull below full and < 0.6 -> a repair rock
+  const rock = game.spawnSpecial();
+  Math.random = realRandom;
+  check(rock.userData.special === 'repair', 'asteroid-blaster: a glowing repair rock can spawn');
+  const n = game.rocks.length, score = game.score;
+  game.destroy(rock, rock.position.clone());
+  check(game.hull === 4 && game.score === score + 150 && game.rocks.length === n - 1, 'asteroid-blaster: shooting it mends the hull, scores 150 and does not split');
+  game.hull = 5;
+  const r2 = game.spawnSpecial();
+  check(r2.userData.special === 'rapid', 'asteroid-blaster: at full hull the bonus is rapid fire');
+  game.destroy(r2, r2.position.clone());
+  check(game.rapidT > 6, 'asteroid-blaster: rapid fire lasts about 7 seconds');
+  game.cooldown = 0; game.fire();
+  check(game.cooldown < 0.1, 'asteroid-blaster: ...and fires more than twice as fast');
+  game.rapidT = 0; game.cooldown = 0; game.fire();
+  check(game.cooldown > 0.15, 'asteroid-blaster: normal fire rate once it runs out');
+  game.hull = 5;
+  const r3 = game.spawnSpecial(); r3.userData.special = 'repair';
+  game.destroy(r3, r3.position.clone());
+  check(game.hull === 5, 'asteroid-blaster: repairs never take the hull above 5');
+}
+
+// ---------- Marble Maze: time crystals ----------
+{
+  const { game, step } = await boot('marble-maze');
+  check(game.crystals.length === 4, 'marble-maze: four time crystals on the board');
+  game.elapsed = 10;
+  const c = game.crystals[1];
+  game.pos.set(c.position.x, c.position.z);
+  game.vel.set(0, 0);
+  step(1);
+  check(game.crystals.length === 3 && game.elapsed > 8 && game.elapsed < 8.1, 'marble-maze: a crystal takes 2 seconds off the clock', String(game.elapsed));
+  game.elapsed = 1;
+  const c2 = game.crystals[0];
+  game.pos.set(c2.position.x, c2.position.z);
+  step(1);
+  check(game.elapsed >= 0 && game.elapsed < 0.1, 'marble-maze: the clock never goes below zero', String(game.elapsed));
+  // the crystals are all reachable spots: none inside a wall or a hole
+  const b = await boot('marble-maze');
+  const bad = b.game.crystals.filter((cr) => b.game.holes.some((h) => Math.hypot(cr.position.x - h.x, cr.position.z - h.z) < h.r + 0.5));
+  check(bad.length === 0, 'marble-maze: no crystal is sitting over a hole');
+}
+
+// ---------- Simon Cubes: backwards rounds ----------
+{
+  const { game, result } = await boot('simon-cubes');
+  game.round = 4;
+  game.sequence = [0, 1, 2, 3];
+  game.nextRound();
+  check(game.round === 5 && game.reverse === true, 'simon-cubes: round 5 is a backwards round');
+  game.sequence = [0, 1, 2, 3, 4];
+  game.phase = 'input'; game.inputClock = 30; game.step = 0;
+  for (const i of [4, 3, 2, 1]) game.pressPad(i);
+  check(!result.ended && game.step === 4, 'simon-cubes: playing it backwards is accepted');
+  game.pressPad(0);
+  check(game.phase === 'idle' && !result.ended, 'simon-cubes: ...and completes the round');
+  game.nextRound();
+  check(game.round === 6 && game.reverse === false, 'simon-cubes: the next round is forwards again');
+}
+{
+  const { game, result } = await boot('simon-cubes', 2);
+  game.round = 4; game.sequence = [0, 1, 2, 3]; game.nextRound();
+  game.sequence = [0, 1, 2, 3, 4];
+  game.phase = 'input'; game.inputClock = 30; game.step = 0;
+  game.pressPad(0);
+  check(!!result.ended, 'simon-cubes: playing a backwards round forwards is wrong');
+}
+
 finish('extras');
