@@ -1,4 +1,11 @@
-<!doctype html>
+/**
+ * The page Kart Circuit is shown in (its original index.html with its stylesheet and
+ * script paths pointed at public/kart-circuit/, plus the embed hooks). It's loaded into the frame with `srcdoc`, which - unlike pointing the
+ * frame at a separate file - keeps it the same origin as the arcade. That
+ * matters in the desktop app, where every file:// page is its own origin and a
+ * separate page would be refused the gamepad and fullscreen.
+ */
+export const KART_FRAME_HTML = `<!doctype html>
 <html lang="en">
 
 <head>
@@ -13,9 +20,9 @@
     <link
         href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Oswald:wght@400;500;700&display=swap"
         rel="stylesheet" />
-    <link rel="stylesheet" href="styles.css?v=20260716" />
+    <link rel="stylesheet" href="kart-circuit/styles.css?v=20260716" />
     <!-- Added for the arcade: when this page sits inside 100 Mimi Games it fills the frame, the same layout the game already uses in fullscreen. -->
-    <link rel="stylesheet" href="embed.css" />
+    <link rel="stylesheet" href="kart-circuit/embed.css" />
     <script>if (window.parent !== window) document.documentElement.classList.add("embedded");</script>
 </head>
 
@@ -139,9 +146,9 @@
         </section>
     </main>
 
-    <script src="game.js?v=20260717"></script>
+    <script src="kart-circuit/game.js?v=20260717"></script>
     <!-- Added for the arcade: lets Escape take you back to the menu when this page is embedded. -->
-    <script src="bridge.js"></script>
+    <script src="kart-circuit/bridge.js"></script>
 </body>
 
-</html>
+</html>`;

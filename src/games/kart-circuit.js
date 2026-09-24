@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { Game } from '../engine/Game.js';
 import { Scores } from '../engine/Storage.js';
+import { KART_FRAME_HTML } from './kart-circuit/frame.js';
 
 const WINS_KEY = 'mg.kart-circuit.wins';
 
@@ -33,11 +34,14 @@ export default class KartCircuit extends Game {
         .kc-frame iframe { width:100%; height:100%; border:0; display:block; background:#0b0e16; }
       </style>
       <div class="kc-frame">
-        <iframe src="kart-circuit/index.html" title="Kart Circuit" allow="fullscreen; gamepad; autoplay"></iframe>
+        <iframe title="Kart Circuit" allow="fullscreen *; gamepad *; autoplay *"></iframe>
       </div>`);
 
     const frame = this.hud.$panel?.querySelector?.('iframe');
-    if (frame) frame.addEventListener('load', () => frame.contentWindow?.focus());
+    if (frame) {
+      frame.addEventListener('load', () => frame.contentWindow?.focus());
+      frame.srcdoc = KART_FRAME_HTML;   // same origin as the arcade — see kart-circuit/frame.js
+    }
 
     this.onMessage = (e) => {
       if (e.data?.source !== 'kart-circuit' || (frame && e.source !== frame.contentWindow)) return;
