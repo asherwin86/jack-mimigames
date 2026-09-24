@@ -857,4 +857,34 @@ import { boot, check, finish } from './lib/game-harness.mjs';
   check(game.rage <= 100, 'arena-fighter: the meter never exceeds 100');
 }
 
+// ---------- Orbit Dodge: gold + chrono stars ----------
+{
+  const { game, step } = await boot('orbit-dodge');
+  const make = (roll) => {
+    const real = Math.random; let i = 0; const seq = [roll]; Math.random = () => (i < seq.length ? seq[i++] : 0.5);
+    game.addStar(); Math.random = real;
+    return game.stars[game.stars.length - 1];
+  };
+  const gold = make(0.05), chrono = make(0.14), plain = make(0.5);
+  check(gold.userData.kind === 'gold' && chrono.userData.kind === 'chrono' && plain.userData.kind === 'star', 'orbit-dodge: gold, chrono and ordinary stars all spawn');
+  const put = (star) => { star.userData.radius = game.radius; star.userData.angle = game.angle; star.position.copy(game.ship.position); };
+  game.stars.length = 0; game.stars.push(gold); game.scene.add(gold);
+  put(gold);
+  const c0 = game.collected;
+  step(1);
+  check(game.collected === c0 + 3, 'orbit-dodge: a gold star counts 3', String(game.collected - c0));
+  game.stars.push(chrono); game.scene.add(chrono); put(chrono);
+  const ring = game.rings[0];
+  step(1);
+  check(game.slowT > 4, 'orbit-dodge: a chrono star starts 5 seconds of slow debris');
+  const p0 = ring.phase;
+  step(60);
+  const slowMove = Math.abs(ring.phase - p0);
+  game.slowT = 0;
+  const p1 = ring.phase;
+  step(60);
+  const fastMove = Math.abs(ring.phase - p1);
+  check(slowMove < fastMove * 0.6, 'orbit-dodge: ...and the rings really turn slower while it lasts', `${slowMove.toFixed(2)} vs ${fastMove.toFixed(2)}`);
+}
+
 finish('extras');

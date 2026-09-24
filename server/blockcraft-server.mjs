@@ -76,7 +76,7 @@ const BOTS_DEFAULT = clampBots(botsFlag ? botsFlag.slice(7) : process.env.BOTS ?
 const MAX_BOTS_ENV = Math.max(0, Math.floor(Number(process.env.MAX_BOTS ?? (botsFlag !== undefined ? 60 : 0))) || 0);
 const DATA_FILE = process.env.DATA_FILE || '';
 const BUILD_HEIGHT = TERRAIN_H;   // shared with the game via src/engine/terrainHeight.js
-const MAX_BLOCK_ID = 16;   // BLOCKS there has 17 entries, indices 0-16 — id 17 is out of range and would crash a client's mesher
+const MAX_BLOCK_ID = 23;   // BLOCKS in src/games/blockcraft.js has 24 entries, indices 0-23 — id 24 is out of range and would crash a client's mesher
 const MAX_SKIN_CHARS = 30000;   // must match Skin.js — a 64x64 PNG data URL is well under this
 const MAX_PLAYERS = Number(process.env.MAX_PLAYERS) || 32;
 const MAX_PAYLOAD = 64 * 1024;  // one skin plus JSON framing fits with plenty of room; nothing legit is bigger

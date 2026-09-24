@@ -1,6 +1,7 @@
 /** Targeted checks for the voxel world: chunk streaming, generation, meshing,
  *  physics, editing, and save/load. */
 import * as THREE from 'three';
+import { readFileSync } from 'node:fs';
 
 globalThis.document ??= {
   createElement: () => ({
@@ -113,7 +114,7 @@ check('has water nearby', (counts[7] || 0) >= 0, `${counts[7] || 0} water`);   /
 check('has trees (logs + leaves)', counts[5] > 5 && counts[6] > 20,
   `${counts[5] || 0} logs, ${counts[6] || 0} leaves`);
 check('has coal ore', (counts[15] || 0) > 20, `${counts[15] || 0} coal`);
-check('has iron ore', (counts[16] || 0) > 10, `${counts[16] || 0} iron`);
+check('has iron ore', (counts[16] || 0) > 10, `${counts[16] || 0} iron, ${counts[12] || 0} gold, ${counts[17] || 0} glowstone`);
 check('ore is layered by depth', deepestY(game, 15) >= deepestY(game, 16),
   `coal to y${deepestY(game, 15)}, iron to y${deepestY(game, 16)}`);
 
@@ -620,8 +621,8 @@ check('loading a different world restores its edit', game2.get(1, 3, 2) === 9);
   check('a peer\'s edit is relayed to other peers but not echoed back to the sender',
     sentToB.some((m) => m.t === 'edit' && m.x === 3) && !sentToA.some((m) => m.t === 'edit' && m.x === 3));
 
-  game.handleHostData(connA, { t: 'edit', x: 4, y: 4, z: 4, b: 17 });   // one past the last real block id
-  check('the host rejects an out-of-range block id from a peer', game.get(4, 4, 4) !== 17);
+  game.handleHostData(connA, { t: 'edit', x: 4, y: 4, z: 4, b: 24 });   // one past the last real block id
+  check('the host rejects an out-of-range block id from a peer', game.get(4, 4, 4) !== 24);
 
   // Skins: a joiner's skin is validated (junk → default look, never a crash)
   // and shows up in what a later joiner is sent.
@@ -717,6 +718,39 @@ function deleteWorldForTest(id) {
 
 function loadWorldListForTest() {
   try { return JSON.parse(memStore.get('mg.blockcraft.worlds.v1') || '[]'); } catch { return []; }
+}
+
+// --- the newer blocks (ids 17-23) ------------------------------------------
+{
+  const t = makeGame(makeInput());
+  t.start(); t.beginPlay();
+  for (let i = 0; i < 5; i++) t.update(1 / 60);
+  const px = Math.floor(t.pos.x), pz = Math.floor(t.pos.z);
+  const gy = 30;
+  let bad = null;
+  for (let id = 17; id <= 23; id++) {
+    try { t.set(px + id, gy, pz, id); } catch (e) { bad = `${id}: ${e.message}`; }
+  }
+  for (let i = 0; i < 6; i++) { try { t.update(1 / 60); } catch (e) { bad ??= e.message; } }
+  check('every new block id can be placed and meshed without error', !bad, String(bad));
+  check('the new blocks read back as placed', [17, 18, 19, 20, 21, 22, 23].every((id) => t.get(px + id, gy, pz) === id));
+  const serverSrc = readFileSync(new URL('../server/blockcraft-server.mjs', import.meta.url), 'utf8');
+  const serverMax = Number(/const MAX_BLOCK_ID = (\d+);/.exec(serverSrc)?.[1]);
+  check('the multiplayer server accepts the new block ids', serverMax >= 23, `MAX_BLOCK_ID = ${serverMax}`);
+  t.save();
+  const t2 = makeGame(makeInput());
+  t2.start();
+  check('new blocks survive being saved and reloaded', [17, 18, 19, 20, 21, 22, 23].every((id) => t2.get(px + id, gy, pz) === id),
+    [17, 18, 19, 20, 21, 22, 23].map((id) => t2.get(px + id, gy, pz)).join(','));
+  // glowstone appears deep down in natural terrain
+  const deep = countBlocks(t).counts[17] || 0;
+  check('glowstone pockets are found deep underground', deep > 0, `${deep} glowstone in the loaded chunks`);
+  let shallow = 0;
+  for (const key of t.chunkData.keys()) {
+    const [cx, cz] = key.split(',').map(Number);
+    for (let lz = 0; lz < 16; lz++) for (let lx = 0; lx < 16; lx++) for (let y = 9; y < 39; y++) if (t.get(cx * 16 + lx, y, cz * 16 + lz) === 17 && !(cx === Math.floor(px / 16) && Math.abs(y - gy) < 1)) shallow++;
+  }
+  check('...and never near the surface', shallow <= 7, `${shallow} above y8 (the seven placed test blocks may be among them)`);
 }
 
 for (const c of checks) {

@@ -2,6 +2,10 @@
  *  menu, under the trailer. Keep entries brief; this isn't a commit log. */
 export const CHANGELOG = [
   {
+    title: 'New in Orbit Dodge and Blockcraft',
+    detail: 'Orbit Dodge: gold stars count 3, white chrono stars slow the debris rings for 5 seconds. Blockcraft: seven new blocks — Glowstone (always bright, found in small pockets deep underground), Ice, red / blue / yellow / green Wool and Bookshelf. The hotbar grows to 18 slots: click or scroll to reach the new ones.',
+  },
+  {
     title: 'New in Hurdle Runner, Free Throw, Plate Spinner, Grapple Gap, Skeet Range and Arena Fighter',
     detail: 'Hurdle Runner: coins on the track (+10 m) — the high ones need a jump. Free Throw: two makes in a row and the next ball is a gold money ball (double points, +5 s). Plate Spinner: six saves in a row calm every plate. Grapple Gap: white slingshot anchors and a safety net that catches one fall. Skeet Range: gold clays (count 3, forgive 2 misses) and red decoys you must not shoot. Arena Fighter: land hits to fill a super meter, then press L.',
   },

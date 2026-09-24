@@ -30,12 +30,13 @@ export default class OrbitDodge extends Game {
     this.survived = 0;
     this.nextRing = 0;
     this.nextStar = 1.5;
+    this.slowT = 0;        // a white chrono star slows the debris rings for a few seconds
 
     for (let i = 0; i < 3; i++) this.addRing();
 
     this.camera.position.set(0, 42, 26);
     this.camera.lookAt(0, 0, 0);
-    this.hud.hint('W / S (or ↑ ↓) to climb and drop between orbits · inner orbits move faster');
+    this.hud.hint('W / S (or ↑ ↓) to climb and drop between orbits · inner orbits move faster · gold stars count 3 · white stars slow the debris');
   }
 
   addRing() {
@@ -59,16 +60,19 @@ export default class OrbitDodge extends Game {
   }
 
   addStar() {
+    const roll = Math.random();
+    const kind = roll < 0.1 ? 'gold' : roll < 0.18 ? 'chrono' : 'star';
     const s = new THREE.Mesh(
-      new THREE.OctahedronGeometry(0.7),
-      glow(COLORS[randInt(0, COLORS.length - 1)]),
+      new THREE.OctahedronGeometry(kind === 'star' ? 0.7 : 0.95),
+      glow(kind === 'gold' ? 0xffd23f : kind === 'chrono' ? 0xffffff : COLORS[randInt(0, COLORS.length - 1)], { emissiveIntensity: kind === 'star' ? 0.75 : 1.2 }),
     );
-    s.userData = { radius: rand(R_MIN, R_MAX), angle: rand(0, TAU), spin: rand(0.1, 0.4) };
+    s.userData = { radius: rand(R_MIN, R_MAX), angle: rand(0, TAU), spin: rand(0.1, 0.4), kind };
     this.stars.push(this.add(s));
   }
 
   update(dt) {
     this.survived += dt;
+    this.slowT = Math.max(0, this.slowT - dt);
 
     // Orbit mechanics: you steer radius, physics decides your angular speed.
     this.targetR = clamp(this.targetR + this.input.axisY() * 9 * dt, R_MIN, R_MAX);
@@ -91,7 +95,7 @@ export default class OrbitDodge extends Game {
       this.audio.tone([120, 260], 0.3, { type: 'sawtooth', gain: 0.09 });
     }
 
-    const boost = 1 + this.survived / 60;
+    const boost = (1 + this.survived / 60) * (this.slowT > 0 ? 0.35 : 1);
     for (const ring of this.rings) {
       ring.phase += ring.spin * boost * dt;
       for (const r of ring.rocks) {
@@ -116,14 +120,18 @@ export default class OrbitDodge extends Game {
       s.position.set(Math.cos(d.angle) * d.radius, 0, Math.sin(d.angle) * d.radius);
       s.rotation.y += d.spin * 4 * dt;
       if (s.position.distanceTo(this.ship.position) < 1.7) {
-        this.collected++;
-        this.burst.burst(s.position, s.material.color.getHex(), 12, 6);
+        const kind = d.kind;
+        const before = this.collected;
+        this.collected += kind === 'gold' ? 3 : 1;
+        this.burst.burst(s.position, s.material.color.getHex(), kind === 'star' ? 12 : 22, 6);
         this.audio.pickup();
+        if (kind === 'gold') this.hud.toast('GOLD STAR +3', 700);
+        if (kind === 'chrono') { this.slowT = 5; this.hud.toast('DEBRIS SLOWED', 800); this.audio.good(); }
         this.scene.remove(s);
         s.geometry.dispose();
         s.material.dispose();
         this.stars.splice(i, 1);
-        if (this.collected % 10 === 0) { this.hud.toast(`${this.collected} stars`); this.audio.good(); }
+        if (Math.floor(this.collected / 10) > Math.floor(before / 10)) { this.hud.toast(`${this.collected} stars`); this.audio.good(); }
       }
     }
 
@@ -133,6 +141,7 @@ export default class OrbitDodge extends Game {
     this.hud.stat('Stars', this.collected);
     this.hud.stat('Orbit', `${this.radius.toFixed(1)}`);
     this.hud.stat('Alive', `${this.survived.toFixed(1)}s`);
+    if (this.slowT > 0) this.hud.stat('Slow', `${Math.ceil(this.slowT)}s`); else this.hud.removeStat('Slow');
   }
 
   crash(rock) {

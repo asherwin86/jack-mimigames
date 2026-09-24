@@ -84,12 +84,19 @@ const BLOCKS = [
   { name: 'Obsidian', tiles: [15, 15, 15] },
   { name: 'Coal Ore', tiles: [16, 16, 16] },
   { name: 'Iron Ore', tiles: [17, 17, 17] },
+  { name: 'Glowstone', tiles: [18, 18, 18], glow: true },   // always at full brightness, whatever the face
+  { name: 'Ice',       tiles: [19, 19, 19], alpha: true },
+  { name: 'Red Wool',  tiles: [20, 20, 20] },
+  { name: 'Blue Wool', tiles: [21, 21, 21] },
+  { name: 'Yellow Wool', tiles: [22, 22, 22] },
+  { name: 'Green Wool', tiles: [23, 23, 23] },
+  { name: 'Bookshelf', tiles: [8, 24, 8] },
 ];
 const AIR = 0;
 const WATER = 7;
 const SWORD = 'sword';   // the one non-block hotbar entry — see updateSword() and interact()
 const BOW = 'bow';
-const HOTBAR = [SWORD, BOW, 1, 3, 10, 8, 9, 5, 6, 4, 11];
+const HOTBAR = [SWORD, BOW, 1, 3, 10, 8, 9, 5, 6, 4, 11, 17, 18, 19, 20, 21, 22, 23];   // slots past the 11th: click them, scroll to them, or use the pad bumpers
 const HOTBAR_KEYS = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8', 'Digit9', 'Digit0', 'Minus'];
 const FIRST_BLOCK_SLOT = HOTBAR.findIndex((h) => typeof h === 'number');   // where you start, so digging works straight away
 // Bow: hold to draw, release to loose. Speed and damage scale with the draw.
@@ -108,6 +115,7 @@ const HOST_COLORS = ['#ff5a50', '#5ad1ff', '#ffd83f', '#7fd94a', '#c77dff', '#ff
 const HARDNESS = {
   1: 0.45, 2: 0.4, 3: 1.1, 4: 0.35, 5: 0.8, 6: 0.12, 8: 0.7,
   9: 1.0, 10: 1.2, 11: 0.35, 12: 1.7, 13: 0.2, 14: 3.4, 15: 1.5, 16: 1.9,
+  17: 0.5, 18: 0.4, 19: 0.3, 20: 0.3, 21: 0.3, 22: 0.3, 23: 0.6,
 };
 const hardnessOf = (id) => HARDNESS[id] ?? 0.6;
 
@@ -116,6 +124,7 @@ const DEBRIS = {
   1: 0x6bbf3a, 2: 0x8b6239, 3: 0x8c8c96, 4: 0xecdfab, 5: 0x6e4a2a, 6: 0x3f9a2a,
   7: 0x2e72e6, 8: 0xbd8f56, 9: 0xa94a3a, 10: 0x87878f, 11: 0xcdeaf5,
   12: 0xffd83f, 13: 0xf6faff, 14: 0x1a1526, 15: 0x1c1c20, 16: 0xe3c19a,
+  17: 0xffd35a, 18: 0xb8e6ff, 19: 0xd9352b, 20: 0x2f5fd8, 21: 0xf2c92b, 22: 0x3fae3a, 23: 0x8b6a3a,
 };
 
 const isSolid = (id) => id !== AIR && BLOCKS[id].solid !== false;
@@ -972,7 +981,7 @@ export default class Blockcraft extends Game {
 
             const tile = BLOCKS[id].tiles[face.tile];
             const base = target.pos.length / 3;
-            const s = face.shade;
+            const s = BLOCKS[id].glow ? 1 : face.shade;
             for (const [ox, oy, oz, u, v] of face.corners) {
               target.pos.push(wx + ox, y + oy, wz + oz);
               target.uv.push(...tileUV(tile, u, v));
@@ -1658,7 +1667,7 @@ export default class Blockcraft extends Game {
     this.mineT = 0;
     this.crack.visible = false;
     this.audio.noise(0.13, { gain: 0.15, cutoff: 1200, sweep: 0.4 });
-    if (hit.id === 12 || hit.id === 15 || hit.id === 16) this.audio.good();   // a little reward for striking ore
+    if (hit.id === 12 || hit.id === 15 || hit.id === 16 || hit.id === 17) this.audio.good();   // a little reward for striking ore
   }
 
   driftClouds(dt) {
@@ -3063,6 +3072,7 @@ function generateChunk(cx, cz, seed, cal) {
     { id: 15, top: 26, freq: 0.34, cut: 0.845 },
     { id: 16, top: 17, freq: 0.4, cut: 0.86 },
     { id: 12, top: 10, freq: 0.46, cut: 0.885 },
+    { id: 17, top: 8, freq: 0.5, cut: 0.955 },    // glowstone: small pockets right at the bottom
   ];
   for (let y = 1; y < 27; y++) {
     for (let lz = 0; lz < CHUNK; lz++) {
@@ -3451,6 +3461,25 @@ function buildAtlas() {
     px(17, x, y, '#e3c19a'); px(17, x + 1, y, '#d0a87e'); px(17, x, y + 1, '#f2d6b2');
   }
 
+  // --- newer blocks ---
+  speckle(18, '#f5c542', ['#ffe27a', '#e8a91f', '#fff0a8']);                // glowstone
+  for (let i = 0; i < 14; i++) px(18, (rng() * TILE) | 0, (rng() * TILE) | 0, '#fffbe0');
+  fill(19, '#a9dcf5');                                                      // ice
+  for (let i = 0; i < 40; i++) px(19, (rng() * TILE) | 0, (rng() * TILE) | 0, rng() < 0.5 ? '#d5f1ff' : '#8fc8e8');
+  for (let i = 0; i < 6; i++) { const x = (rng() * 10) | 0; const y = (rng() * 12) | 0; for (let k = 0; k < 4; k++) px(19, x + k, y + k, '#ffffff'); }
+  const wool = (t, base, shades) => {                                       // wool: soft speckle in one colour
+    fill(t, base);
+    for (let y = 0; y < TILE; y++) for (let x = 0; x < TILE; x++) if (rng() < 0.3) px(t, x, y, shades[(rng() * shades.length) | 0]);
+  };
+  wool(20, '#d9352b', ['#e85a4f', '#b52a22']);                              // red wool
+  wool(21, '#2f5fd8', ['#4a7cf0', '#234aa8']);                              // blue wool
+  wool(22, '#f2c92b', ['#ffe066', '#d1a91a']);                              // yellow wool
+  wool(23, '#3fae3a', ['#5cc956', '#2e8a2a']);                              // green wool
+  fill(24, '#bd8f56');                                                      // bookshelf side: planks with rows of books
+  for (let y = 0; y < TILE; y++) for (let x = 0; x < TILE; x++) if (y % 8 === 0 || y % 8 === 7) px(24, x, y, '#8f6a3a');
+  const spines = ['#c0392b', '#2980b9', '#27ae60', '#f1c40f', '#8e44ad', '#ecf0f1'];
+  for (const y0 of [1, 9]) for (let x = 0; x < TILE; x++) { const col = spines[((rng() * spines.length) | 0)]; for (let y = y0; y < y0 + 6; y++) px(24, x, y, x % 3 === 2 ? '#3b2a17' : col); }
+
   const tex = new THREE.CanvasTexture(c);
   tex.magFilter = THREE.NearestFilter;
   tex.minFilter = THREE.NearestFilter;
@@ -3477,7 +3506,7 @@ const SWORD_ICON = `<svg class="bc-sword-icon" viewBox="0 0 32 32" width="30" he
 function hotbarHtml() {
   const slots = HOTBAR.map((id, i) => `
     <div class="bc-slot${i === FIRST_BLOCK_SLOT ? ' on' : ''}">
-      <span class="bc-key">${i < 9 ? i + 1 : i === 9 ? 0 : '-'}</span>
+      <span class="bc-key">${i < 9 ? i + 1 : i === 9 ? 0 : i === 10 ? '-' : ''}</span>
       ${id === SWORD ? SWORD_ICON : id === BOW ? BOW_ICON : `<span class="bc-swatch" style="background:${SWATCH[id]}"></span>`}
     </div>`).join('');
   return `
@@ -3489,7 +3518,7 @@ function hotbarHtml() {
       .bc-cross:before { left:8px; top:0; width:2px; height:18px; }
       .bc-cross:after { top:8px; left:0; height:2px; width:18px; }
       .bc-hotbar { position:absolute; left:50%; bottom:56px; transform:translateX(-50%);
-        display:flex; gap:4px; padding:4px; background:rgba(10,14,24,.55);
+        display:flex; gap:4px; padding:4px; background:rgba(10,14,24,.55); max-width:96vw; flex-wrap:wrap; justify-content:center;
         border:1px solid rgba(255,255,255,.15); border-radius:8px; }
       .bc-slot { position:relative; width:44px; height:44px; border-radius:5px;
         border:2px solid rgba(255,255,255,.12); display:grid; place-items:center;
@@ -3820,4 +3849,5 @@ function bindLook(zone, look) {
 const SWATCH = {
   1: '#6bbf3a', 3: '#8c8c96', 4: '#ecdfab', 5: '#6e4a2a', 6: '#3f9a2a',
   8: '#bd8f56', 9: '#a94a3a', 10: '#87878f', 11: '#cdeaf5',
+  17: '#ffd35a', 18: '#b8e6ff', 19: '#d9352b', 20: '#2f5fd8', 21: '#f2c92b', 22: '#3fae3a', 23: '#8b6a3a',
 };
