@@ -976,7 +976,7 @@ function sendJson(res, status, obj) {
 // actions worth slowing down on purpose (account creation and login are
 // the ones brute-forcing/spam actually targets).
 const RATE_LIMIT_GENERAL = { windowMs: 60_000, max: 120 };
-const RATE_LIMIT_STRICT = { windowMs: 60_000, max: 15 };
+const RATE_LIMIT_STRICT = { windowMs: 60_000, max: Number(process.env.RATE_LIMIT_STRICT_MAX) || 15 };   // (arcade) tunable for tests
 const rateLimitBuckets = new Map(); // `${tier}:${ip}` -> { count, resetAt }
 setInterval(() => {
   const now = Date.now();
@@ -1029,6 +1029,77 @@ const SENSITIVE_PROFILE_ACTIONS = new Set([
   "passkey-login-verify", "passkey-register-verify",
 ]);
 
+// ---------- Device sessions (arcade) ----------
+// Signing in registers the device: the server hands back a random token (only its
+// hash is stored) that the game uses instead of keeping a password-equivalent on
+// the device. That's what makes "where am I signed in?" possible, and lets one
+// device be signed out from another: deleting a session invalidates its token.
+const MAX_SESSIONS = 10;                        // devices an account can be signed in on at once (oldest drops off)
+const SESSION_IDLE_MS = 90 * 24 * 60 * 60 * 1000;   // unused for 90 days -> signed out
+let sessionsDirty = false;                      // lastSeen changes are flushed every few minutes, not on every request
+setInterval(() => { if (sessionsDirty) { sessionsDirty = false; saveProfilesToDisk(); } }, 5 * 60_000).unref();
+
+const sha256Hex = (v) => crypto.createHash("sha256").update(v).digest("hex");
+
+function sanitizeDeviceLabel(device) {
+  const raw = device && typeof device === "object" && typeof device.label === "string" ? device.label : "";
+  // eslint-disable-next-line no-control-regex
+  const label = raw.replace(/[\u0000-\u001f\u007f<>]/g, "").trim().slice(0, 60);
+  return label || "Unknown device";
+}
+
+function createSession(entry, device) {
+  const sessions = entry.sessions && typeof entry.sessions === "object" ? entry.sessions : (entry.sessions = {});
+  const now = Date.now();
+  for (const [id, s] of Object.entries(sessions)) if (now - s.lastSeen > SESSION_IDLE_MS) delete sessions[id];
+  while (Object.keys(sessions).length >= MAX_SESSIONS) {
+    const oldest = Object.values(sessions).sort((a, b) => a.lastSeen - b.lastSeen)[0];
+    delete sessions[oldest.id];
+  }
+  const id = crypto.randomBytes(9).toString("base64url");
+  const token = crypto.randomBytes(32).toString("base64url");
+  sessions[id] = { id, tokenHash: sha256Hex(token), label: sanitizeDeviceLabel(device), createdAt: now, lastSeen: now };
+  return { id, token };
+}
+
+function findSession(entry, token) {
+  if (!entry?.sessions || typeof token !== "string" || token.length < 20 || token.length > 100) return null;
+  const hash = Buffer.from(sha256Hex(token), "hex");
+  const now = Date.now();
+  for (const s of Object.values(entry.sessions)) {
+    const stored = Buffer.from(s.tokenHash, "hex");
+    if (stored.length === hash.length && crypto.timingSafeEqual(stored, hash) && now - s.lastSeen < SESSION_IDLE_MS) return s;
+  }
+  return null;
+}
+
+function touchSession(s) {
+  if (Date.now() - s.lastSeen > 60_000) { s.lastSeen = Date.now(); sessionsDirty = true; }
+}
+
+/** Who is calling: { entry, sess } for a valid session token (sess = that device), or a valid
+ *  password hash (older clients: sess = null). Null if neither checks out. */
+function authenticate(body) {
+  const key = typeof body.key === "string" ? body.key.trim().toLowerCase() : "";
+  const entry = isNonEmptyString(key, 40) ? profiles[key] : null;
+  if (!entry) return null;
+  if (typeof body.token === "string" && body.token) {
+    const sess = findSession(entry, body.token);
+    if (!sess) return null;
+    touchSession(sess);
+    return { key, entry, sess };
+  }
+  const ph = typeof body.passwordHash === "string" ? body.passwordHash : "";
+  if (isNonEmptyString(ph, 200) && entry.passwordHash === ph) return { key, entry, sess: null };
+  return null;
+}
+
+function publicSessions(entry, currentId) {
+  return Object.values(entry.sessions || {})
+    .sort((a, b) => b.lastSeen - a.lastSeen)
+    .map((s) => ({ id: s.id, label: s.label, createdAt: s.createdAt, lastSeen: s.lastSeen, current: s.id === currentId }));
+}
+
 async function handleProfilesApi(req, res, action) {
   if (req.method !== "POST") {
     sendJson(res, 405, { ok: false, msg: "Method not allowed." });
@@ -1055,6 +1126,25 @@ async function handleProfilesApi(req, res, action) {
   const entry = profiles[key];
   function wrongPassword() {
     return !entry || !isNonEmptyString(passwordHash, 200) || entry.passwordHash !== passwordHash;
+  }
+
+  // --- devices (arcade): who is signed in, and signing devices out ---
+  if (action === "devices" || action === "revoke-device" || action === "revoke-others" || action === "logout") {
+    const auth = authenticate(body);
+    if (!auth) { sendJson(res, 200, { ok: false, authFailed: true, msg: "Sign in again." }); return; }
+    const sessions = auth.entry.sessions || {};
+    const currentId = auth.sess?.id ?? null;
+    if (action === "logout") {
+      if (currentId) delete sessions[currentId];
+    } else if (action === "revoke-device") {
+      const id = typeof body.id === "string" ? body.id : "";
+      delete sessions[id];
+    } else if (action === "revoke-others") {
+      for (const id of Object.keys(sessions)) if (id !== currentId) delete sessions[id];
+    }
+    if (action !== "devices") { auth.entry.sessions = sessions; auth.entry.updatedAt = Date.now(); saveProfilesToDisk(); }
+    sendJson(res, 200, { ok: true, devices: publicSessions(auth.entry, currentId) });
+    return;
   }
 
   if (action === "create") {
@@ -1092,14 +1182,18 @@ async function handleProfilesApi(req, res, action) {
       keys: 0,
       rivalSkins: { owned: ["standard"], equipped: {} },
     };
+    let created = {};
+    if (body.device) created = createSession(profiles[key], body.device);
     saveProfilesToDisk();
-    sendJson(res, 200, { ok: true });
+    sendJson(res, 200, { ok: true, token: created.token, deviceId: created.id });
     return;
   }
   if (action === "login") {
     if (!entry) { sendJson(res, 200, { ok: false, msg: "No profile with that name." }); return; }
     if (entry.passwordHash !== passwordHash) { sendJson(res, 200, { ok: false, msg: "Wrong password." }); return; }
-    sendJson(res, 200, { ok: true, name: entry.name, dev: entry.dev, settings: entry.settings, email: entry.email || null, passkeys: publicPasskeys(entry), avatar: entry.avatar || null, kartColor: entry.kartColor || null, keys: typeof entry.keys === "number" ? entry.keys : 0, rivalSkins: entry.rivalSkins || { owned: ["standard"], equipped: {} } });
+    let session = {};
+    if (body.device) { session = createSession(entry, body.device); saveProfilesToDisk(); }   // (arcade) register this device
+    sendJson(res, 200, { ok: true, token: session.token, deviceId: session.id, name: entry.name, dev: entry.dev, settings: entry.settings, email: entry.email || null, passkeys: publicPasskeys(entry), avatar: entry.avatar || null, kartColor: entry.kartColor || null, keys: typeof entry.keys === "number" ? entry.keys : 0, rivalSkins: entry.rivalSkins || { owned: ["standard"], equipped: {} } });
     return;
   }
 
@@ -1131,6 +1225,7 @@ async function handleProfilesApi(req, res, action) {
     const newPasswordHash = typeof body.newPasswordHash === "string" ? body.newPasswordHash : "";
     if (!isNonEmptyString(newPasswordHash, 200)) { sendJson(res, 400, { ok: false, msg: "Missing new password." }); return; }
     entry.passwordHash = newPasswordHash;
+    entry.sessions = {};   // (arcade) a new password signs every device out
     entry.updatedAt = Date.now();
     saveProfilesToDisk();
     sendJson(res, 200, { ok: true, msg: "Password changed." });
@@ -2341,13 +2436,12 @@ async function handleWorldsApi(req, res, action) {
   if (req.method !== "POST") { sendJson(res, 405, { ok: false, msg: "Method not allowed." }); return; }
   let body;
   try { body = await readJsonBody(req, 1_100_000); } catch (e) { sendJson(res, 400, { ok: false, msg: "Bad request." }); return; }
-  const key = typeof body.key === "string" ? body.key.trim().toLowerCase() : "";
-  const passwordHash = typeof body.passwordHash === "string" ? body.passwordHash : "";
-  const entry = isNonEmptyString(key, 40) ? profiles[key] : null;
-  if (!entry || !isNonEmptyString(passwordHash, 200) || entry.passwordHash !== passwordHash) {
-    sendJson(res, 200, { ok: false, msg: "Sign in first." });
+  const auth = authenticate(body);
+  if (!auth) {
+    sendJson(res, 200, { ok: false, authFailed: true, msg: "Sign in first." });
     return;
   }
+  const { key } = auth;
   const index = await loadWorldIndex(key);
   const id = typeof body.id === "string" ? body.id : "";
 

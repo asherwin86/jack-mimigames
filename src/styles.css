@@ -367,3 +367,13 @@ html, body {
 .acct-msg.ok { color: #9be7ff; }
 .acct-msg.bad { color: #ff9a92; }
 .acct-fine { margin: 12px 0 0; font-size: 11px; color: rgba(255,255,255,.4); }
+
+.acct-devices { margin: 14px 0 6px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,.12); display: flex; flex-direction: column; gap: 8px; }
+.acct-devices h3 { margin: 0; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: rgba(255,255,255,.55); }
+.acct-dev { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 10px; border-radius: 10px; background: rgba(255,255,255,.05); }
+.acct-dev.me { background: rgba(110,231,255,.1); }
+.acct-dev-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; font-size: 13px; }
+.acct-dev-info small { color: rgba(255,255,255,.5); font-size: 11px; }
+.acct-dev-name { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.acct-badge { padding: 1px 7px; border-radius: 999px; font-size: 10px; font-weight: 700; color: #04121a; background: var(--accent, #6ee7ff); }
+.acct-btn.small { padding: 6px 10px; font-size: 12px; flex: none; }

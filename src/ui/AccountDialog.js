@@ -8,6 +8,18 @@ import { Account, hubUrl } from '../engine/Account.js';
  */
 let open = null;
 
+/** "just now", "5 minutes ago", "3 days ago"… */
+function ago(ts) {
+  const sec = Math.max(0, Math.round((Date.now() - ts) / 1000));
+  if (sec < 90) return 'just now';
+  const min = Math.round(sec / 60);
+  if (min < 60) return `${min} minutes ago`;
+  const hr = Math.round(min / 60);
+  if (hr < 36) return `${hr} hour${hr === 1 ? '' : 's'} ago`;
+  const day = Math.round(hr / 24);
+  return `${day} day${day === 1 ? '' : 's'} ago`;
+}
+
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
 export function openAccountDialog() {
@@ -20,6 +32,7 @@ export function openAccountDialog() {
   let busy = false;
   let message = null;        // { ok, text }
   let confirmDelete = false;
+  let devices = null;        // null = not asked yet, else { loading } | { list } | { error }
   let unsub = null;
 
   const close = () => {
@@ -59,6 +72,53 @@ export function openAccountDialog() {
     setMessage(false, r.msg || 'Could not delete the account.');
   }
 
+  async function loadDevices() {
+    devices = { loading: true };
+    render();
+    const r = await Account.devices();
+    if (!open) return;
+    devices = r.ok ? { list: r.devices } : { error: r.msg || "Couldn't load your devices." };
+    if (r.signedOut) devices = null;
+    render();
+  }
+
+  async function revoke(id) {
+    if (busy) return;
+    busy = true; render();
+    const r = await Account.revokeDevice(id);
+    busy = false;
+    if (!open) return;
+    if (r.ok) devices = { list: r.devices };
+    else setMessage(false, r.msg || "Couldn't sign that device out.");
+    render();
+  }
+
+  async function revokeOthers() {
+    if (busy) return;
+    busy = true; render();
+    const r = await Account.revokeOthers();
+    busy = false;
+    if (!open) return;
+    if (r.ok) { devices = { list: r.devices }; message = { ok: true, text: 'Every other device was signed out.' }; }
+    else message = { ok: false, text: r.msg || "Couldn't sign the other devices out." };
+    render();
+  }
+
+  function devicesHtml() {
+    if (!devices || devices.loading) return '<div class="acct-devices"><h3>Signed in on</h3><p class="acct-note">Loading your devices…</p></div>';
+    if (devices.error) return `<div class="acct-devices"><h3>Signed in on</h3><p class="acct-msg bad">${esc(devices.error)}</p><button class="acct-btn" type="button" data-act="devices-retry">Try again</button></div>`;
+    const rows = devices.list.map((d) => `
+      <div class="acct-dev${d.current ? ' me' : ''}">
+        <div class="acct-dev-info">
+          <div class="acct-dev-name"><strong>${esc(d.label)}</strong>${d.current ? '<span class="acct-badge">This device</span>' : ''}</div>
+          <small>Signed in ${esc(ago(d.createdAt))} · last active ${esc(ago(d.lastSeen))}</small>
+        </div>
+        ${d.current ? '' : `<button class="acct-btn small" type="button" data-revoke="${esc(d.id)}"${busy ? ' disabled' : ''}>Sign out</button>`}
+      </div>`).join('');
+    return `<div class="acct-devices"><h3>Signed in on</h3>${rows || '<p class="acct-note">No devices are registered yet.</p>'}
+      ${devices.list.length > 1 ? `<button class="acct-btn" type="button" data-act="revoke-others"${busy ? ' disabled' : ''}>Sign out all other devices</button>` : ''}</div>`;
+  }
+
   function render() {
     // Re-rendering rebuilds the form, so carry over what's been typed (a mistake message shouldn't wipe the fields).
     const typed = {};
@@ -73,6 +133,7 @@ export function openAccountDialog() {
           <p class="acct-hello">You're signed in as <strong>${esc(s.name)}</strong>.</p>
           <p class="acct-note">Your Blockcraft worlds are saved to this account, and Kart Circuit knows who you are for online races. Sign in with the same name and password on any device.</p>
           ${msgHtml}
+          ${devicesHtml()}
           <div class="acct-row">
             <button class="acct-btn" type="button" data-act="signout">Sign out</button>
             <button class="acct-btn danger" type="button" data-act="delete-start">Delete account…</button>
@@ -106,9 +167,12 @@ export function openAccountDialog() {
     root.querySelector('.acct-x')?.addEventListener('click', close);
     root.querySelectorAll('[data-tab]').forEach((b) => b.addEventListener('click', () => { tab = b.dataset.tab; message = null; render(); }));
     root.querySelector('.acct-form')?.addEventListener('submit', (e) => { e.preventDefault(); submit(); });
-    root.querySelector('[data-act="signout"]')?.addEventListener('click', () => { Account.signOut(); message = null; confirmDelete = false; render(); });
+    root.querySelector('[data-act="signout"]')?.addEventListener('click', () => { Account.signOut(); message = null; confirmDelete = false; devices = null; render(); });
     root.querySelector('[data-act="delete-start"]')?.addEventListener('click', () => { confirmDelete = !confirmDelete; message = null; render(); });
     root.querySelector('[data-act="delete-go"]')?.addEventListener('click', doDelete);
+    root.querySelectorAll('[data-revoke]').forEach((b) => b.addEventListener('click', () => revoke(b.dataset.revoke)));
+    root.querySelector('[data-act="revoke-others"]')?.addEventListener('click', revokeOthers);
+    root.querySelector('[data-act="devices-retry"]')?.addEventListener('click', loadDevices);
     // Typing here must never reach the game's own key handling (WASD, Space, Q/E…).
     for (const el of root.querySelectorAll('input')) {
       el.addEventListener('keydown', (e) => e.stopPropagation());
@@ -117,9 +181,10 @@ export function openAccountDialog() {
     }
     root.querySelector('.acct-card')?.addEventListener('pointerdown', (e) => e.stopPropagation());
     if (!busy) root.querySelector('input')?.focus();
+    if (s && devices === null) loadDevices();
   }
 
   root.addEventListener('pointerdown', (e) => { if (e.target === root) close(); });
-  unsub = Account.onChange(() => { if (open) render(); });
+  unsub = Account.onChange(() => { if (open) { devices = null; render(); } });
   render();
 }

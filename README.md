@@ -118,7 +118,7 @@ Or build and publish by hand with `npm run release:win` (needs `GH_TOKEN`), or j
 
 ## Accounts, cloud worlds and Kart Circuit online
 
-**Sign in** (top of the menu, or the ☁ strip in Blockcraft's World panel) with a name and password — no email needed. While signed in, every Blockcraft world you make or play is also saved to your account, so it shows up (with a ☁) on any device you sign in on; Load fetches it. An account holds 8 worlds; if two devices edit the same world, the older copy is refused rather than overwriting the newer. Kart Circuit's *Play with Friends* and *Play Online* modes run through the same server. The server is `hub-server/` (see [`deploy/`](deploy/README.md#the-account-server-sign-in-cloud-worlds-kart-circuit-online)); `npm run check:hub` and `npm run check:cloud` test it.
+**Sign in** (top of the menu, or the ☁ strip in Blockcraft's World panel) with a name and password — no email needed. While signed in, every Blockcraft world you make or play is also saved to your account, so it shows up (with a ☁) on any device you sign in on; Load fetches it. Your account window lists the devices you're signed in on and lets you sign any of them (or all the others) out. An account holds 8 worlds; if two devices edit the same world, the older copy is refused rather than overwriting the newer. Kart Circuit's *Play with Friends* and *Play Online* modes run through the same server. The server is `hub-server/` (see [`deploy/`](deploy/README.md#the-account-server-sign-in-cloud-worlds-kart-circuit-online)); `npm run check:hub` and `npm run check:cloud` test it.
 
 ## PvP worlds and bots
 

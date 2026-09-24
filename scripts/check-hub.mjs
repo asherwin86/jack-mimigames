@@ -28,7 +28,7 @@ const post = async (p, body) => { const r = await fetch(base + p, { method: 'POS
 
 const server = spawn(process.execPath, ['hub-server/server.js'], {
   cwd: new URL('..', import.meta.url).pathname,
-  env: { ...process.env, PORT: String(PORT), MIMI_DATA_DIR: DATA, HASH_PEPPER: 'test-pepper', UPSTASH_REDIS_REST_URL: '', UPSTASH_REDIS_REST_TOKEN: '' },
+  env: { ...process.env, PORT: String(PORT), MIMI_DATA_DIR: DATA, HASH_PEPPER: 'test-pepper', RATE_LIMIT_STRICT_MAX: '1000', UPSTASH_REDIS_REST_URL: '', UPSTASH_REDIS_REST_TOKEN: '' },
   stdio: ['ignore', 'pipe', 'pipe'],
 });
 let log = '';
@@ -55,6 +55,32 @@ try {
   await sleep(300);
   const stored = JSON.parse(fs.readFileSync(path.join(DATA, 'data', 'profiles.json'), 'utf8'));
   ok('the stored password hash is not the one the client sent (server-side pepper)', stored.owen && stored.owen.passwordHash !== h && /^[0-9a-f]{64}$/.test(stored.owen.passwordHash));
+
+  // ---- devices: sessions you can list and sign out
+  const l1 = await post('/api/profiles/login', { key, passwordHash: h, device: { label: 'Chrome on Windows' } });
+  ok('signing in with a device registers it and hands back a token', l1.json?.ok === true && typeof l1.json.token === 'string' && l1.json.token.length >= 40 && !!l1.json.deviceId);
+  const l2 = await post('/api/profiles/login', { key, passwordHash: h, device: { label: 'Desktop app (Windows)' } });
+  const devs = await post('/api/profiles/devices', { key, token: l1.json.token });
+  ok('the device list shows every device, newest activity first', devs.json?.ok && devs.json.devices.length === 2 && devs.json.devices.some((d) => d.label === 'Desktop app (Windows)'), JSON.stringify(devs.json?.devices?.map((d) => d.label)));
+  ok('...and marks which one is asking', devs.json.devices.filter((d) => d.current).length === 1 && devs.json.devices.find((d) => d.current).id === l1.json.deviceId);
+  ok('the list never contains tokens or hashes', !/token/i.test(JSON.stringify(devs.json)) && !JSON.stringify(devs.json).includes(l1.json.token));
+  ok('a token works for world calls', (await post('/api/worlds/list', { key, token: l1.json.token })).json?.ok === true);
+  ok('a wrong token is refused', (await post('/api/profiles/devices', { key, token: 'x'.repeat(43) })).json?.authFailed === true);
+  const rev = await post('/api/profiles/revoke-device', { key, token: l1.json.token, id: l2.json.deviceId });
+  ok('signing another device out removes it from the list', rev.json?.ok && rev.json.devices.length === 1);
+  ok('...and its token stops working immediately', (await post('/api/worlds/list', { key, token: l2.json.token })).json?.authFailed === true);
+  const l3 = await post('/api/profiles/login', { key, passwordHash: h, device: { label: 'Firefox on Linux' } });
+  const l4 = await post('/api/profiles/login', { key, passwordHash: h, device: { label: 'Safari on iPhone' } });
+  const others = await post('/api/profiles/revoke-others', { key, token: l1.json.token });
+  ok('"sign out everywhere else" leaves only this device', others.json?.ok && others.json.devices.length === 1 && others.json.devices[0].current);
+  ok('...the others are signed out', (await post('/api/worlds/list', { key, token: l3.json.token })).json?.authFailed === true && (await post('/api/worlds/list', { key, token: l4.json.token })).json?.authFailed === true);
+  await post('/api/profiles/logout', { key, token: l1.json.token });
+  ok('signing out ends that device\'s token', (await post('/api/worlds/list', { key, token: l1.json.token })).json?.authFailed === true);
+  for (let i = 0; i < 12; i++) await post('/api/profiles/login', { key, passwordHash: h, device: { label: `Device ${i}` } });
+  const last = await post('/api/profiles/login', { key, passwordHash: h, device: { label: 'Newest' } });
+  const capped = await post('/api/profiles/devices', { key, token: last.json.token });
+  ok('an account remembers at most 10 devices (the oldest drop off)', capped.json.devices.length === 10 && capped.json.devices.some((d) => d.label === 'Newest') && !capped.json.devices.some((d) => d.label === 'Device 0'), `${capped.json.devices.length} devices`);
+  ok('device labels are cleaned up', (await post('/api/profiles/login', { key, passwordHash: h, device: { label: '<b>evil</b>\u0000 ' + 'x'.repeat(200) } })).json?.ok === true && !(await post('/api/profiles/devices', { key, token: last.json.token })).json.devices.some((d) => /[<>]/.test(d.label) || d.label.length > 60));
 
   // ---- switched-off endpoints
   for (const p of ['/api/feedback/list', '/api/messages/inbox', '/api/friends/list', '/api/cakes/list', '/api/videos/list', '/api/fetch-page', '/api/latest-release', '/index.html', '/games/mario-kart/game.js', '/data/profiles.json']) {
@@ -99,7 +125,7 @@ try {
   // restart keeps everything (files on disk)
   server.kill();
   await new Promise((r) => server.once('exit', r));
-  const server2 = spawn(process.execPath, ['hub-server/server.js'], { cwd: new URL('..', import.meta.url).pathname, env: { ...process.env, PORT: String(PORT), MIMI_DATA_DIR: DATA, HASH_PEPPER: 'test-pepper', UPSTASH_REDIS_REST_URL: '', UPSTASH_REDIS_REST_TOKEN: '' }, stdio: 'ignore' });
+  const server2 = spawn(process.execPath, ['hub-server/server.js'], { cwd: new URL('..', import.meta.url).pathname, env: { ...process.env, PORT: String(PORT), MIMI_DATA_DIR: DATA, HASH_PEPPER: 'test-pepper', RATE_LIMIT_STRICT_MAX: '1000', UPSTASH_REDIS_REST_URL: '', UPSTASH_REDIS_REST_TOKEN: '' }, stdio: 'ignore' });
   for (let i = 0; i < 40; i++) { try { await fetch(base + '/health'); break; } catch { await sleep(150); } }
   ok('accounts and worlds survive a restart', (await post('/api/profiles/login', { key, passwordHash: h })).json?.ok === true && (await post('/api/worlds/list', auth)).json.worlds.length === 7);
   ok('...including the world\'s contents', (await post('/api/worlds/get', { ...auth, id: 'w1' })).json?.data === worldData);
@@ -130,10 +156,6 @@ try {
   ok('a wrong code is refused', /not found/i.test((await err).reason));
   a.close(); b.close(); c.close();
 
-  // ---- the strict rate limit on credential checks
-  let limited = false;
-  for (let i = 0; i < 20 && !limited; i++) limited = (await post('/api/profiles/login', { key: 'ghost', passwordHash: hashPw('ghost', String(i)) })).status === 429;
-  ok('guessing passwords hits the rate limit', limited);
   server2.kill();
 
   // ---- capacity guards (a second server with tiny limits)
@@ -148,6 +170,12 @@ try {
   ok('the server stops taking sign-ups at its account limit', (await post3('/api/profiles/create', { key: 'u3', name: 'U3', passwordHash: hashPw('u3', 'p') })).ok === false);
   const full = await post3('/api/worlds/put', { key: 'u1', passwordHash: hashPw('u1', 'p'), id: 'a', name: 'A', seed: 1, data: JSON.stringify({ pad: 'x'.repeat(400) }), expect: 0 });
   ok('...and stops accepting worlds when its storage is full', full.ok === false && /storage is full/i.test(full.msg || ''), full.msg);
+  let limited = false;
+  for (let i = 0; i < 20 && !limited; i++) {
+    const r = await fetch(b3 + '/api/profiles/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: 'ghost', passwordHash: hashPw('ghost', String(i)) }) });
+    limited = r.status === 429;
+  }
+  ok('guessing passwords hits the rate limit', limited);
   s3.kill();
   fs.rmSync(DATA3, { recursive: true, force: true });
 } catch (e) {

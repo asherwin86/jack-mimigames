@@ -8,9 +8,11 @@
  * original Mimi Games hub, so profiles are interchangeable with it — and the
  * server mixes its own secret into that before storing anything.
  *
- * The signed-in session is kept in localStorage under `mimiActiveSession`
- * ({ key, name, passwordHash, ... }), the same key and shape the hub uses, so
- * Kart Circuit (which reads it) knows who you are without any extra wiring.
+ * Signing in registers the device with the server, which hands back a random
+ * token. That token — not the password hash — is what the device keeps and sends
+ * from then on, so the account can list the devices it's signed in on and sign
+ * any of them out. The session lives in localStorage under `mimiActiveSession`
+ * ({ key, name, token, deviceId, ... }); Kart Circuit reads it to know who you are.
  */
 
 const SESSION_KEY = 'mimiActiveSession';
@@ -33,6 +35,17 @@ export function hubUrl() {
 export function setHubUrl(url) {
   hubOverride = url ? String(url).replace(/\/+$/, '') : null;
   storageSet(HUB_OVERRIDE_KEY, hubOverride);
+}
+
+/** A short human label for this device, e.g. "Chrome on Windows" or "Desktop app (Windows)". */
+export function deviceLabel() {
+  const ua = typeof navigator !== 'undefined' ? String(navigator.userAgent || '') : '';
+  const os = /Windows/.test(ua) ? 'Windows' : /Android/.test(ua) ? 'Android' : /iPhone|iPad|iPod/.test(ua) ? 'iOS'
+    : /Mac OS X|Macintosh/.test(ua) ? 'macOS' : /CrOS/.test(ua) ? 'ChromeOS' : /Linux|X11/.test(ua) ? 'Linux' : 'an unknown system';
+  if (/Electron\//.test(ua)) return `Desktop app (${os})`;
+  const browser = /Edg\//.test(ua) ? 'Edge' : /OPR\/|Opera/.test(ua) ? 'Opera' : /Firefox\//.test(ua) ? 'Firefox'
+    : /Chrome\//.test(ua) ? 'Chrome' : /Safari\//.test(ua) ? 'Safari' : 'A browser';
+  return `${browser} on ${os}`;
 }
 
 /** Lower-cased, trimmed — how the server identifies an account. */
@@ -95,7 +108,7 @@ export const _sha256Fallback = sha256Fallback;   // exported for the tests
 function loadSession() {
   try {
     const s = JSON.parse(storageGet(SESSION_KEY) || 'null');
-    return s && typeof s.key === 'string' && typeof s.passwordHash === 'string' ? s : null;
+    return s && typeof s.key === 'string' && (typeof s.token === 'string' || typeof s.passwordHash === 'string') ? s : null;
   } catch { return null; }
 }
 
@@ -119,6 +132,25 @@ export async function api(base, action, body, { timeoutMs = 45000 } = {}) {
   } finally {
     if (timer) clearTimeout(timer);
   }
+}
+
+let upgrading = null;
+/** A session made before device tokens existed only has a password hash: trade it for a
+ *  token once (so this device shows up in the list and can be signed out remotely), and
+ *  stop keeping the hash. Failing (offline) just leaves the old session working. */
+async function upgradeLegacySession() {
+  if (!session || session.token || !session.passwordHash) return;
+  if (!upgrading) {
+    upgrading = (async () => {
+      const s = session;
+      const r = await api('profiles', 'login', { key: s.key, passwordHash: s.passwordHash, device: { label: deviceLabel() } }, { timeoutMs: 20000 });
+      if (r.ok && r.token && session === s) {
+        session = { key: s.key, name: s.name, token: r.token, deviceId: r.deviceId, dev: false, avatar: s.avatar || null, kartColor: s.kartColor || null };
+        storageSet(SESSION_KEY, JSON.stringify(session));
+      }
+    })().finally(() => { upgrading = null; });
+  }
+  await upgrading;
 }
 
 export const Account = {
@@ -148,9 +180,9 @@ export const Account = {
     const display = String(name).trim();
     const key = keyOf(display);
     const passwordHash = await hashPassword(key, password);
-    const r = await api('profiles', 'create', { key, name: display, passwordHash, settings: {} });
+    const r = await api('profiles', 'create', { key, name: display, passwordHash, settings: {}, device: { label: deviceLabel() } });
     if (!r.ok) return r;
-    session = { key, name: display, passwordHash, dev: false, email: null, passkeys: [], avatar: null };
+    session = { key, name: display, token: r.token, deviceId: r.deviceId, dev: false, avatar: null };
     storageSet(SESSION_KEY, JSON.stringify(session));
     emit();
     return { ok: true, msg: `Welcome, ${display}! You're signed in.` };
@@ -161,18 +193,21 @@ export const Account = {
     if (!key) return { ok: false, msg: 'Enter your name.' };
     if (!password) return { ok: false, msg: 'Enter your password.' };
     const passwordHash = await hashPassword(key, password);
-    const r = await api('profiles', 'login', { key, passwordHash });
+    const r = await api('profiles', 'login', { key, passwordHash, device: { label: deviceLabel() } });
     if (!r.ok) return r;
-    session = { key, name: r.name || name, passwordHash, dev: false, email: r.email || null, passkeys: [], avatar: r.avatar || null, kartColor: r.kartColor || null };
+    session = { key, name: r.name || name, token: r.token, deviceId: r.deviceId, dev: false, avatar: r.avatar || null, kartColor: r.kartColor || null };
     storageSet(SESSION_KEY, JSON.stringify(session));
     emit();
     return { ok: true, msg: `Signed in as ${session.name}.` };
   },
 
+  /** Signs this device out (and tells the server to forget it, in the background). */
   signOut() {
+    const old = session;
     session = null;
     storageSet(SESSION_KEY, null);
     emit();
+    if (old?.token) api('profiles', 'logout', { key: old.key, token: old.token }, { timeoutMs: 10000 });
   },
 
   /** Permanently deletes the signed-in account (and its cloud worlds) after re-checking the password. */
@@ -187,7 +222,43 @@ export const Account = {
   /** An authenticated call to a /api/<base>/<action> endpoint, or { ok:false, msg } if not signed in. */
   async call(base, action, body = {}, opts) {
     if (!session) return { ok: false, msg: 'Sign in first.', signedOut: true };
-    return api(base, action, { key: session.key, passwordHash: session.passwordHash, ...body }, opts);
+    await upgradeLegacySession();
+    const s = session;
+    if (!s) return { ok: false, msg: 'Sign in first.', signedOut: true };
+    const creds = s.token ? { key: s.key, token: s.token } : { key: s.key, passwordHash: s.passwordHash };
+    const r = await api(base, action, { ...creds, ...body }, opts);
+    if (r.authFailed && session === s) {   // this device was signed out from another one (or the token expired)
+      session = null;
+      storageSet(SESSION_KEY, null);
+      emit();
+      return { ok: false, msg: 'You were signed out — sign in again.', signedOut: true };
+    }
+    return r;
+  },
+
+  /** The devices this account is signed in on: [{ id, label, createdAt, lastSeen, current }]. */
+  async devices() {
+    const r = await Account.call('profiles', 'devices');
+    return r.ok ? { ok: true, devices: r.devices } : r;
+  },
+
+  /** Signs another device out. */
+  async revokeDevice(id) {
+    const r = await Account.call('profiles', 'revoke-device', { id });
+    if (r.ok && !r.devices.some((d) => d.current)) Account.refreshLocalSignOut();   // (signed out our own device)
+    return r.ok ? { ok: true, devices: r.devices } : r;
+  },
+
+  /** Signs every other device out. */
+  async revokeOthers() {
+    const r = await Account.call('profiles', 'revoke-others');
+    return r.ok ? { ok: true, devices: r.devices } : r;
+  },
+
+  refreshLocalSignOut() {
+    session = null;
+    storageSet(SESSION_KEY, null);
+    emit();
   },
 
   /** Re-reads the session (another tab may have signed in or out). */

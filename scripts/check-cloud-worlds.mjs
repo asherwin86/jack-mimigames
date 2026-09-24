@@ -145,6 +145,22 @@ try {
   B.set(1, 1, 1, 3);
   B.save();
   ok('signed out, worlds still save locally and nothing is queued', !!loadList().find((w) => w.id === 'local-1') && B.cloudTimer === 0);
+  // ---- an older session (password hash, no token) upgrades itself to a device token
+  const { hashPassword } = await import('../src/engine/Account.js');
+  const lh = await hashPassword('legacy', 'oldpass');
+  await fetch(`${base}/api/profiles/create`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: 'legacy', name: 'Legacy', passwordHash: lh }) });
+  memStore.set('mimiActiveSession', JSON.stringify({ key: 'legacy', name: 'Legacy', passwordHash: lh, dev: false }));
+  Account.refresh();
+  ok('a pre-token session is recognised', Account.name() === 'Legacy' && !Account.session().token);
+  const lr = await Account.call('worlds', 'list');
+  ok('it still works, and upgrades to a device token on first use', lr.ok === true && !!Account.session().token && Account.session().passwordHash === undefined);
+  ok('...and the stored session no longer holds the password hash', !JSON.parse(memStore.get('mimiActiveSession')).passwordHash);
+  const dv = await Account.devices();
+  ok('the device now shows up in the list', dv.ok && dv.devices.length === 1 && dv.devices[0].current === true, dv.devices?.[0]?.label);
+  await Account.revokeOthers();
+  const signedOutWorlds = await (async () => { const t = Account.session().token; Account.signOut(); await sleep(300); return (await (await fetch(`${base}/api/worlds/list`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: 'legacy', token: t }) })).json()); })();
+  ok('signing out really revokes the token on the server', signedOutWorlds.authFailed === true);
+
   B.dispose(); A.dispose();
 } catch (e) {
   ok(e.stack || e.message, false);

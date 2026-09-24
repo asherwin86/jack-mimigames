@@ -2,6 +2,10 @@
  *  menu, under the trailer. Keep entries brief; this isn't a commit log. */
 export const CHANGELOG = [
   {
+    title: 'See where you\'re signed in',
+    detail: 'Open your account (top of the menu) to see every device signed in — "Chrome on Windows", "Desktop app" and so on, with when each was last active — and sign any of them out, or all the others at once.',
+  },
+  {
     title: 'Accounts, cloud worlds and Kart online',
     detail: 'Sign in (top of the menu) and your Blockcraft worlds are kept on your account — open them on any device. Kart Circuit\'s Play with Friends and Play Online modes are back, running through the new account server.',
   },
