@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
+    <title>Kart Circuit</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+        href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Oswald:wght@400;500;700&display=swap"
+        rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css?v=20260716" />
+    <!-- Added for the arcade: when this page sits inside 100 Mimi Games it fills the frame, the same layout the game already uses in fullscreen. -->
+    <link rel="stylesheet" href="embed.css" />
+    <script>if (window.parent !== window) document.documentElement.classList.add("embedded");</script>
+</head>
+
+<body>
+    <main class="shell">
+        <section class="hero">
+            <div>
+                <p class="eyebrow">Original arcade kart racer</p>
+                <h1>Kart Circuit</h1>
+                <p class="lede">
+                    Race three rival drivers around a neon oval, grab boost pads, and
+                    finish five laps first.
+                </p>
+            </div>
+            <div class="hud-card">
+                <div><span>Controls</span><strong>Arrow keys / WASD / mouse / touch / gamepad</strong></div>
+                <div><span>Mouse</span><strong>Move steer, left gas, right brake</strong></div>
+                <div><span>Boost</span><strong>Space / A / touch</strong></div>
+                <div><span>Gamepad</span><strong>RT/RB drive, Right Stick steer, R-stick click restart</strong></div>
+                <div><span>Day/Night</span><strong>N</strong></div>
+                <div><span>Auto Steer</span><strong>T</strong></div>
+                <div><span>Mini Map</span><strong>H</strong></div>
+                <div><span>Dev Mode</span><strong>V</strong></div>
+                <div><span>Camera</span><strong>C</strong></div>
+                <div><span>Audio</span><strong>O</strong></div>
+                <div><span>Full Screen</span><strong>F</strong></div>
+                <div><span>Pause</span><strong>P</strong></div>
+                <div><span>Next Map</span><strong>B</strong></div>
+                <div><span>Restart</span><strong>R</strong></div>
+            </div>
+        </section>
+
+        <section class="game-frame">
+            <canvas id="game" width="960" height="640" aria-label="Kart circuit game"></canvas>
+            <div class="touch-controls" aria-label="Touch controls">
+                <div class="touch-dpad">
+                    <button class="touch-button" data-key="ArrowLeft" data-label="Left" type="button">Left</button>
+                    <button class="touch-button touch-button--primary" data-key="ArrowUp" data-label="Drive"
+                        type="button">Drive</button>
+                    <button class="touch-button" data-key="ArrowRight" data-label="Right" type="button">Right</button>
+                </div>
+                <div class="touch-actions">
+                    <button class="touch-button touch-button--accent" data-key="Space" data-label="Boost"
+                        type="button">Boost</button>
+                    <button class="touch-button" data-key="ArrowDown" data-label="Brake" type="button">Brake</button>
+                </div>
+            </div>
+            <div class="overlay" id="overlay">
+                <div class="overlay-card">
+                    <p class="overlay-kicker">Kart Circuit</p>
+                    <h2>Take the lead</h2>
+                    <p id="overlayDescription">
+                        Hold your line, hit the boosts, and manage speed through the
+                        corners. Cross the finish gate after every checkpoint to score a lap.
+                    </p>
+                    <div class="difficulty-picker" aria-label="Difficulty selection">
+                        <button class="difficulty-button" data-difficulty="easy" type="button">Easy</button>
+                        <button class="difficulty-button is-selected" data-difficulty="medium"
+                            type="button">Medium</button>
+                        <button class="difficulty-button" data-difficulty="hard" type="button">Hard</button>
+                    </div>
+                    <div class="cup-picker" aria-label="Cup selection">
+                        <button class="cup-button is-selected" data-cup="free" data-color="#ffd166" type="button">
+                            <span class="map-preview"></span>Free Play
+                        </button>
+                        <button class="cup-button" data-cup="neon" data-color="#53e0ff" type="button">
+                            <span class="map-preview"></span>Neon Cup
+                        </button>
+                        <button class="cup-button" data-cup="skyline" data-color="#ff9f6e" type="button">
+                            <span class="map-preview"></span>Skyline Cup
+                        </button>
+                    </div>
+                    <div class="map-picker" aria-label="Map selection">
+                        <button class="map-button is-selected" data-map="neon" data-color="#53e0ff" type="button">
+                            <span class="map-preview"></span>Neon Loop
+                        </button>
+                        <button class="map-button" data-map="harbor" data-color="#4e9fd6" type="button">
+                            <span class="map-preview"></span>Harbor Bend
+                        </button>
+                        <button class="map-button" data-map="canyon" data-color="#d9754d" type="button">
+                            <span class="map-preview"></span>Canyon Run
+                        </button>
+                        <button class="map-button" data-map="metro" data-color="#ff9f6e" type="button">
+                            <span class="map-preview"></span>Metro Surge
+                        </button>
+                        <button class="map-button" data-map="summit" data-color="#9bc7ff" type="button">
+                            <span class="map-preview"></span>Summit Spiral
+                        </button>
+                        <button class="map-button" data-map="boardwalk" data-color="#49c0a8" type="button">
+                            <span class="map-preview"></span>Boardwalk Dash
+                        </button>
+                        <button class="map-button" data-map="grove" data-color="#8dd66e" type="button">
+                            <span class="map-preview"></span>Grove Circuit
+                        </button>
+                        <button class="map-button" data-map="foundry" data-color="#ff7d5a" type="button">
+                            <span class="map-preview"></span>Foundry Drift
+                        </button>
+                    </div>
+                    <div id="cupSummary" class="cup-summary">Free Play: pick any track or choose a cup.</div>
+                    <button id="startButton" type="button">Start Race</button>
+                </div>
+            </div>
+        </section>
+
+        <section class="footer-bar">
+            <div id="statusText">Ready on the grid.</div>
+            <div id="raceInfo">Lap 1 / 5</div>
+            <div id="difficultyStatus" class="difficulty-status">Difficulty: Medium</div>
+            <div id="cupStatus" class="difficulty-status">Cup: Free Play</div>
+            <div id="mapStatus" class="difficulty-status">Map: Neon Loop</div>
+            <button id="mapButton" class="mode-button" type="button">Map: Neon Loop</button>
+            <button id="autoSteerButton" class="mode-button" type="button">Auto Steer: Off</button>
+            <button id="miniMapButton" class="mode-button" type="button">Mini Map: On</button>
+            <button id="devModeButton" class="mode-button" type="button">Dev Mode: Off</button>
+            <button id="themeButton" class="mode-button" type="button">Theme: Day</button>
+            <button id="modeButton" class="mode-button" type="button">Mode: 3D</button>
+            <button id="camButton" class="mode-button" type="button">Cam: Chase</button>
+            <button id="audioButton" class="mode-button" type="button">Audio: On</button>
+            <button id="fullScreenButton" class="mode-button" type="button">Full: Off</button>
+            <button id="pauseButton" class="mode-button" type="button">Pause: Off</button>
+        </section>
+    </main>
+
+    <script src="game.js?v=20260717"></script>
+    <!-- Added for the arcade: lets Escape take you back to the menu when this page is embedded. -->
+    <script src="bridge.js"></script>
+</body>
+
+</html>

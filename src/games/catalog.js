@@ -166,6 +166,14 @@ export const CATALOG = [
     controls: 'WASD to move · click or J to punch · K to kick · hold Shift to block',
     unit: 'dmg',
   },
+  {
+    id: 'kart-circuit', n: 31, name: 'Kart Circuit', tags: ['racing', 'arcade'],
+    blurb: 'An original arcade kart racer: three rivals, boost pads, eight tracks and three cups.',
+    controls: 'Arrows / WASD, mouse, touch or gamepad · Space boosts · P pauses · Esc for the menu',
+    unit: 'race', sandbox: true,
+    // It brings its own start screen (difficulty, cups, tracks), so skip the generic one — see main.js.
+    customStart: true,
+  },
 ];
 
 export const BY_ID = new Map(CATALOG.map((e) => [e.id, e]));

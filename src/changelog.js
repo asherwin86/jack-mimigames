@@ -2,6 +2,10 @@
  *  menu, under the trailer. Keep entries brief; this isn't a commit log. */
 export const CHANGELOG = [
   {
+    title: 'New game: Kart Circuit',
+    detail: 'An original arcade kart racer — three rivals, boost pads, eight tracks, three cups, three difficulty levels, day/night, and keyboard, mouse, touch or gamepad controls. Game #31.',
+  },
+  {
     title: 'PvP worlds with bots',
     detail: 'Tick "PvP mode" when you make a New World and it gets hearts, fighting, loot and AI bots — solo or hosted for friends — with the Bots slider and AI level in the Multiplayer panel. The public PvP arena is now people-only (no bots).',
   },
