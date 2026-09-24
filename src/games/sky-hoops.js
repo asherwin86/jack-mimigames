@@ -50,12 +50,13 @@ export default class SkyHoops extends Game {
     this.timeLeft = 20;
     this.rings_hit = 0;
     this.nextSpawn = 0;
+    this.spawned = 0;
     this.lastRingX = 0;
     this.lastRingY = 8;
     this.showCursor = true;   // a gamepad has no cursor of its own — see Engine._updateCursor()
 
     this.camera.position.set(0, 9, 12);
-    this.hud.hint('Move the mouse to steer · every ring buys you 2 more seconds');
+    this.hud.hint('Move the mouse to steer · every ring buys you 2 more seconds · thread the small golden rings for a big bonus');
   }
 
   spawnRing() {
@@ -71,10 +72,15 @@ export default class SkyHoops extends Game {
     this.lastRingX = r.position.x;
     this.lastRingY = r.position.y;
     r.rotation.z = rand(0, Math.PI);
-    r.material.color.set(PALETTE.amber);
-    r.material.emissive.set(PALETTE.amber);
+    // Every seventh ring is a small golden one: harder to thread, worth 3 rings and 5 seconds.
+    const gold = ++this.spawned % 7 === 0;
+    const col = gold ? PALETTE.white : PALETTE.amber;
+    r.scale.setScalar(gold ? 0.6 : 1);
+    r.material.color.set(col);
+    r.material.emissive.set(col);
     r.visible = true;
     r.userData.passed = false;
+    r.userData.gold = gold;
     this.live.push(r);
   }
 
@@ -113,7 +119,7 @@ export default class SkyHoops extends Game {
         r.userData.passed = true;
         const dx = r.position.x - this.ship.position.x;
         const dy = r.position.y - this.ship.position.y;
-        if (Math.hypot(dx, dy) < 3.1) this.scoreRing(r);
+        if (Math.hypot(dx, dy) < (r.userData.gold ? 2.0 : 3.1)) this.scoreRing(r);
         else {
           r.material.color.set(PALETTE.red);
           r.material.emissive.set(PALETTE.red);
@@ -149,13 +155,20 @@ export default class SkyHoops extends Game {
   }
 
   scoreRing(r) {
-    this.rings_hit++;
-    this.timeLeft = Math.min(this.timeLeft + 2, 30);
+    const gold = r.userData.gold;
+    const before = this.rings_hit;
+    this.rings_hit += gold ? 3 : 1;
+    this.timeLeft = Math.min(this.timeLeft + (gold ? 5 : 2), 30);
+    if (gold) {
+      this.hud.toast('GOLDEN RING +3', 900);
+      this.burst.burst(r.position, PALETTE.white, 24, 9);
+      this.audio.win();
+    }
     r.material.color.set(PALETTE.lime);
     r.material.emissive.set(PALETTE.lime);
     this.burst.burst(r.position, PALETTE.lime, 12, 6);
     this.audio.pickup();
-    if (this.rings_hit % 10 === 0) {
+    if (Math.floor(this.rings_hit / 10) > Math.floor(before / 10)) {
       this.hud.toast(`${this.rings_hit} rings!`);
       this.audio.good();
     }

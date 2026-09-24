@@ -2,6 +2,10 @@
  *  menu, under the trailer. Keep entries brief; this isn't a commit log. */
 export const CHANGELOG = [
   {
+    title: 'New in Cube Dodger, Sky Hoops, Snake Cube and Gem Grab',
+    detail: 'Cube Dodger: shield pickups soak up a crash, stars add 40 m. Sky Hoops: a small golden ring every seventh — worth 3 rings and 5 seconds. Snake Cube: golden apples (+3 length, vanish fast) and rocks that appear as you grow. Gem Grab: magnet and ice-crystal power-ups — reel in gems, or freeze the drones.',
+  },
+  {
     title: 'Kart Circuit: laps count up, and no more sudden last place',
     detail: 'Every lap you finish adds to a running Laps total (top bar) that is the game\'s score. Fixed the position readout dropping you from 1st to last for a few seconds after each lap (it also confused the bots\' speed), and the same jump at the start.',
   },

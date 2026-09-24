@@ -47,6 +47,12 @@ export default class GemGrab extends Game {
     for (let i = 0; i < 6; i++) this.spawnGem();
     this.spawnDrone();
 
+    // Power-ups turn up now and then: Magnet reels in nearby gems, Freeze stops the drones cold.
+    this.powerups = [];
+    this.nextPower = 10;
+    this.magnetT = 0;
+    this.freezeT = 0;
+
     this.collected = 0;
     this.dashCharge = 1;
     this.dashTime = 0;
@@ -55,7 +61,7 @@ export default class GemGrab extends Game {
     this.nextDrone = 12;
 
     this.camera.position.set(0, 20, 18);
-    this.hud.hint('WASD to run · Space to dash through danger · drones keep coming');
+    this.hud.hint('WASD to run · Space to dash through danger · grab magnets and ice crystals when they appear');
   }
 
   spawnGem() {
@@ -66,6 +72,25 @@ export default class GemGrab extends Game {
     g.position.set(rand(-ARENA + 3, ARENA - 3), 1, rand(-ARENA + 3, ARENA - 3));
     g.userData.spin = rand(1, 3);
     this.gems.push(this.add(g));
+  }
+
+  spawnPowerup() {
+    const kind = Math.random() < 0.5 ? 'magnet' : 'freeze';
+    const col = kind === 'magnet' ? PALETTE.violet : 0xbfefff;
+    const m = new THREE.Mesh(kind === 'magnet' ? new THREE.TorusGeometry(0.6, 0.22, 12, 24) : new THREE.IcosahedronGeometry(0.75), glow(col, { emissiveIntensity: 0.9 }));
+    m.position.set(rand(-ARENA + 4, ARENA - 4), 1.1, rand(-ARENA + 4, ARENA - 4));
+    m.userData = { kind, left: 12 };
+    this.powerups.push(this.add(m));
+  }
+
+  takePowerup(m) {
+    if (m.userData.kind === 'magnet') { this.magnetT = 7; this.hud.toast('MAGNET', 800); }
+    else { this.freezeT = 4; this.hud.toast('FROZEN', 800); }
+    this.burst.burst(m.position, m.material.color.getHex(), 16, 7);
+    this.audio.good();
+    this.scene.remove(m);
+    m.geometry.dispose();
+    m.material.dispose();
   }
 
   spawnDrone() {
@@ -86,6 +111,8 @@ export default class GemGrab extends Game {
   update(dt) {
     this.invuln -= dt;
     this.dashTime -= dt;
+    this.magnetT = Math.max(0, this.magnetT - dt);
+    this.freezeT = Math.max(0, this.freezeT - dt);
 
     // Movement
     const dir = new THREE.Vector3(this.input.axisX(), 0, -this.input.axisY());
@@ -115,11 +142,39 @@ export default class GemGrab extends Game {
 
     for (const pil of this.pillars) this.pushOut(p, pil.position, 1.3 + 0.75);
 
+    this.nextPower -= dt;
+    if (this.nextPower <= 0) {
+      if (this.powerups.length < 2) this.spawnPowerup();
+      this.nextPower = rand(9, 15);
+    }
+    for (let i = this.powerups.length - 1; i >= 0; i--) {
+      const m = this.powerups[i];
+      m.userData.left -= dt;
+      m.rotation.y += dt * 2.2;
+      m.rotation.x += dt * 1.1;
+      m.position.y = 1.1 + Math.sin(this.time * 3 + i) * 0.2;
+      m.visible = m.userData.left > 3 || Math.sin(this.time * 22) > 0;   // blinks before it goes
+      if (p.distanceTo(m.position) < 1.7) {
+        this.takePowerup(m);
+        this.powerups.splice(i, 1);
+      } else if (m.userData.left <= 0) {
+        this.scene.remove(m);
+        m.geometry.dispose();
+        m.material.dispose();
+        this.powerups.splice(i, 1);
+      }
+    }
+
     // Gems
     for (let i = this.gems.length - 1; i >= 0; i--) {
       const g = this.gems[i];
       g.rotation.y += g.userData.spin * dt;
       g.position.y = 1 + Math.sin(this.time * 2 + i) * 0.2;
+      if (this.magnetT > 0) {   // reel in anything within reach
+        const to = p.clone().sub(g.position).setY(0);
+        const d = to.length();
+        if (d < 11 && d > 0.01) g.position.addScaledVector(to.divideScalar(d), 15 * dt);
+      }
       if (p.distanceTo(g.position) < 1.5) {
         this.collected++;
         this.burst.burst(g.position, g.material.color.getHex(), 12, 6);
@@ -143,6 +198,10 @@ export default class GemGrab extends Game {
     for (const d of this.drones) {
       const to = p.clone().sub(d.position).setY(0);
       const dist = to.length();
+      const frozen = this.freezeT > 0;
+      d.material.color.set(frozen ? 0x9fdcff : PALETTE.red);
+      d.material.emissive.set(frozen ? 0x9fdcff : PALETTE.red);
+      if (frozen) continue;   // ice: no moving, and no hurting either
       if (dist > 0.001) d.position.addScaledVector(to.divideScalar(dist), d.userData.speed * dt);
       d.position.y = 0.9 + Math.sin(this.time * 4 + d.userData.phase) * 0.1;
       d.rotation.y += dt * 3;
@@ -159,6 +218,8 @@ export default class GemGrab extends Game {
     this.hud.stat('Gems', this.collected);
     this.hud.stat('Lives', '●'.repeat(this.lives) || '—', this.lives === 1);
     this.hud.stat('Dash', this.dashCharge >= 1 ? 'READY' : `${Math.round(this.dashCharge * 100)}%`, this.dashCharge < 1);
+    if (this.magnetT > 0) this.hud.stat('Magnet', `${Math.ceil(this.magnetT)}s`); else this.hud.removeStat('Magnet');
+    if (this.freezeT > 0) this.hud.stat('Freeze', `${Math.ceil(this.freezeT)}s`); else this.hud.removeStat('Freeze');
   }
 
   /** Shove `pos` out of a circle centred on `centre`. */

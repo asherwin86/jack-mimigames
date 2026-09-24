@@ -1,6 +1,6 @@
 import { Game } from '../engine/Game.js';
 import {
-  box, ground, lights, sky, glow, Burst, clamp, damp, rand, pick, shuffle, overlaps,
+  box, ball, torus, ground, lights, sky, glow, Burst, clamp, damp, rand, pick, shuffle, overlaps,
   PALETTE, COLORS,
 } from '../engine/utils.js';
 
@@ -46,6 +46,22 @@ export default class CubeDodger extends Game {
     this.pool = [...this.obstacles];
     this.live = [];
 
+    // Pickups drift down the corridor too: a shield (soaks up one crash) and a star (+40 m).
+    this.pickups = [];
+    for (let i = 0; i < 6; i++) {
+      const m = ball(0.5, glow(PALETTE.amber, { emissiveIntensity: 0.9 }), { cast: false });
+      m.visible = false;
+      m.position.z = 999;
+      this.pickups.push(this.add(m));
+    }
+    this.pickupPool = [...this.pickups];
+    this.pickupLive = [];
+    this.nextPickup = 7;
+    this.shield = false;
+    this.bonus = 0;
+    this.shieldRing = this.add(torus(1.25, 0.09, glow(PALETTE.cyan, { emissiveIntensity: 1 }), { cast: false }));
+    this.shieldRing.visible = false;
+
     this.burst = new Burst(this.scene, 80, 0.2);
 
     this.speed = 22;
@@ -73,6 +89,32 @@ export default class CubeDodger extends Game {
       o.visible = true;
       this.live.push(o);
     }
+  }
+
+  spawnPickup() {
+    const m = this.pickupPool.pop();
+    if (!m) return;
+    // No second shield while you are wearing one.
+    m.userData.kind = !this.shield && Math.random() < 0.5 ? 'shield' : 'star';
+    const shield = m.userData.kind === 'shield';
+    m.material.color.set(shield ? PALETTE.cyan : PALETTE.amber);
+    m.material.emissive.set(shield ? PALETTE.cyan : PALETTE.amber);
+    m.position.set(LANES[Math.floor(Math.random() * LANES.length)], 1, SPAWN_Z);
+    m.visible = true;
+    this.pickupLive.push(m);
+  }
+
+  collect(m) {
+    if (m.userData.kind === 'shield') {
+      this.shield = true;
+      this.hud.toast('SHIELD UP', 800);
+      this.audio.good();
+    } else {
+      this.bonus += 40;
+      this.hud.toast('+40 m', 700);
+      this.audio.pickup();
+    }
+    this.burst.burst(m.position, m.material.color.getHex(), 12, 6);
   }
 
   update(dt) {
@@ -104,6 +146,30 @@ export default class CubeDodger extends Game {
       this.nextSpawn = clamp(46 / this.speed, 0.32, 1.4) * rand(0.85, 1.25);
     }
 
+    this.nextPickup -= dt;
+    if (this.nextPickup <= 0) {
+      this.spawnPickup();
+      this.nextPickup = rand(6, 10);
+    }
+    for (let i = this.pickupLive.length - 1; i >= 0; i--) {
+      const m = this.pickupLive[i];
+      m.position.z += dz;
+      m.rotation.y += dt * 3;
+      m.position.y = 1 + Math.sin(this.time * 4 + i) * 0.15;
+      const hit = Math.abs(m.position.z - this.player.position.z) < 1.5 && Math.abs(m.position.x - this.player.position.x) < 1.5;
+      if (hit) this.collect(m);
+      if (hit || m.position.z > 14) {
+        m.visible = false;
+        this.pickupLive.splice(i, 1);
+        this.pickupPool.push(m);
+      }
+    }
+    this.shieldRing.visible = this.shield;
+    if (this.shield) {
+      this.shieldRing.position.copy(this.player.position);
+      this.shieldRing.rotation.set(Math.PI / 2, 0, this.time * 2.5);
+    }
+
     for (let i = this.live.length - 1; i >= 0; i--) {
       const o = this.live[i];
       o.position.z += dz;
@@ -114,6 +180,17 @@ export default class CubeDodger extends Game {
         continue;
       }
       if (Math.abs(o.position.z - this.player.position.z) < 2.2 && overlaps(o, this.player, 0.18)) {
+        if (this.shield) {   // the shield takes the hit and the block shatters
+          this.shield = false;
+          this.shake = 0.6;
+          this.burst.burst(o.position, PALETTE.cyan, 18, 8);
+          this.audio.boom();
+          this.hud.toast('SHIELD BROKE', 700);
+          o.visible = false;
+          this.live.splice(i, 1);
+          this.pool.push(o);
+          continue;
+        }
         this.crash(o);
         return;
       }
@@ -131,9 +208,10 @@ export default class CubeDodger extends Game {
     this.camera.fov = damp(this.camera.fov, boosting ? 78 : 65, 4, dt);
     this.camera.updateProjectionMatrix();
 
-    this.hud.stat('Distance', `${Math.floor(this.distance)} m`);
+    this.hud.stat('Distance', `${Math.floor(this.distance + this.bonus)} m`);
     this.hud.stat('Speed', `${Math.round(this.speed * 3.6)} kph`);
     this.hud.stat('Boost', `${Math.round(this.boost * 100)}%`, this.boost < 0.2);
+    this.hud.stat('Shield', this.shield ? 'ON' : 'off');
   }
 
   crash(o) {
@@ -142,6 +220,7 @@ export default class CubeDodger extends Game {
     this.player.visible = false;
     this.audio.boom();
     this.audio.lose();
-    this.end(Math.floor(this.distance), `You covered ${Math.floor(this.distance)} metres.`);
+    const total = Math.floor(this.distance + this.bonus);
+    this.end(total, `You covered ${total} metres.`);
   }
 }

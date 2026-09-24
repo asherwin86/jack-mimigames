@@ -17,6 +17,7 @@
     "check:hub": "node scripts/check-hub.mjs",
     "check:cloud": "node scripts/check-cloud-worlds.mjs",
     "check:rocoins": "node scripts/check-rocoins.mjs",
+    "check:extras": "node scripts/check-extras.mjs",
     "server:hub": "node hub-server/server.js",
     "electron": "npm run build && electron .",
     "dist:win": "npm run build && electron-builder --win --publish=never",

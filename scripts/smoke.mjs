@@ -205,7 +205,7 @@ function makeAudio() {
 
 function makeHud() {
   return {
-    stat() {}, toast() {}, hint() {}, mount() {}, clear() {},
+    stat() {}, removeStat() {}, coins() {}, toast() {}, hint() {}, mount() {}, clear() {},
     panel() { return null; }, stats: new Map(),
   };
 }
