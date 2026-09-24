@@ -2,6 +2,10 @@
  *  menu, under the trailer. Keep entries brief; this isn't a commit log. */
 export const CHANGELOG = [
   {
+    title: 'Kart Circuit: laps count up, and no more sudden last place',
+    detail: 'Every lap you finish adds to a running Laps total (top bar) that is the game\'s score. Fixed the position readout dropping you from 1st to last for a few seconds after each lap (it also confused the bots\' speed), and the same jump at the start.',
+  },
+  {
     title: 'Rocoins and powers',
     detail: 'Beat challenges — three targets in every game, three new daily ones, and one-off badges — to earn Rocoins, then spend them on powers in any game: slow-mo, wide view, wireframe, disco, confetti, plus Blockcraft and Kart Circuit specials. Press ` (or the coin button) to open the panel; type commands if you like. Signed in, your Rocoins are backed up to your account and follow you to other devices.',
   },

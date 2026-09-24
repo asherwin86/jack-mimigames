@@ -2366,11 +2366,48 @@ function getCupConfig() {
     return currentCupKey ? cups[currentCupKey] ?? null : null;
 }
 
+// How far round the track a racer really is, as one number that only goes up when they go round.
+//
+// Ranking used to be `lap * trackLength + progress`, but the lap counter only ticks over when a racer crosses
+// the finish gate, which is a good way past the point where `progress` wraps back to 0. In between, a racer who
+// had just completed a lap scored a whole lap LESS than everyone else (confirmed live: 1st to 24th right after a
+// lap, and the AI's catch-up speed read the leader as miles behind). Instead, add up the progress each racer
+// makes frame to frame (wrapping the small step across the seam), so the score never drops at the seam.
+function wrapHalfTrack(delta) {
+    const total = centerlinePath.length;
+    return ((delta + total / 2) % total + total) % total - total / 2;
+}
+
+function updateTrackScores() {
+    if (!centerlinePath.length || !racers.length) return;
+    const lead = racers[0];
+    if (!Number.isFinite(lead.trackScore)) {
+        lead.lastTrackProgress = getNearestTrackProgress(lead);
+        lead.trackScore = lead.lastTrackProgress;
+    }
+    racers.forEach((racer) => {
+        const progress = getNearestTrackProgress(racer);
+        if (!Number.isFinite(racer.trackScore)) {
+            // first sighting (the start grid, or someone who just joined): line up with the first racer
+            racer.trackScore = lead.trackScore + wrapHalfTrack(progress - lead.lastTrackProgress);
+        } else {
+            racer.trackScore += wrapHalfTrack(progress - racer.lastTrackProgress);
+        }
+        racer.lastTrackProgress = progress;
+    });
+}
+
+function getRaceScore(racer) {
+    return Number.isFinite(racer.trackScore)
+        ? racer.trackScore
+        : racer.lap * centerlinePath.length + getNearestTrackProgress(racer);
+}
+
 function getRaceRanking() {
     return racers
         .map((racer) => ({
             racer,
-            score: racer.lap * centerlinePath.length + getNearestTrackProgress(racer),
+            score: getRaceScore(racer),
         }))
         .sort((a, b) => b.score - a.score)
         .map((entry) => entry.racer);
@@ -3197,10 +3234,10 @@ function fireRocket(shooter) {
     // lock on to the nearest racer ahead of the shooter
     let target = null;
     let bestDistance = Infinity;
-    const shooterScore = shooter.lap * centerlinePath.length + getNearestTrackProgress(shooter);
+    const shooterScore = getRaceScore(shooter);
     racers.forEach((other) => {
         if (other === shooter || other.finished || other.isFalling) return;
-        const otherScore = other.lap * centerlinePath.length + getNearestTrackProgress(other);
+        const otherScore = getRaceScore(other);
         if (otherScore <= shooterScore) return;
         const distance = dist(shooter, other);
         if (distance < bestDistance && distance < 520) {
@@ -3386,10 +3423,10 @@ function useItem(racer) {
         // of a hit, so it's safe to use even mid-pack with no one in range.
         let target = null;
         let bestDistance = Infinity;
-        const racerScore = racer.lap * centerlinePath.length + getNearestTrackProgress(racer);
+        const racerScore = getRaceScore(racer);
         racers.forEach((other) => {
             if (other === racer || other.finished || other.isFalling) return;
-            const otherScore = other.lap * centerlinePath.length + getNearestTrackProgress(other);
+            const otherScore = getRaceScore(other);
             if (otherScore <= racerScore) return;
             const distance = dist(racer, other);
             if (distance < bestDistance) {
@@ -4590,17 +4627,17 @@ function updateAI(racer, dt) {
     // starting grid 15+ seconds in, having covered almost no distance while
     // the player was most of a lap ahead). Same grace window, same reasoning.
     const trafficPenalty = frontTraffic * (difficulty.aiTrafficPenalty ?? 17) * startPackAvoidance;
-    const racerScore = racer.lap * centerlinePath.length + currentProgress;
+    const racerScore = getRaceScore(racer);
     const leaderScore = racers.reduce((best, other) => {
         if (other.finished) return best;
-        const score = other.lap * centerlinePath.length + getNearestTrackProgress(other);
+        const score = getRaceScore(other);
         return Math.max(best, score);
     }, racerScore);
     const scoreGap = Math.max(0, leaderScore - racerScore);
     const gapScale = Math.max(centerlinePath.length * 0.16, 26);
     const gapCatchUp = clamp(scoreGap / gapScale, 0, 1.35) * (difficulty.aiCatchUpBoost ?? 18);
     const placeCatchUp = Math.max(0, racer.place - 3) * (difficulty.aiPlaceCatchUp ?? 0.8);
-    const playerScore = racers[0].lap * centerlinePath.length + getNearestTrackProgress(racers[0]);
+    const playerScore = getRaceScore(racers[0]);
     const aheadOfPlayer = Math.max(0, racerScore - playerScore);
     const leaderPenalty = clamp(aheadOfPlayer / gapScale, 0, 1.4) * (difficulty.aiLeaderPenalty ?? 4);
     const desiredSpeed = MAX_SPEED - 18 + racer.aiPace * 24 + racer.coins * COIN_SPEED_BONUS * 0.6 + difficulty.aiSpeedBonus + devPaceBoost + gapCatchUp + placeCatchUp - leaderPenalty - cornerPenalty - trafficPenalty;
@@ -5072,10 +5109,11 @@ function updateRacer(racer, dt) {
 }
 
 function updatePlacements() {
+    updateTrackScores();
     const ranking = racers
         .map((racer) => ({
             racer,
-            score: racer.lap * centerlinePath.length + getNearestTrackProgress(racer),
+            score: getRaceScore(racer),
         }))
         .sort((a, b) => b.score - a.score);
 
