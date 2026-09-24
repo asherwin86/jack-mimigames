@@ -63,6 +63,40 @@ sudo systemctl enable --now blockcraft-pvp
 journalctl -u blockcraft-pvp -f          # logs
 ```
 
+## The account server (sign-in, cloud worlds, Kart Circuit online)
+
+A second service, separate from the PvP arena: `hub-server/server.js`, adapted from the
+51 Mimi Games hub server. It provides
+
+- **accounts** (name + password, `/api/profiles/*`) — the **Sign in** button in the menu,
+- **cloud Blockcraft worlds** (`/api/worlds/*`) — while signed in, every world is also saved to your
+  account (up to 8 per account, 900 KB each) and shows up on any device you sign in on,
+- the **`/mp` relay** Kart Circuit uses for *Play with Friends* and *Play Online*,
+- `/health` for uptime monitors.
+
+Everything else the original hub server does (its website, page viewer, feedback, friends, messages…) is
+switched off (`HUB_API_ONLY=1`).
+
+**To run it on Render:** New → Blueprint → blueprint path `deploy/render-hub.yaml`. The service name
+`mimi-arcade-hub` matches the address the game already points at. To keep accounts and worlds across
+restarts (the free plan's disk is wiped), add a free [Upstash](https://upstash.com) Redis database and
+paste its REST URL and token into the `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` environment
+variables. Point an uptime monitor at `/health` to stop it sleeping. Locally: `npm run server:hub`
+(port 1764, or `PORT`).
+
+| Variable | Default | What it does |
+| --- | --- | --- |
+| `HASH_PEPPER` | none (set by the blueprint) | Secret mixed into stored password hashes. **Never change it after launch** — every password would stop working. |
+| `UPSTASH_REDIS_REST_URL` / `_TOKEN` | none | Persist accounts and worlds in Upstash (also written to `MIMI_DATA_DIR`) |
+| `MIMI_DATA_DIR` | the server folder | Where the JSON files (profiles, worlds) are kept |
+| `MAX_PROFILES` | `2000` | Sign-ups stop at this many accounts |
+| `MAX_WORLD_STORE_MB` | `400` | Cloud worlds stop being accepted at this total size |
+| `HUB_API_ONLY` | on | `0` restores the original everything-on hub behaviour |
+| `HUB_ALLOW_DEV` | off | `1` allows creating dev accounts (needs the dev password) |
+
+To use a different address than `https://mimi-arcade-hub.onrender.com`, build the site with
+`VITE_HUB_URL=https://your-server npm run build`.
+
 ## The one-click "Join PvP Arena" button
 
 The game already points at `wss://blockcraft-pvp.onrender.com` (set in

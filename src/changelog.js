@@ -2,6 +2,10 @@
  *  menu, under the trailer. Keep entries brief; this isn't a commit log. */
 export const CHANGELOG = [
   {
+    title: 'Accounts, cloud worlds and Kart online',
+    detail: 'Sign in (top of the menu) and your Blockcraft worlds are kept on your account — open them on any device. Kart Circuit\'s Play with Friends and Play Online modes are back, running through the new account server.',
+  },
+  {
     title: 'New game: Kart Circuit',
     detail: 'A 3D arcade kart racer — drift for mini-turbos, grab items and coins, race rivals across 14 tracks and cups, solo or split-screen with up to 4 on one keyboard. Game #31; every race you win counts toward its best score.',
   },

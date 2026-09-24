@@ -1,7 +1,3 @@
-/* Applied only inside the arcade (frame.js adds this stylesheet): the two menu
-   choices that need the original site's own multiplayer server have nothing to
-   connect to here, so they're hidden rather than left to fail. */
-.mk-mode-card[data-mode="online"],
-.mk-mode-card[data-mode="friends"] {
-    display: none;
-}
+/* Applied only inside the arcade (frame.js adds this stylesheet). Nothing needed
+   right now: the online and friends modes work through the arcade's account
+   server. Kept as the place for arcade-only tweaks to the page. */

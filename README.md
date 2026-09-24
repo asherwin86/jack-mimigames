@@ -116,6 +116,10 @@ git tag v1.0.1 && git push origin v1.0.1
 
 Or build and publish by hand with `npm run release:win` (needs `GH_TOKEN`), or just build locally with `npm run dist:win` (output in `release/`).
 
+## Accounts, cloud worlds and Kart Circuit online
+
+**Sign in** (top of the menu, or the ☁ strip in Blockcraft's World panel) with a name and password — no email needed. While signed in, every Blockcraft world you make or play is also saved to your account, so it shows up (with a ☁) on any device you sign in on; Load fetches it. An account holds 8 worlds; if two devices edit the same world, the older copy is refused rather than overwriting the newer. Kart Circuit's *Play with Friends* and *Play Online* modes run through the same server. The server is `hub-server/` (see [`deploy/`](deploy/README.md#the-account-server-sign-in-cloud-worlds-kart-circuit-online)); `npm run check:hub` and `npm run check:cloud` test it.
+
 ## PvP worlds and bots
 
 Tick **PvP mode** next to **New World** in Blockcraft and that world has hearts, fighting (sword, bow, knockback), respawns, loot and AI bots. The bots and combat run inside the game itself (`src/engine/PvpArena.js`, the same code the PvP server uses), so it works solo and offline; use **Host** in the Multiplayer panel to let friends join the same PvP world (each friend picks their own bots and AI level). Bots are set with the **Bots to fight** slider (0–50) and **AI level**. The public always-on PvP arena has no bots — it's for people.

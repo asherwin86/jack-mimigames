@@ -1,0 +1,28 @@
+# Render Blueprint for the account / cloud-worlds / multiplayer server.
+# Render: New → Blueprint → this repo → blueprint path "deploy/render-hub.yaml".
+# The service is named mimi-arcade-hub, which is the address the game looks for by
+# default (https://mimi-arcade-hub.onrender.com). If Render gives it a different
+# address, build the site with VITE_HUB_URL=<that address>.
+services:
+  - type: web
+    name: mimi-arcade-hub
+    runtime: node
+    plan: free                # sleeps when idle (first sign-in after a quiet spell takes ~40s) — see deploy/README.md
+    buildCommand: cd hub-server && npm ci --omit=dev
+    startCommand: node hub-server/server.js
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: 22.14.0
+      - key: HUB_API_ONLY     # serve only accounts, cloud worlds, /health and the /mp relay
+        value: "1"
+      - key: HASH_PEPPER      # a secret mixed into stored password hashes — Render makes one; never change it
+        generateValue: true
+      # To keep accounts and cloud worlds across restarts, create a free Upstash Redis
+      # database and paste its REST URL and token here (Render dashboard → Environment).
+      # Without them the free plan's disk is wiped on every restart/redeploy.
+      - key: UPSTASH_REDIS_REST_URL
+        sync: false
+      - key: UPSTASH_REDIS_REST_TOKEN
+        sync: false

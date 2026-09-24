@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { Game } from '../engine/Game.js';
 import { Scores } from '../engine/Storage.js';
+import { hubUrl } from '../engine/Account.js';
 import { KART_FRAME_HTML } from './kart-circuit/frame.js';
 
 const WINS_KEY = 'mg.kart-circuit.wins';
@@ -26,6 +27,11 @@ function readWins() {
  */
 export default class KartCircuit extends Game {
   start() {
+    // The game's online modes and profile calls read the account server's address from
+    // here (it's a different site from this page). Signing in is shared too: the
+    // arcade's session (mimiActiveSession) is exactly what the game looks for.
+    try { localStorage.setItem('mimiServerOverride', hubUrl()); } catch { /* private mode: online modes just won't connect */ }
+
     // Nothing to draw in 3D — keep the arcade's own scene dark and empty.
     this.scene.background = new THREE.Color(0x0b0e16);
 

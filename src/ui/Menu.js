@@ -2,6 +2,8 @@ import { CATALOG, ALL_TAGS, TARGET } from '../games/catalog.js';
 import { isImplemented } from '../games/index.js';
 import { Scores } from '../engine/Storage.js';
 import { Settings } from '../engine/Settings.js';
+import { Account } from '../engine/Account.js';
+import { openAccountDialog } from './AccountDialog.js';
 import { CHANGELOG } from '../changelog.js';
 
 export class Menu {
@@ -15,6 +17,7 @@ export class Menu {
     this._navRaf = null;
     this._gpAHeld = false;
     this._hoverEl = null;
+    Account.onChange(() => this._syncAccountButton());   // signing in or out (from anywhere) updates the button
   }
 
   show() {
@@ -51,6 +54,9 @@ export class Menu {
             <input type="search" placeholder="Search games…" autocomplete="off" />
             <button class="settings-btn" aria-expanded="${settingsOpen}" aria-controls="settings-box">
               <span class="gear" aria-hidden="true">&#9881;</span>Settings
+            </button>
+            <button class="account-btn" type="button" aria-haspopup="dialog">
+              <span class="acct-icon" aria-hidden="true">&#128100;</span><span class="acct-label">Sign in</span>
             </button>
             <div class="tools-break"></div>
             <div class="settings-box" id="settings-box"${settingsOpen ? '' : ' hidden'}>
@@ -101,6 +107,7 @@ export class Menu {
     // One delegated handler for every display-preference toggle — each just
     // flips its own Settings key and applies the matching effect.
     this.root.querySelector('.menu-tools').addEventListener('click', (e) => {
+      if (e.target.closest('.account-btn')) { openAccountDialog(); return; }
       const opener = e.target.closest('.settings-btn');
       if (opener) {
         const box = this.root.querySelector('.settings-box');
@@ -123,7 +130,19 @@ export class Menu {
     };
 
     this.render();
+    this._syncAccountButton();
     this._startGamepadNav();
+  }
+
+  /** The menu's account button says who you're signed in as (or invites you to sign in). */
+  _syncAccountButton() {
+    const btn = this.root.querySelector('.account-btn');
+    if (!btn) return;
+    const who = Account.name();
+    btn.classList.toggle('signed-in', !!who);
+    const label = btn.querySelector('.acct-label');
+    if (label) label.textContent = who ? who : 'Sign in';
+    btn.title = who ? `Signed in as ${who} — click to manage your account` : 'Sign in to keep your worlds on your account';
   }
 
   /** Reflects the props setting on the button, for when Shift flips it. */
@@ -219,7 +238,7 @@ export class Menu {
    *  thing to a real `:hover` a script can drive — CSS :hover only follows
    *  the actual mouse, never something moved by JS. */
   _setHover(el) {
-    const target = el?.closest?.('.tile, .toggle, .chip, .settings-btn') ?? null;
+    const target = el?.closest?.('.tile, .toggle, .chip, .settings-btn, .account-btn') ?? null;
     if (target === this._hoverEl) return;
     this._hoverEl?.classList.remove('gp-hover');
     this._hoverEl = target;

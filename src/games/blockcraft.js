@@ -3,6 +3,8 @@ import { Game } from '../engine/Game.js';
 import { sky, clamp, damp, seeded, lerp, invLerp, rand, Burst } from '../engine/utils.js';
 import { H, SEA, hash2, calibrateHeight, heightAt } from '../engine/terrainHeight.js';
 import { createArena } from '../engine/PvpArena.js';
+import { Account } from '../engine/Account.js';
+import { openAccountDialog } from '../ui/AccountDialog.js';
 import {
   isValidSkinData, importSkinFile, skinToDataURL, skinFromDataURL, defaultSkinCanvas, buildSkinnedPlayer, drawSkinPreview,
 } from '../engine/Skin.js';
@@ -33,6 +35,8 @@ const VIEW_DIST_KEY = 'mg.blockcraft.viewDist';
 const WORLDS_KEY = 'mg.blockcraft.worlds.v1';
 const ACTIVE_KEY = 'mg.blockcraft.active.v1';
 const worldDataKey = (id) => `mg.blockcraft.world.${id}`;
+const CLOUD_MAX_WORLD = 900000;    // characters of a world's JSON the account server accepts (it refuses more)
+const CLOUD_SAVE_DELAY = 12;     // seconds after a local save before it's copied to the account
 const SAVE_INTERVAL = 20;         // seconds between autosaves, only while something changed
 
 // Multiplayer talks to a small self-hosted relay (see server/blockcraft-server.mjs)
@@ -216,6 +220,13 @@ export default class Blockcraft extends Game {
     this.hostConns = new Map();
     this.hostCode = null;
     this.arena = null;                  // the PvP/bots game logic, when this world is a PvP world
+    // Cloud worlds: while signed in, every solo world is also kept on the account (see cloudSave()).
+    this.cloudIndex = new Map();        // worlds on the account, by id -> { id, name, seed, pvp, savedAt }
+    this.cloudAt = 0;                   // the account's savedAt for THIS world when we last synced it
+    this.cloudTimer = 0;                // seconds until the next upload (0 = nothing pending)
+    this.cloudBusy = false;
+    this.cloudBlocked = new Set();      // world ids we've stopped uploading (newer copy elsewhere / too big / account full)
+    this.unsubAccount = Account.onChange(() => this.onAccountChange());
     this.pvpWorld = false;              // was this world created in PvP mode?
     this.arenaMoveT = 0;
     this.armor = 0;                     // pieces of armour worn (0-4): each trims 10% off a hit
@@ -334,6 +345,8 @@ export default class Blockcraft extends Game {
     this.seed = seed;
     this.worldId = id || String(seed);
     this.worldName = name || `World ${seed}`;
+    this.cloudAt = loadWorldList().find((w) => w.id === this.worldId)?.cloudAt || 0;
+    this.cloudTimer = 0;
     this.heightCal = calibrateHeight(seed);
 
     // `edits` persists for the whole session, keyed by chunk, and is the only
@@ -384,9 +397,17 @@ export default class Blockcraft extends Game {
    *  Untouched terrain never needs saving — it regenerates identically from
    *  the seed — so this stays small no matter how far a world has been explored. */
   save() {
+    writeWorldData(this.worldId, this.serializeWorld());
+    this.touchActive();
+    this.scheduleCloudSave();
+  }
+
+  /** The world as it's saved (locally and to the account): only the edited
+   *  chunks, run-length encoded, plus where the player is. */
+  serializeWorld() {
     const edits = {};
     for (const [key, data] of this.edits) edits[key] = rleEncode(data);
-    writeWorldData(this.worldId, {
+    return {
       edits,
       pos: { x: this.pos.x, y: this.pos.y, z: this.pos.z },
       yaw: this.yaw,
@@ -394,8 +415,7 @@ export default class Blockcraft extends Game {
       flying: this.flying,
       mined: this.mined,
       placed: this.placed,
-    });
-    this.touchActive();
+    };
   }
 
   /** Updates this world's entry in the list (bumping it to "most recent")
@@ -403,9 +423,145 @@ export default class Blockcraft extends Game {
    *  the voxel data — used when nothing actually changed. */
   touchActive() {
     const list = loadWorldList().filter((w) => w.id !== this.worldId);
-    list.unshift({ id: this.worldId, name: this.worldName, seed: this.seed, savedAt: Date.now(), ...(this.pvpWorld ? { pvp: true } : {}) });
+    list.unshift({ id: this.worldId, name: this.worldName, seed: this.seed, savedAt: Date.now(), ...(this.pvpWorld ? { pvp: true } : {}), ...(this.cloudAt ? { cloudAt: this.cloudAt } : {}) });
     writeWorldList(list);
     setActiveWorldId(this.worldId);
+  }
+
+  /* -------------------------------------------------------- cloud worlds */
+
+  /** Signing in or out: fetch what's on the account (or forget it) and, if this
+   *  world isn't on the account yet, queue it for upload. */
+  onAccountChange() {
+    this.cloudBlocked.clear();
+    if (!Account.isSignedIn()) {
+      this.cloudIndex.clear();
+      this.cloudTimer = 0;
+      this.refreshWorldList();
+      this.refreshAccountRow();
+      return;
+    }
+    this.refreshAccountRow();
+    this.cloudRefresh().then(() => {
+      // put the world you're in on the account too, but not the untouched one a fresh start makes
+      if (!this.cloudIndex.has(this.worldId) && (this.edits.size > 0 || this.mined || this.placed)) this.scheduleCloudSave(true);
+    });
+  }
+
+  cloudActive() {
+    return Account.isSignedIn() && !this.multiplayer && !!this.worldId && !this.worldId.startsWith('mp:');
+  }
+
+  /** Reads the account's world list and redraws the World panel. */
+  async cloudRefresh() {
+    if (!Account.isSignedIn()) return;
+    const r = await Account.call('worlds', 'list');
+    if (!r.ok) { if (!r.offline) this.hud.toast?.(r.msg, 2200); return; }
+    this.cloudIndex = new Map(r.worlds.map((w) => [w.id, w]));
+    this.refreshWorldList();
+  }
+
+  /** Queues this world for upload (the timer in update() fires it a few seconds
+   *  later, so a burst of edits is one upload). `now` skips the wait. */
+  scheduleCloudSave(now = false) {
+    if (!this.cloudActive() || this.cloudBlocked.has(this.worldId)) return;
+    if (now) { this.cloudTimer = 0.001; return; }
+    // An untouched world is just its seed — the throwaway one a fresh start makes
+    // shouldn't use up one of the account's few slots.
+    if (this.edits.size === 0 && !this.mined && !this.placed && !this.cloudIndex.has(this.worldId)) return;
+    if (this.cloudTimer <= 0) this.cloudTimer = CLOUD_SAVE_DELAY;
+  }
+
+  /** Uploads the current world to the account. Returns true if it's now up to date there. */
+  async cloudSave() {
+    if (!this.cloudActive() || this.cloudBusy || this.cloudBlocked.has(this.worldId)) return false;
+    this.cloudTimer = 0;   // whatever was pending is being handled now
+    this.cloudBusy = true;
+    const id = this.worldId;
+    try {
+      const data = JSON.stringify(this.serializeWorld());
+      if (data.length > CLOUD_MAX_WORLD) {   // no point sending what the server will refuse
+        this.cloudBlocked.add(id);
+        this.hud.toast?.("This world is too big for your account — it's saved on this device only", 4200);
+        return false;
+      }
+      const r = await Account.call('worlds', 'put', {
+        id, name: this.worldName, seed: this.seed, pvp: this.pvpWorld, data, expect: this.cloudAt,
+      });
+      if (id !== this.worldId) return false;   // switched worlds while uploading; the other world saves on its own turn
+      if (r.ok) {
+        this.cloudAt = r.meta.savedAt;
+        this.cloudIndex.set(id, r.meta);
+        this.touchActive();
+        this.refreshWorldList();
+        return true;
+      }
+      if (r.conflict) {
+        this.cloudBlocked.add(id);
+        this.hud.toast?.('This world was saved from another device — load it from your account to get that version', 4200);
+      } else if (r.tooBig) {
+        this.cloudBlocked.add(id);
+        this.hud.toast?.("This world is too big for your account — it's saved on this device only", 4200);
+      } else if (r.full) {
+        this.cloudBlocked.add(id);
+        this.hud.toast?.(r.msg, 4200);
+      } else if (!r.offline && !r.signedOut) {
+        this.hud.toast?.(r.msg || "Couldn't save to your account", 2600);
+      } else {
+        this.cloudTimer = CLOUD_SAVE_DELAY * 2;   // offline: try again later
+      }
+      return false;
+    } finally {
+      this.cloudBusy = false;
+    }
+  }
+
+  /** Downloads a world from the account into local storage, then opens it. */
+  async loadCloudWorld(id) {
+    const r = await Account.call('worlds', 'get', { id });
+    if (!r.ok) { this.hud.toast?.(r.msg || "Couldn't load that world", 2600); return false; }
+    let data;
+    try { data = JSON.parse(r.data); } catch { this.hud.toast?.("That world's data is damaged", 2600); return false; }
+    if (!data || typeof data.edits !== 'object' || !data.pos) { this.hud.toast?.("That world's data is damaged", 2600); return false; }
+    writeWorldData(id, data);
+    const list = loadWorldList().filter((w) => w.id !== id);
+    list.unshift({ id, name: r.meta.name, seed: r.meta.seed, savedAt: Date.now(), cloudAt: r.meta.savedAt, ...(r.meta.pvp ? { pvp: true } : {}) });
+    writeWorldList(list);
+    this.cloudBlocked.delete(id);
+    this.loadWorld(id, true);
+    return true;
+  }
+
+  /** The Load button: if the account has a newer copy than this device's, take that one. */
+  async openWorld(id) {
+    const local = loadWorldList().find((w) => w.id === id);
+    const remote = this.cloudIndex.get(id);
+    if (Account.isSignedIn() && remote && (!local || remote.savedAt > (local.cloudAt || 0))) {
+      await this.loadCloudWorld(id);
+    } else {
+      this.loadWorld(id);
+    }
+  }
+
+  /** Removes a world here and, if it's on the account, there too. */
+  async removeWorld(id) {
+    deleteWorld(id);
+    this.cloudBlocked.delete(id);
+    if (Account.isSignedIn() && this.cloudIndex.has(id)) {
+      this.cloudIndex.delete(id);
+      await Account.call('worlds', 'delete', { id });
+    }
+    this.refreshWorldList();
+  }
+
+  /** The little "Account" strip at the top of the World panel. */
+  refreshAccountRow() {
+    const el = this.worldPanel?.querySelector('.bc-acct');
+    if (!el) return;
+    const who = Account.name();
+    el.innerHTML = who
+      ? `<span class="bc-acct-who">☁ ${escapeHtml(who)}</span><button class="bc-acct-btn" type="button">Account</button>`
+      : `<span class="bc-acct-who dim">Sign in to keep worlds on your account</span><button class="bc-acct-btn" type="button">Sign in</button>`;
   }
 
   /** Wires the World panel: a seed field and New World button, a live view
@@ -461,6 +617,7 @@ export default class Blockcraft extends Game {
       this.buildWorld(seed, null, name, String(seed), pvp);
       this.dirty = false;
       this.save();
+      this.scheduleCloudSave(true);   // a world you chose to create belongs on your account straight away
       if (input) input.value = '';
       this.hud.toast(`NEW ${pvp ? 'PvP ' : ''}WORLD · ${name}`, 1400);
       this.hud.hint(`New world, seed ${this.seed} · ` + this.controlsHint());
@@ -475,8 +632,8 @@ export default class Blockcraft extends Game {
       const row = e.target.closest('[data-id]');
       if (!row) return;
       const id = row.dataset.id;
-      if (e.target.closest('.bc-load')) { this.loadWorld(id); this.audio.blip(4); }
-      else if (e.target.closest('.bc-del')) { deleteWorld(id); this.refreshWorldList(); this.audio.bad(); }
+      if (e.target.closest('.bc-load')) { this.openWorld(id); this.audio.blip(4); }
+      else if (e.target.closest('.bc-del')) { this.removeWorld(id); this.audio.bad(); }
     });
 
     // No backend here, so "back up across devices" means a file the player
@@ -513,13 +670,17 @@ export default class Blockcraft extends Game {
       }
     });
 
+    panel.querySelector('.bc-acct')?.addEventListener('pointerdown', (e) => e.stopPropagation());
+    panel.querySelector('.bc-acct')?.addEventListener('click', (e) => { if (e.target.closest('.bc-acct-btn')) openAccountDialog(); });
+    this.refreshAccountRow();
     this.refreshWorldList();
+    if (Account.isSignedIn()) this.cloudRefresh();
   }
 
   /** Switches to a different saved world, first saving whatever is currently
    *  in progress so hopping between worlds never loses anything. */
-  loadWorld(id) {
-    if (id === this.worldId && !this.multiplayer) return;
+  loadWorld(id, force = false) {
+    if (!force && id === this.worldId && !this.multiplayer) return;
     const wasMultiplayer = this.multiplayer;   // see the same note in bindWorldPanel's New World handler
     this.disconnectMultiplayer();   // loading a solo world means leaving whatever shared one is open
     if (this.dirty && !wasMultiplayer) this.save();
@@ -546,17 +707,24 @@ export default class Blockcraft extends Game {
   refreshWorldList() {
     const list = this.worldPanel?.querySelector('.bc-worlds-list');
     if (!list) return;
-    const worlds = loadWorldList();
+    const local = loadWorldList();
+    const localIds = new Set(local.map((w) => w.id));
+    // Worlds that are only on the account (saved from another device) join the list too.
+    const cloudOnly = Account.isSignedIn()
+      ? [...this.cloudIndex.values()].filter((w) => !localIds.has(w.id)).map((w) => ({ ...w, cloudOnly: true }))
+      : [];
+    const worlds = [...local, ...cloudOnly];
     if (!worlds.length) {
       list.innerHTML = '<div class="bc-world-empty">No other saved worlds</div>';
       return;
     }
     list.innerHTML = worlds.map((w) => {
       const current = w.id === this.worldId;
+      const onCloud = Account.isSignedIn() && (w.cloudOnly || this.cloudIndex.has(w.id));
       return `
         <div class="bc-world-row${current ? ' on' : ''}" data-id="${escapeHtml(w.id)}">
-          <span class="bc-world-name">${w.pvp ? '<span class="bc-badge">⚔</span> ' : ''}${escapeHtml(w.name)}</span>
-          ${current ? '' : '<button class="bc-load">Load</button><button class="bc-del">&times;</button>'}
+          <span class="bc-world-name">${onCloud ? '<span class="bc-badge cloud" title="On your account">☁</span> ' : ''}${w.pvp ? '<span class="bc-badge">⚔</span> ' : ''}${escapeHtml(w.name)}</span>
+          ${current ? '' : `<button class="bc-load">Load</button><button class="bc-del" title="Delete${onCloud ? ' (also from your account)' : ''}">&times;</button>`}
         </div>`;
     }).join('');
   }
@@ -861,6 +1029,10 @@ export default class Blockcraft extends Game {
     // point writing an identical world to storage every 20 seconds. A
     // multiplayer session isn't "yours" to save as a solo world slot — it
     // lives on the server for as long as that stays running.
+    if (this.cloudTimer > 0) {
+      this.cloudTimer -= dt;
+      if (this.cloudTimer <= 0) { this.cloudTimer = 0; this.cloudSave(); }
+    }
     this.saveTimer -= dt;
     if (this.saveTimer <= 0) {
       this.saveTimer = SAVE_INTERVAL;
@@ -2709,7 +2881,9 @@ export default class Blockcraft extends Game {
     if (this.net) { const ws = this.net; this.net = null; try { ws.close(); } catch { /* ignore */ } }
     this.stopHosting();
     this.arena?.stop();
+    this.unsubAccount?.();
     if (this.dirty && !this.multiplayer) { this.save(); this.dirty = false; }
+    if (this.cloudTimer > 0) { this.cloudTimer = 0; this.cloudSave(); }   // don't lose the last few edits' upload when leaving
   }
 }
 
@@ -3386,6 +3560,12 @@ function worldHtml() {
       .bc-world .bc-pvp-row { display:flex; align-items:center; gap:6px; font-size:11px; color:rgba(255,255,255,.85); cursor:pointer; }
       .bc-world .bc-pvp-row input { width:auto; margin:0; }
       .bc-world .bc-badge { font-size:10px; color:#ffb0a8; }
+      .bc-world .bc-badge.cloud { color:#9be7ff; }
+      .bc-world .bc-acct { display:flex; align-items:center; justify-content:space-between; gap:6px; font-size:11px; }
+      .bc-world .bc-acct-who { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#9be7ff; font-weight:700; }
+      .bc-world .bc-acct-who.dim { color:rgba(255,255,255,.55); font-weight:600; white-space:normal; }
+      .bc-world .bc-acct-btn { flex:none; border:1px solid rgba(255,255,255,.25); background:rgba(110,231,255,.2); color:#fff;
+        border-radius:5px; cursor:pointer; font:700 10px inherit; padding:3px 8px; }
       .bc-world .bc-new { padding:5px 0; border-radius:5px; border:1px solid rgba(255,255,255,.25);
         background:rgba(255,90,80,.25); color:#fff; cursor:pointer; font:700 12px inherit; }
       .bc-world .bc-worlds-list { display:flex; flex-direction:column; gap:3px;
@@ -3404,6 +3584,7 @@ function worldHtml() {
         color:#fff; cursor:pointer; font:inherit; }
     </style>
     <div class="bc-world">
+      <div class="bc-acct"></div>
       <div class="bc-label">New world seed</div>
       <input class="bc-seed-input" type="text" placeholder="random" maxlength="24" />
       <label class="bc-pvp-row" title="A PvP world has hearts, fighting and AI bots (Multiplayer panel → Bots)"><input type="checkbox" class="bc-pvp-check" /> PvP mode (hearts + bots)</label>

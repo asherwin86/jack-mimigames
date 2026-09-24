@@ -9104,7 +9104,7 @@ async function unlockPartyStartedAchievement() {
     const s = activeProfileSession();
     if (!s?.key || !s?.passwordHash) return;
     try {
-        await fetch("/api/profiles/unlock-achievement", {
+        await fetch(`${accountServerBase()}/api/profiles/unlock-achievement`, {
             method: "POST", headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ key: s.key, passwordHash: s.passwordHash, achievementId: "party-started" }),
         });
@@ -9215,6 +9215,16 @@ function mpBusy() {
 // js/engine.js's getServerWsBase) — read directly rather than via
 // window.parent.MimiGames since this page also runs standalone (the vrsim
 // harness, direct navigation), not only inside the hub's iframe.
+// (arcade) the account server is a different site from the page this game is shown
+// in, so profile calls go to the base the arcade stored (same value the /mp relay uses)
+function accountServerBase() {
+    try {
+        return (localStorage.getItem("mimiServerOverride") || "").trim().replace(/\/+$/, "");
+    } catch (e) {
+        return "";
+    }
+}
+
 function serverWsBaseOverride() {
     try {
         const base = (localStorage.getItem("mimiServerOverride") || "").trim().replace(/\/+$/, "");
@@ -10073,7 +10083,7 @@ async function saveKartColorToProfile(hexOrNull) {
     const s = activeProfileSession();
     if (!s?.key || !s?.passwordHash) return;
     try {
-        await fetch("/api/profiles/set-kart-color", {
+        await fetch(`${accountServerBase()}/api/profiles/set-kart-color`, {
             method: "POST", headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ key: s.key, passwordHash: s.passwordHash, kartColor: hexOrNull || "" }),
         });
