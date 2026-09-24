@@ -22,7 +22,7 @@ export const DAILY_REWARD = 10;
 
 /** Easy / medium / hard targets. For time-attack games (marble-maze,
  *  maze-escape) smaller is harder, so the numbers go down. Sandbox games are
- *  measured in minutes played, Kart Circuit in race wins. */
+ *  measured in minutes played, Kart Circuit in laps completed (its running total). */
 export const GOALS = {
   'cube-dodger':      [150, 400, 900],
   'sky-hoops':        [4, 9, 16],
@@ -54,7 +54,7 @@ export const GOALS = {
   'grapple-gap':      [60, 150, 300],
   'skeet-range':      [5, 12, 25],
   'arena-fighter':    [30, 80, 150],
-  'kart-circuit':     [1, 3, 10],
+  'kart-circuit':     [8, 25, 60],
 };
 
 /** Games whose challenge is "play for N minutes" instead of a score. */
@@ -84,7 +84,7 @@ const UNIT_TEXT = {
 
 function goalText(entry, at) {
   if (isMinutes(entry)) return `Play ${entry.name} for ${at} minutes`;
-  if (entry.id === 'kart-circuit') return `Win ${at} race${at === 1 ? '' : 's'}`;
+  if (entry.id === 'kart-circuit') return `Complete ${at} laps in Kart Circuit`;
   if (entry.higherIsBetter === false) return `Finish ${entry.name} in ${at} seconds or less`;
   return (UNIT_TEXT[entry.unit] || ((n, g) => `Score ${n} ${entry.unit || 'points'} in ${g}`))(at, entry.name);
 }
@@ -201,7 +201,7 @@ export function runFinished(entry, score) {
   return awardAll(checkScore(entry, score), checkEverywhere());
 }
 
-/** A game with its own progress counter (Kart Circuit's wins) reached `value`. */
+/** A game with its own progress counter (Kart Circuit's lap total) reached `value`. */
 export function valueReached(entry, value) {
   if (!entry || !Number.isFinite(value)) return [];
   return awardAll(checkScore(entry, value));

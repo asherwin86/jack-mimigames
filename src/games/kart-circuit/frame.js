@@ -326,7 +326,7 @@ export const KART_FRAME_HTML = `<!doctype html>
     </main>
 
     <script src="kart-circuit/three.min.js?v=20260815a-vendor"></script>
-    <script src="kart-circuit/game.js?v=20260902a"></script>
+    <script src="kart-circuit/game.js?v=20260925a"></script>
     <script src="kart-circuit/menu-flow.js?v=20260828b"></script>
     <!-- (arcade) forwards Escape so it can take you back to the menu -->
     <script src="kart-circuit/bridge.js?v=20260924a"></script>

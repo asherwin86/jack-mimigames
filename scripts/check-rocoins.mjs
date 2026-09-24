@@ -115,9 +115,10 @@ r = ch.minutesPlayed(bc, 0.2);
 ok(r.length === 1 && r[0].id === 'goal:blockcraft:0' && Rocoins.balance() === 5, 'blockcraft: 10 minutes total pays the easy target');
 ok(ch.minutesPlayed(BY_ID.get('cube-dodger'), 30).length === 0, 'minutes only count in sandbox games');
 const kart = BY_ID.get('kart-circuit');
-r = ch.valueReached(kart, 1);
-ok(r.length === 1 && r[0].id === 'goal:kart-circuit:0', 'kart: one win pays the first target');
-ok(ch.valueReached(kart, 3).length === 1, 'kart: three wins pays the next');
+ok(ch.valueReached(kart, 7).length === 0, 'kart: 7 laps pays nothing yet');
+r = ch.valueReached(kart, 8);
+ok(r.length === 1 && r[0].id === 'goal:kart-circuit:0', 'kart: 8 laps pays the first target');
+ok(ch.valueReached(kart, 25).length === 1, 'kart: 25 laps pays the next');
 
 // ---------- powers ----------
 const engine = {

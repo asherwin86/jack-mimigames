@@ -7,9 +7,14 @@ import { valueReached } from '../engine/challenges.js';
 import { KART_FRAME_HTML } from './kart-circuit/frame.js';
 
 const WINS_KEY = 'mg.kart-circuit.wins';
+const LAPS_KEY = 'mg.kart-circuit.laps';
 
 function readWins() {
   try { return Number(localStorage.getItem(WINS_KEY)) || 0; } catch { return 0; }
+}
+
+function readLaps() {
+  try { return Number(localStorage.getItem(LAPS_KEY)) || 0; } catch { return 0; }
 }
 
 
@@ -20,8 +25,10 @@ function readWins() {
  * character roster renamed to generic dinos), and this wrapper just
  * puts it on screen inside the arcade: a full-window frame under the top bar.
  *
- * Scores: every race you win (the game tells us through a message) adds to a
- * running win count, and the arcade keeps that as this game's best score.
+ * Scores: every lap you finish (the game tells us through a message) adds to a
+ * running total that counts up for good, and the arcade keeps that as this
+ * game's score — so it climbs however you place, and the lap challenges pay
+ * out as it does. Race wins are still counted and celebrated.
  *
  * Escape (forwarded from inside the frame by bridge.js, or pressed while the
  * arcade itself has focus) returns to the menu rather than opening the
@@ -53,17 +60,24 @@ export default class KartCircuit extends Game {
       frame.srcdoc = KART_FRAME_HTML;   // same origin as the arcade — see kart-circuit/frame.js
     }
 
+    this.laps = readLaps();
+    this.hud.stat?.('Laps', this.laps);   // in the arcade's top bar, where the frame doesn't cover it
+
     this.onMessage = (e) => {
       if (e.data?.source !== 'kart-circuit' || (frame && e.source !== frame.contentWindow)) return;
       if (e.data.type === 'admin') {
         dispatchEvent(new Event('mimi:admin'));   // the backtick key, pressed inside the frame
       } else if (e.data.type === 'exit') {
         location.hash = '';
+      } else if (e.data.type === 'lap-complete') {
+        this.laps += 1;
+        try { localStorage.setItem(LAPS_KEY, String(this.laps)); } catch { /* private mode: still counts this session */ }
+        Scores.submit('kart-circuit', this.laps, true);
+        this.hud.stat?.('Laps', this.laps);
+        valueReached(BY_ID.get('kart-circuit'), this.laps);   // pays any "complete N laps" challenges
       } else if (e.data.type === 'race-finished' && e.data.won === true) {
         const wins = readWins() + 1;
         try { localStorage.setItem(WINS_KEY, String(wins)); } catch { /* private mode: still counts this session */ }
-        Scores.submit('kart-circuit', wins, true);
-        valueReached(BY_ID.get('kart-circuit'), wins);   // pays any "win N races" challenges
         this.hud.toast?.(`RACE WON · ${wins} win${wins === 1 ? '' : 's'}`, 2200);
       }
     };

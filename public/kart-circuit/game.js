@@ -5003,6 +5003,10 @@ function updateRacer(racer, dt) {
         racer.lap += 1;
         racer.lapArmed = false;
         racer.gateLockTimer = 0.28;
+        // (arcade) tell the frame around us — it keeps a running total of laps as this game's score (no effect on its own)
+        if (racer === racers[0] && window.parent && window.parent !== window) {
+            window.parent.postMessage({ source: "kart-circuit", type: "lap-complete", lap: racer.lap, of: getLapsToWin() }, "*");
+        }
         if (racer.isPlayer) {
             raceInfo.textContent = `Lap ${Math.min(racer.lap + 1, getLapsToWin())} / ${getLapsToWin()}`;
             raceNotice(`Lap ${racer.lap} complete.`);

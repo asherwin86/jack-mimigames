@@ -15,7 +15,7 @@ export const CHANGELOG = [
   },
   {
     title: 'New game: Kart Circuit',
-    detail: 'A 3D arcade kart racer — drift for mini-turbos, grab items and coins, race rivals across 14 tracks and cups, solo or split-screen with up to 4 on one keyboard. Game #31; every race you win counts toward its best score.',
+    detail: 'A 3D arcade kart racer — drift for mini-turbos, grab items and coins, race rivals across 14 tracks and cups, solo or split-screen with up to 4 on one keyboard. Game #31; every lap you finish counts toward its score, which only ever goes up.',
   },
   {
     title: 'PvP worlds with bots',

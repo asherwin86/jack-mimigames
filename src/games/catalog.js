@@ -170,7 +170,7 @@ export const CATALOG = [
     id: 'kart-circuit', n: 31, name: 'Kart Circuit', tags: ['racing', 'arcade'],
     blurb: 'A 3D arcade kart racer: drift for mini-turbos, grab items and coins, race rivals across 14 tracks and cups.',
     controls: 'Arrows / WASD, mouse, touch or gamepad · Shift to drift · Space uses an item · Esc for the menu',
-    unit: 'wins',
+    unit: 'laps',
     // It brings its own front end (mode, driver, cup, track, difficulty), so skip the generic start card — see main.js.
     customStart: true,
   },
