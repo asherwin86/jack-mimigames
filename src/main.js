@@ -90,7 +90,8 @@ function gamepadConfirm(primarySelector, secondarySelector) {
       if (edge('nav', dir !== 0)) sel = dir < 0 ? 0 : 1;
       if (edge('b', inp.gpButton(1)) || edge('select', inp.gpButton(8))) { secondary.click(); return; }
     }
-    if (edge('a', inp.gpButton(0))) { btns[Math.min(sel, btns.length - 1)].click(); return; }
+    const cursorInUse = engine.domCursor && inp.usingGamepadPointer;   // A belongs to the cursor then (see the loop below)
+    if (edge('a', inp.gpButton(0)) && !cursorInUse) { btns[Math.min(sel, btns.length - 1)].click(); return; }
     if (padOn) btns.forEach((b, i) => b.classList.toggle('gp-hover', i === Math.min(sel, btns.length - 1)));
     requestAnimationFrame(tick);
   };
@@ -115,6 +116,7 @@ async function play(id) {
   touch.hide();
   uiRoot.innerHTML = '';
   paused = false;
+  engine.domCursor = false;
   menu.hide();
   try {
     const { entry, GameClass } = await loadGame(id);
@@ -148,13 +150,15 @@ function togglePause() {
   if (!engine.running && !paused) { location.hash = ''; return; }
   if (paused) {
     paused = false;
+    engine.domCursor = false;
     uiRoot.innerHTML = '';
     engine.resume();
   } else {
     paused = true;
     engine.pause();
+    engine.domCursor = !!currentEntry?.padCursor;
     showPause(uiRoot, currentEntry, {
-      onResume: () => { paused = false; engine.resume(); },
+      onResume: () => { paused = false; engine.domCursor = false; engine.resume(); },
       onMenu: () => { location.hash = ''; },
     });
     gamepadConfirm('[data-act="resume"]', '[data-act="menu"]');
@@ -163,6 +167,7 @@ function togglePause() {
 
 function toMenu() {
   touch.hide();
+  engine.domCursor = false;
   current = null;
   currentEntry = null;
   paused = false;
@@ -182,9 +187,54 @@ setInterval(() => {
   const down = engine.input.gpButton(9);
   // Only mid-run (or to resume): on the Start card, or once the results are up, it does nothing. Kart Circuit has its own
   // pause on the same button, inside its frame.
-  if (down && !startHeld && current && currentEntry?.id !== 'kart-circuit' && (engine.running || paused)) togglePause();
+  if (down && !startHeld && current && currentEntry?.id !== 'kart-circuit' && (engine.running || paused) && !engine.game?.padCursorActive?.()) togglePause();
   startHeld = down;
 }, 50);
+
+// A controller cursor over screens made of DOM buttons (Blockcraft's start and pause screens): the left stick moves it (Input
+// does that), A clicks whatever is under it, the right stick scrolls the panel it is over. With no cursor out, A on a game's
+// start screen does its primary action (Blockcraft: Play).
+{
+  let aHeld = false;
+  let last = performance.now();
+  let hover = null;
+  const scrollable = (el) => {
+    for (let n = el; n && n !== document.body; n = n.parentElement) {
+      const oy = getComputedStyle(n).overflowY;
+      if ((oy === 'auto' || oy === 'scroll') && n.scrollHeight > n.clientHeight + 2) return n;
+    }
+    return null;
+  };
+  const tick = (now) => {
+    requestAnimationFrame(tick);
+    const dt = Math.min(0.05, (now - last) / 1000);
+    last = now;
+    const inp = engine.input;
+    const g = engine.game;
+    const on = engine.domCursor || (g?.padCursorActive?.() ?? false);
+    const aNow = inp.gpButton(0);
+    let el = null;
+    if (on && inp.usingGamepadPointer) {
+      const p = inp.gpPointer;
+      el = document.elementFromPoint((p.x * 0.5 + 0.5) * innerWidth, (1 - (p.y * 0.5 + 0.5)) * innerHeight);
+      const over = el?.closest?.('button, a, input, select, label, .bc-world-row, [role="button"]') ?? null;
+      if (over !== hover) { hover?.classList.remove('gp-over'); hover = over; hover?.classList.add('gp-over'); }
+      const v = inp.gpAxis(3);
+      const box = v ? scrollable(el) : null;
+      if (box) box.scrollTop += v * 700 * dt;
+      if (aNow && !aHeld && el) {
+        el.click();
+        const field = el.closest?.('input, textarea');
+        if (field) field.focus();
+      }
+    } else {
+      if (hover) { hover.classList.remove('gp-over'); hover = null; }
+      if (on && aNow && !aHeld && !engine.domCursor) g?.padPrimary?.();
+    }
+    aHeld = aNow;
+  };
+  requestAnimationFrame(tick);
+}
 
 addEventListener('hashchange', route);
 addEventListener('keydown', (e) => {

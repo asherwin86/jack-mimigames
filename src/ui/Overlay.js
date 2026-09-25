@@ -20,8 +20,10 @@ export function showStart(root, entry, onPlay) {
 /** Full-screen pause card — Escape mid-run shows this instead of leaving
  *  straight to the menu, so a run in progress isn't lost to a stray tap. */
 export function showPause(root, entry, { onResume, onMenu }) {
+  // Games whose own panels are worth using while paused (Blockcraft's worlds and servers) get a see-through overlay
+  // with the card tucked at the bottom, so the panels stay visible and clickable.
   root.innerHTML = `
-    <div class="overlay">
+    <div class="overlay${entry.padCursor ? ' clear' : ''}">
       <div class="card">
         <h2>Paused</h2>
         <p>${entry.name}</p>

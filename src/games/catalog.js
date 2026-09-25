@@ -119,6 +119,8 @@ export const CATALOG = [
     // Blockcraft shows its own landing screen (world picker, multiplayer
     // connect/host, a Play button) instead of the generic one — see main.js.
     customStart: true,
+    // Its start screen and pause screen are full of DOM buttons (worlds, servers): give a controller a cursor there.
+    padCursor: true,
   },
   {
     id: 'fruit-slice', n: 22, name: 'Fruit Slice', tags: ['arcade', 'aim'],

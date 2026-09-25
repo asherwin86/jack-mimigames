@@ -5,6 +5,22 @@ Newest update first. Every update is also in its own file in the "updates"
 folder. Each one is released to the website and the Windows app together
 (the app updates itself the next time you open it).
 
+v1.0.34  -  25 Sep 2026
+Blockcraft: virtual mouse for controllers on the start and pause screens
+------------------------------------------------------------------------
+- With a controller, Blockcraft's start screen and pause screen now have the
+  same virtual mouse as the main menu: push the left stick to move the cursor,
+  press A to click. Pick a world, make a new one, change view distance, join a
+  server or the PvP Arena, press Play - all from the controller.
+- The right stick scrolls a panel (like the worlds list or server list) while
+  the cursor is over it.
+- The pause screen no longer blurs and blocks Blockcraft's world and server
+  panels: they stay visible and clickable (mouse too), with the pause card in the
+  middle. While the cursor is out, A clicks under the cursor; put the cursor on
+  Resume, or press Start again, to carry on.
+- On the start screen, pressing A without moving the cursor still starts Play.
+- Start on the start screen no longer opens the pause card.
+
 v1.0.33  -  25 Sep 2026
 Controller: reach "Quit to menu" from the pause screen
 ------------------------------------------------------

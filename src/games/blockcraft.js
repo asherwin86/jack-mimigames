@@ -297,6 +297,12 @@ export default class Blockcraft extends Game {
       : `New world, seed ${this.seed}` + ' — pick a world or a server, then hit Play');
   }
 
+  /** A controller gets a cursor (see main.js) while the start screen is up: pick a world, join a server, hit Play. */
+  padCursorActive() { return !this.playing; }
+
+  /** A on a controller with no cursor out: the same as pressing Play. */
+  padPrimary() { if (!this.playing) this.beginPlay(); }
+
   /** Leaves the landing screen and actually starts playing: swaps to the
    *  full in-game HUD (hotbar, touch controls, plus the same world/
    *  multiplayer panels) and lets update() start processing input. Called

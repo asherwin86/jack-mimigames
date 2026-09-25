@@ -38,6 +38,7 @@ export class Engine {
     this.onExit = null;     // back-to-menu button
     this.hud.onExit = () => this.onExit?.();
     this.onAdmin = null;    // opens the Rocoins / powers panel
+    this.domCursor = false; // main.js turns this on while a screen full of DOM buttons is up (Blockcraft's pause), so a controller gets its cursor
     this.hud.onAdmin = () => this.onAdmin?.();
 
     // The FPS readout lives outside #hud and #ui so it survives every screen
@@ -241,7 +242,7 @@ export class Engine {
     // Wanted either by the current game (opted in via showCursor) or by the
     // menu — the menu is the idle scene, not a game, so it can't opt in the
     // same way; it wants the cursor live any time it's the one showing.
-    const wantGame = this.running && this.game?.showCursor;
+    const wantGame = (this.running && this.game?.showCursor) || this.domCursor || (this.game?.padCursorActive?.() ?? false);
     const wantMenu = !!this.idleScene;
     const show = !!(this.input.usingGamepadPointer && (wantGame || wantMenu));
     this._cursorEl.hidden = !show;
