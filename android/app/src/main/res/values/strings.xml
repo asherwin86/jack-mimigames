@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">100 Mimi Games</string>
+    <string name="title_activity_main">100 Mimi Games</string>
+    <string name="package_name">au.com.feesynergy.mimigames</string>
+    <string name="custom_url_scheme">au.com.feesynergy.mimigames</string>
+</resources>

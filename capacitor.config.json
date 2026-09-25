@@ -1,0 +1,12 @@
+{
+  "appId": "au.com.feesynergy.mimigames",
+  "appName": "100 Mimi Games",
+  "webDir": "dist",
+  "backgroundColor": "#0b0e17",
+  "android": {
+    "allowMixedContent": false
+  },
+  "server": {
+    "androidScheme": "https"
+  }
+}

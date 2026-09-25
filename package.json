@@ -30,6 +30,9 @@
     "ws": "^8.21.3"
   },
   "devDependencies": {
+    "@capacitor/android": "^8.5.2",
+    "@capacitor/cli": "^8.5.2",
+    "@capacitor/core": "^8.5.2",
     "electron": "^33.2.1",
     "electron-builder": "^25.1.8",
     "vite": "^7.1.0"

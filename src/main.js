@@ -9,12 +9,15 @@ import { Rocoins } from './engine/Rocoins.js';
 import { runFinished, onEarned, minutesPlayed } from './engine/challenges.js';
 import { createAdmin, notifyEarned } from './ui/AdminPanel.js';
 import { startRocoinSync } from './engine/RocoinSync.js';
+import { TouchControls } from './ui/TouchControls.js';
 
 const canvas = document.getElementById('stage');
 const hudRoot = document.getElementById('hud');
 const uiRoot = document.getElementById('ui');
 
 const engine = new Engine(canvas, hudRoot);
+const touch = new TouchControls(document.getElementById('touch'));   // on-screen pad/buttons on touch devices
+window.__mimiEngine = engine;   // handy for tests and debugging
 const menu = new Menu(uiRoot, (id) => { location.hash = `#/${id}`; }, engine.input);
 // The toggle only ever applies to the menu backdrop, which is the idle scene.
 menu.onProps = (on) => engine.idleScene?.setProps?.(on);
@@ -80,6 +83,7 @@ engine.onEnd = (entry, score, detail) => {
   paused = false;
   engine.freeze();
   engine.input.exitLock();
+  touch.releaseAll();
   runFinished(entry, score);   // before showResults stores the score, so it can tell a personal best; pays out via onEarned
   showResults(uiRoot, entry, score, detail, {
     onReplay: () => play(entry.id),
@@ -89,6 +93,7 @@ engine.onEnd = (entry, score, detail) => {
 };
 
 async function play(id) {
+  touch.hide();
   uiRoot.innerHTML = '';
   paused = false;
   menu.hide();
@@ -98,6 +103,7 @@ async function play(id) {
     current = id;
     currentEntry = entry;
     engine.mount(entry, GameClass);
+    touch.show(entry);
     // A game that manages its own landing screen (currently just Blockcraft)
     // needs the update loop running right away so that screen — built from
     // inside the game itself — can actually respond to anything; the generic
@@ -137,6 +143,7 @@ function togglePause() {
 }
 
 function toMenu() {
+  touch.hide();
   current = null;
   currentEntry = null;
   paused = false;
