@@ -13,13 +13,14 @@ import { CATALOG } from '../src/games/catalog.js';
 
 installDomShims();
 
-const SECONDS = Number(process.argv[2] || 20);
+const ONLY = (process.argv.find((a) => a.startsWith('--only=')) || '').slice(7).split(',').filter(Boolean);   // --only=id1,id2
+const SECONDS = Number(process.argv.find((a) => /^\d+$/.test(a)) || 20);
 const DT = 1 / 60;
 const FRAMES = Math.round(SECONDS / DT);
 
 let failures = 0;
 
-for (const entry of CATALOG) {
+for (const entry of CATALOG.filter((e) => !ONLY.length || ONLY.includes(e.id))) {
   const result = await run(entry);
   const tag = result.ok ? '\x1b[32mPASS\x1b[0m' : '\x1b[31mFAIL\x1b[0m';
   console.log(`${tag}  ${entry.id.padEnd(18)} ${result.note}`);
@@ -225,11 +226,11 @@ function findNaN(root) {
 /** Just enough DOM for `sky()` to build its gradient CanvasTexture. */
 function installDomShims() {
   if (globalThis.document) return;
-  const ctx2d = {
-    createLinearGradient: () => ({ addColorStop() {} }),
-    fillRect() {}, clearRect() {}, drawImage() {},
-    set fillStyle(_) {}, get fillStyle() { return '#000'; },
-  };
+  // Any 2d-context call is accepted and ignored (gradients, text, shapes...) — rendering itself isn't tested here.
+  const ctx2d = new Proxy({}, {
+    get: (t, k) => (k in t ? t[k] : (k === 'measureText' ? () => ({ width: 10 }) : () => ({ addColorStop() {} }))),
+    set: (t, k, v) => { t[k] = v; return true; },
+  });
   globalThis.document = {
     createElement: () => ({ width: 0, height: 0, getContext: () => ctx2d, style: {} }),
     createElementNS: () => ({ width: 0, height: 0, getContext: () => ctx2d, style: {} }),

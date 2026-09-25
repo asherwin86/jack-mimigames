@@ -26,6 +26,9 @@ const TABLE = {
   'maze-escape':   { pad: 'wasd', keys: [{ label: '⟲', code: 'KeyQ' }, { label: '⟳', code: 'KeyE' }, { label: 'RUN', code: 'ShiftLeft' }] },
   'grapple-gap':   { pad: 'lr', keys: [{ label: 'GRAPPLE', code: 'Space' }] },
   'arena-fighter': { pad: 'wasd', keys: [{ label: 'PUNCH', code: 'KeyJ' }, { label: 'KICK', code: 'KeyK' }, { label: 'BLOCK', code: 'ShiftLeft' }, { label: 'SUPER', code: 'KeyL' }] },
+  'invader-grid': { pad: 'lr', keys: [{ label: 'FIRE', code: 'Space' }] },
+  'pac-cube': { pad: 'wasd' },
+  'catch-the-stars': { pad: 'lr' },
   'beat-lanes':    { row: [{ label: 'D', code: 'KeyD' }, { label: 'F', code: 'KeyF' }, { label: 'J', code: 'KeyJ' }, { label: 'K', code: 'KeyK' }] },
 };
 

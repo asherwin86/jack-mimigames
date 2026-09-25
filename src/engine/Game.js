@@ -55,6 +55,17 @@ export class Game {
     this.ctx.end(score, detail);
   }
 
+  /** The first of `objects` under the pointer (mouse, touch or the controller's cursor), or null. */
+  pickAt(objects, recursive = false) {
+    this._pickRay ??= new THREE.Raycaster();
+    this._pickRay.setFromCamera(this.input.activePointer(), this.camera);
+    const hits = this._pickRay.intersectObjects(objects, recursive);
+    return hits.length ? hits[0] : null;
+  }
+
+  /** A click, tap, or the controller's A button, this frame. */
+  clickedNow() { return this.input.clicked || this.input.gpHit(0); }
+
   /** Extra powers this game sells in the admin panel; see engine/Powers.js. */
   adminPowers() { return []; }
 

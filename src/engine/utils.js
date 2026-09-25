@@ -134,6 +134,43 @@ export function starfield(scene, count = 700, radius = 260) {
   return points;
 }
 
+/* ------------------------------------------------------------------ labels */
+
+/** A canvas texture with `text` centred on it (numbers on tiles, icons on cards). */
+export function labelTexture(text, { size = 128, fg = '#ffffff', bg = null, weight = 800, scale = 0.62 } = {}) {
+  const c = document.createElement('canvas');
+  c.width = size; c.height = size;
+  const g = c.getContext('2d');
+  if (bg) { g.fillStyle = bg; g.fillRect(0, 0, size, size); } else g.clearRect(0, 0, size, size);
+  g.fillStyle = fg;
+  g.font = `${weight} ${Math.round(size * scale)}px system-ui, sans-serif`;
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillText(String(text), size / 2, size / 2 + size * 0.04);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+/** A flat plane showing `text`, laid on top of a tile: rotate -90° about X to face up. */
+export function labelPlane(text, w, h, opts = {}) {
+  const m = new THREE.Mesh(
+    new THREE.PlaneGeometry(w, h),
+    new THREE.MeshBasicMaterial({ map: labelTexture(text, opts), transparent: true, depthWrite: false }),
+  );
+  m.userData.label = text;
+  return m;
+}
+
+/** Changes the text on a labelPlane. */
+export function setLabel(mesh, text, opts = {}) {
+  if (mesh.userData.label === text) return;
+  mesh.material.map?.dispose();
+  mesh.material.map = labelTexture(text, opts);
+  mesh.material.needsUpdate = true;
+  mesh.userData.label = text;
+}
+
 /* ------------------------------------------------------------------ effects */
 
 /** Pooled cube burst — call `burst(pos, color)` on impact, `update(dt)` per frame. */

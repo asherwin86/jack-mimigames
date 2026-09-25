@@ -127,7 +127,7 @@ service worker is only registered on real http(s) origins, never in the dev serv
 
 ## Android app (works offline)
 
-`android/` is a Capacitor project that wraps the built arcade (`dist/`) inside an APK, so all 31 games run with no internet.
+`android/` is a Capacitor project that wraps the built arcade (`dist/`) inside an APK, so every game runs with no internet.
 It is landscape and full-screen, shows up in the Android TV launcher too (banner + leanback), and on touch screens gets an
 on-screen thumb-stick and buttons (`src/ui/TouchControls.js` — a per-game table; tap/drag games need no pad). A controller
 or a TV remote works as on desktop. Only sign-in, cloud worlds, multiplayer and the daily online bits need a connection.

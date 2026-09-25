@@ -176,6 +176,56 @@ export const CATALOG = [
     // It brings its own front end (mode, driver, cup, track, difficulty), so skip the generic start card — see main.js.
     customStart: true,
   },
+  {
+    id: 'memory-match', n: 32, name: 'Memory Match', tags: ['puzzle', 'memory'],
+    blurb: 'Flip cards two at a time and match all eight pairs. Every wrong pair costs a second.',
+    controls: 'Click a card to flip it', unit: 's', higherIsBetter: false,
+  },
+  {
+    id: 'sliding-puzzle', n: 33, name: 'Sliding Puzzle', tags: ['puzzle'],
+    blurb: 'Slide the numbered tiles into the gap until 1 to 8 are back in order.',
+    controls: 'Click a tile next to the gap · or arrow keys', unit: 's', higherIsBetter: false,
+  },
+  {
+    id: 'lights-out', n: 34, name: 'Lights Out', tags: ['puzzle', 'timing'],
+    blurb: 'Pressing a light flips it and its neighbours. Turn every light off, then do it again, against the clock.',
+    controls: 'Click a light', unit: 'puzzles',
+  },
+  {
+    id: 'color-flood', n: 35, name: 'Colour Flood', tags: ['puzzle'],
+    blurb: 'Flood the board from the corner one colour at a time. Fill it all before your moves run out.',
+    controls: 'Click a colour button (or any square)', unit: 'pts',
+  },
+  {
+    id: 'connect-four', n: 36, name: 'Connect Four', tags: ['puzzle', 'strategy'],
+    blurb: 'Drop discs and connect four before the bot does. Each win makes the next bot sharper.',
+    controls: 'Click a column to drop a disc', unit: 'wins',
+  },
+  {
+    id: 'invader-grid', n: 37, name: 'Invader Grid', tags: ['shooter', 'arcade'],
+    blurb: 'Rows of invaders march down the screen. Shoot them before they land, and watch for the bonus saucer.',
+    controls: 'A / D or ← → to move · Space or click to fire', unit: 'pts',
+  },
+  {
+    id: 'pac-cube', n: 38, name: 'Pac-Cube', tags: ['arcade', 'chase'],
+    blurb: 'Eat every pellet in the maze while three ghosts hunt you. A big pellet turns the tables.',
+    controls: 'WASD or arrows to steer', unit: 'pts',
+  },
+  {
+    id: 'flappy-cube', n: 39, name: 'Flappy Cube', tags: ['reflex', 'skill'],
+    blurb: 'Flap through the gaps between the pipes. One touch and it is over.',
+    controls: 'Click, tap or Space to flap', unit: 'gaps',
+  },
+  {
+    id: 'gravity-flip', n: 40, name: 'Gravity Flip', tags: ['reflex', 'runner'],
+    blurb: 'Race down a corridor and flip between the floor and the ceiling to slip past the blocks.',
+    controls: 'Space, click or tap to flip gravity', unit: 'm',
+  },
+  {
+    id: 'catch-the-stars', n: 41, name: 'Catch the Stars', tags: ['reflex', 'arcade'],
+    blurb: 'Slide a basket under falling stars. Gold is worth triple; bombs cost a life.',
+    controls: 'Mouse or A / D to move the basket', unit: 'pts',
+  },
 ];
 
 export const BY_ID = new Map(CATALOG.map((e) => [e.id, e]));

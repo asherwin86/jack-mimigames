@@ -55,6 +55,16 @@ export const GOALS = {
   'skeet-range':      [5, 12, 25],
   'arena-fighter':    [30, 80, 150],
   'kart-circuit':     [8, 25, 60],
+  'invader-grid': [300, 900, 2000],
+  'pac-cube': [500, 1500, 3500],
+  'flappy-cube': [5, 15, 30],
+  'gravity-flip': [200, 500, 1000],
+  'catch-the-stars': [150, 400, 800],
+  'memory-match': [90, 55, 35],
+  'sliding-puzzle': [120, 70, 40],
+  'lights-out': [3, 7, 12],
+  'color-flood': [50, 90, 105],
+  'connect-four': [1, 3, 6],
 };
 
 /** Games whose challenge is "play for N minutes" instead of a score. */

@@ -2,6 +2,10 @@
  *  menu, under the trailer. Keep entries brief; this isn't a commit log. */
 export const CHANGELOG = [
   {
+    title: '10 new games (32-41)',
+    detail: 'Puzzles: Memory Match, Sliding Puzzle, Lights Out, Colour Flood and Connect Four (vs a bot that gets sharper). Arcade: Invader Grid, Pac-Cube, Flappy Cube, Gravity Flip and Catch the Stars. Each one has its own Rocoin challenges.',
+  },
+  {
     title: 'New in Orbit Dodge and Blockcraft',
     detail: 'Orbit Dodge: gold stars count 3, white chrono stars slow the debris rings for 5 seconds. Blockcraft: seven new blocks — Glowstone (always bright, found in small pockets deep underground), Ice, red / blue / yellow / green Wool and Bookshelf. The hotbar grows to 18 slots: click or scroll to reach the new ones.',
   },

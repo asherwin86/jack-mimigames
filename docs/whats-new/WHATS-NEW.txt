@@ -5,6 +5,33 @@ Newest update first. Every update is also in its own file in the "updates"
 folder. Each one is released to the website and the Windows app together
 (the app updates itself the next time you open it).
 
+v1.0.36  -  25 Sep 2026
+10 new games (32 to 41)
+-----------------------
+Puzzle games
+- Memory Match - flip cards two at a time to find the eight pairs. Every wrong pair
+  costs a second. Your score is your time (lower is better).
+- Sliding Puzzle - slide the numbered tiles into order, by clicking or with the arrow
+  keys. Score is your time.
+- Lights Out - pressing a light flips it and its neighbours. Turn them all off,
+  then do it again against the clock (each puzzle adds 5 seconds). Score is puzzles cleared.
+- Colour Flood - flood the board from the corner one colour at a time before the
+  moves run out. Spare moves score bonus points.
+- Connect Four - drop discs and get four in a row before the bot does. Every win
+  makes the next bot sharper; your score is wins in a row.
+Arcade games
+- Invader Grid - shoot marching rows of invaders, dodge their bombs, and hit the
+  bonus saucer. Waves get faster.
+- Pac-Cube - eat every pellet in the maze while three ghosts chase you; big pellets
+  let you eat the ghosts.
+- Flappy Cube - flap through the gaps between the pipes.
+- Gravity Flip - race down a corridor, flipping between floor and ceiling to slip
+  past the blocks.
+- Catch the Stars - slide a basket under falling stars (gold is worth triple) and
+  dodge the bombs.
+All ten work with mouse or touch, have on-screen touch buttons where they need them,
+and each has its own Rocoin challenges (three targets per game).
+
 v1.0.35  -  25 Sep 2026
 Website: a "Get the app" button
 -------------------------------

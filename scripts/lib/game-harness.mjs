@@ -80,11 +80,11 @@ function makeHud() {
 
 function installDomShims() {
   if (globalThis.document) return;
-  const ctx2d = {
-    createLinearGradient: () => ({ addColorStop() {} }),
-    fillRect() {}, clearRect() {}, drawImage() {},
-    set fillStyle(_) {}, get fillStyle() { return '#000'; },
-  };
+  // Any 2d-context call is accepted and ignored (gradients, text, shapes...) — rendering itself isn't tested here.
+  const ctx2d = new Proxy({}, {
+    get: (t, k) => (k in t ? t[k] : (k === 'measureText' ? () => ({ width: 10 }) : () => ({ addColorStop() {} }))),
+    set: (t, k, v) => { t[k] = v; return true; },
+  });
   globalThis.document = {
     createElement: () => ({ width: 0, height: 0, getContext: () => ctx2d, style: {} }),
     createElementNS: () => ({ width: 0, height: 0, getContext: () => ctx2d, style: {} }),

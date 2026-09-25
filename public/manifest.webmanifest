@@ -1,7 +1,7 @@
 {
   "name": "100 Mimi Games",
   "short_name": "Mimi Games",
-  "description": "A 3D arcade of 31 mini-games: Blockcraft, Kart Circuit and more.",
+  "description": "A 3D arcade of mini-games: Blockcraft, Kart Circuit and more.",
   "start_url": "./",
   "scope": "./",
   "display": "fullscreen",
