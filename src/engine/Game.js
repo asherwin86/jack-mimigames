@@ -63,6 +63,17 @@ export class Game {
     return hits.length ? hits[0] : null;
   }
 
+  /** Where the pointer's ray meets the horizontal plane at height `y` (mouse, touch or the controller's cursor), or null. */
+  groundPoint(y = 0, target = new THREE.Vector3()) {
+    this._pickRay ??= new THREE.Raycaster();
+    this._pickRay.setFromCamera(this.input.activePointer(), this.camera);
+    const { origin, direction } = this._pickRay.ray;
+    if (Math.abs(direction.y) < 1e-6) return null;
+    const t = (y - origin.y) / direction.y;
+    if (t < 0) return null;
+    return target.copy(origin).addScaledVector(direction, t);
+  }
+
   /** A click, tap, or the controller's A button, this frame. */
   clickedNow() { return this.input.clicked || this.input.gpHit(0); }
 

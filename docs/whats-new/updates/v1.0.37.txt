@@ -1,0 +1,22 @@
+v1.0.37  -  25 Sep 2026
+9 more new games (42 to 50) - now 50 games
+------------------------------------------
+Action games
+- Tank Battle - drive a tank around a walled arena and wreck waves of enemy tanks
+  (heavy ones take three hits). Aim with the mouse or the right stick; repair kits
+  drop from some wrecks.
+- Horde Survivor - endless swarms close in; you shoot automatically. Collect gems to
+  level up (more damage, faster fire, extra shots, speed, magnet, health).
+- Rocket Lander - tilt and thrust a rocket onto a small pad: slow, upright and with fuel
+  to spare. Each landing gets a smaller pad and stronger gravity.
+- Slalom Ski - carve down the mountain through the gates; each gate adds time, missed
+  gates and trees cost it.
+- Air Hockey - mouse (or stick) mallet against a bot that gets better with every goal
+  you score. Concede five and you're out.
+Puzzle and strategy games
+- Tetra Drop - falling blocks: rotate, slide and hard-drop them to clear rows.
+- 2048 Merge - slide the board (arrows, WASD or swipe) and merge equal tiles.
+- Parking Panic - squeeze the car into the one free bay against the clock; bumps cost
+  time, each park adds it.
+- Battleship - find and sink five hidden ships in as few shots as you can (lower is better).
+All nine have touch controls where they need them and their own Rocoin challenges.

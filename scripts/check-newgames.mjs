@@ -340,4 +340,334 @@ import { boot, check, finish } from './lib/game-harness.mjs';
   check(d.game.level === 2 && d.game.pellets.size > 60, 'pac-cube: eating every pellet starts the next level');
 }
 
+// ---------- Tank Battle ----------
+{
+  const { game, step, result } = await boot('tank-battle');
+  step(150);
+  check(game.wave === 1 && game.enemies.length === 3, 'tank-battle: wave 1 brings three tanks', `${game.enemies.length}`);
+  const e = game.enemies[0];
+  e.userData.hp = 1; e.userData.heavy = false;
+  e.position.set(0, 0, 0);
+  game.player.position.set(0, 0, 8);
+  const shot = game.add(game.player.clone());
+  shot.userData = { vx: 0, vz: 0, friendly: true, life: 2 };
+  shot.position.set(0, 1, 0.2);
+  game.shots.push(shot);
+  const s0 = game.score;
+  step(1);
+  check(game.score === s0 + 100 && !game.enemies.includes(e), 'tank-battle: a shot that hits a tank wrecks it for 100');
+  const heavy = game.enemies[0];
+  heavy.userData.hp = 3; heavy.userData.heavy = true; heavy.position.set(5, 0, -5);
+  game.hitEnemy(heavy, 0);
+  game.hitEnemy(heavy, 0);
+  check(game.enemies.includes(heavy) && heavy.userData.hp === 1, 'tank-battle: a heavy tank takes three hits');
+  const before = game.score;
+  game.hitEnemy(heavy, game.enemies.indexOf(heavy));
+  check(game.score === before + 200, 'tank-battle: ...and is worth 200');
+  // cover blocks movement
+  const c = game.cover[0].userData;
+  game.player.position.set(c.x, 0, c.z + c.hd + 1.3);
+  game.drive(game.player, 0, -3);
+  check(game.player.position.z > c.z + c.hd, 'tank-battle: you cannot drive through cover');
+  check(game.blocked(20, 0, 1) && !game.blocked(0, 10, 1), 'tank-battle: the arena walls hold you in');
+  // damage and repair
+  game.invuln = 0; const hp = game.hp;
+  game.hurt();
+  check(game.hp === hp - 1 && game.invuln > 1, 'tank-battle: a hit costs armour and gives a moment of protection');
+  const kit = game.add(game.player.clone()); kit.position.copy(game.player.position); game.repairs.push(kit);
+  step(1);
+  check(game.hp === hp, 'tank-battle: a repair kit restores one armour');
+  game.hp = 1; game.invuln = 0;
+  game.hurt();
+  check(!!result.ended && result.ended.score >= 300, 'tank-battle: losing the last armour ends the run with your score', JSON.stringify(result.ended));
+}
+
+// ---------- Horde Survivor ----------
+{
+  const { game, step, result } = await boot('horde-survivor');
+  step(60);
+  check(game.enemies.length > 0, 'horde-survivor: enemies swarm in');
+  const e = game.enemies[0];
+  e.userData.hp = 1;
+  e.position.set(6, 0.5, 0); game.player.position.set(0, 0.7, 0);
+  const shot = game.add(game.player.clone()); shot.userData = { vx: 0, vz: 0, life: 1 }; shot.position.set(6, 0.8, 0); game.shots.push(shot);
+  const k0 = game.kills;
+  step(1);
+  check(game.kills === k0 + 1 && game.gems.length >= 1, 'horde-survivor: a kill counts and drops a gem');
+  const gem = game.gems[0]; gem.position.set(game.player.position.x, 0.4, game.player.position.z);
+  const xp = game.xp;
+  step(1);
+  check(game.xp === xp + 1, 'horde-survivor: walking over a gem collects it');
+  game.xp = game.need - 1;
+  const lvl = game.level; const dmg = game.damage;
+  const g2 = game.gems.length ? game.gems[0] : null;
+  const gem2 = game.add(game.player.clone()); gem2.position.copy(game.player.position); game.gems.push(gem2);
+  step(1);
+  check(game.level === lvl + 1 && game.damage === dmg + 1, 'horde-survivor: enough gems level you up (first upgrade: more damage)');
+  void g2;
+  for (let i = 0; i < 5; i++) game.levelUp();
+  check(game.shotCount >= 2 && game.speed > 8 && game.maxHp >= 6, 'horde-survivor: later levels add shots, speed and health');
+  game.invuln = 0;
+  game.spawn(); game.spawn();
+  const hp = game.hp;
+  const near = game.enemies[0]; near.position.set(game.player.position.x + 0.5, 0.5, game.player.position.z);
+  step(1);
+  check(game.hp === hp - 1, 'horde-survivor: an enemy touching you costs health');
+  game.hp = 1; game.invuln = 0;
+  game.spawn();
+  const near2 = game.enemies[1] || game.enemies[0]; near2.position.set(game.player.position.x + 0.5, 0.5, game.player.position.z);
+  step(1);
+  check(!!result.ended && result.ended.score === game.kills, 'horde-survivor: the run ends with your kills as the score', JSON.stringify(result.ended));
+}
+
+// ---------- Rocket Lander ----------
+{
+  const { game, step, result, input } = await boot('rocket-lander');
+  const padMid = (game.padX0 + game.padX1) / 2;
+  check(game.padX1 - game.padX0 >= 4 && game.padX0 >= -30 && game.padX1 <= 30, 'rocket-lander: a landing pad inside the field');
+  const flat = [];
+  for (let x = game.padX0 + 0.5; x < game.padX1; x += 1) flat.push(game.terrainAt(x));
+  check(flat.every((h) => h === flat[0]), 'rocket-lander: the pad is flat');
+  const y0 = game.vel.y;
+  input.press('Space'); step(30); input.release();
+  check(game.vel.y > y0 - game.gravity * 0.5 + 3 && game.fuel < 100, 'rocket-lander: thrust pushes up and burns fuel');
+  // soft landing
+  const land = (over) => {
+    const b = { ...over };
+    game.pos.set(b.x ?? padMid, game.padY + 0.05, 0);
+    game.vel.set(b.vx ?? 0, b.vy ?? -1.5, 0);
+    game.angle = b.angle ?? 0;
+    game.fuel = b.fuel ?? 50;
+    step(1);
+  };
+  const s0 = game.score;
+  land({});
+  check(game.landed > 0 && game.score === s0 + 100 + 100, 'rocket-lander: a soft upright landing on the pad scores 100 + 2 per fuel left', String(game.score - s0));
+  step(150);
+  check(game.level === 2 && game.padX1 - game.padX0 < 9 * 1, 'rocket-lander: then the next level, with a smaller pad', `level ${game.level}`);
+  for (const [why, over, re] of [['too fast', { vy: -6 }, /fast/], ['sideways', { vx: 5 }, /sideways/], ['tilted', { angle: 0.6 }, /upright/]]) {
+    const t = await boot('rocket-lander', 7);
+    const mid = (t.game.padX0 + t.game.padX1) / 2;
+    t.game.pos.set(mid, t.game.padY + 0.05, 0);
+    t.game.vel.set(over.vx ?? 0, over.vy ?? -1.5, 0);
+    t.game.angle = over.angle ?? 0;
+    t.step(1);
+    check(!!t.result.ended && re.test(t.result.ended.detail), `rocket-lander: landing ${why} is a crash`, JSON.stringify(t.result.ended));
+  }
+  const off = await boot('rocket-lander', 9);
+  const away = off.game.padX0 > 0 ? -20 : 20;
+  off.game.pos.set(away, off.game.terrainAt(away) + 0.05, 0); off.game.vel.set(0, -1, 0); off.game.angle = 0;
+  off.step(1);
+  check(!!off.result.ended && /pad/i.test(off.result.ended.detail), 'rocket-lander: a gentle touchdown off the pad still fails');
+}
+
+// ---------- Slalom Ski ----------
+{
+  const { game, step, result, input } = await boot('slalom-ski');
+  const gate = (offset, z = -0.2) => { game.spawnGate(); const g = game.gates[game.gates.length - 1]; g.cx = game.skier.position.x + offset; g.z = z; g.poles[0].position.set(g.cx - 2.6, 1.7, z); g.poles[1].position.set(g.cx + 2.6, 1.7, z); return g; };
+  game.gates.forEach((g) => g.poles.forEach((p) => game.scene.remove(p))); game.gates = [];
+  game.nextGate = 99; game.nextTree = 99;
+  const t0 = game.timeLeft;
+  gate(0.3, 0.5);
+  step(2);
+  check(game.passed === 1 && game.timeLeft > t0 + 1, 'slalom-ski: skiing through a gate counts it and adds time');
+  const t1 = game.timeLeft;
+  gate(9, 0.5);
+  step(2);
+  check(game.missed === 1 && game.timeLeft < t1, 'slalom-ski: missing a gate costs time');
+  const tree = game.add(game.skier.clone());
+  tree.userData = { x: game.skier.position.x, z: game.skier.position.z };
+  game.trees.push(tree);
+  const t2 = game.timeLeft;
+  step(1);
+  check(game.stun > 0 && game.timeLeft < t2 - 1, 'slalom-ski: hitting a tree stuns you and costs time');
+  game.timeLeft = 0.02;
+  step(3);
+  check(!!result.ended && result.ended.score === game.passed, 'slalom-ski: when time runs out the score is the gates cleared', JSON.stringify(result.ended));
+  const c = await boot('slalom-ski', 2);
+  c.input.hold('KeyD'); c.step(30); c.input.release();
+  check(c.game.skier.position.x > 3, 'slalom-ski: D carves right');
+}
+
+// ---------- Air Hockey ----------
+{
+  const { game, step, result, input } = await boot('air-hockey');
+  game.wait = 0;
+  // the puck bounces off the side walls
+  game.puck.position.set(5.2, 0.15, 3); game.pv.set(10, 0, 0);
+  step(10);
+  check(game.pv.x < 0, 'air-hockey: the puck bounces off the side wall');
+  // your mallet hits it away
+  game.puck.position.set(0, 0.15, 6.2); game.pv.set(0, 0, 0);
+  game.me.position.set(0, 0.35, 7.6);
+  game.groundPoint = () => null;
+  input.hold('KeyW');                       // the mallet moves forward at 14 units a second into the puck
+  step(1);
+  input.release();
+  check(game.pv.z < -5, 'air-hockey: the mallet knocks the puck away with its own speed', String(game.pv.z));
+  // a goal in the bot's net
+  game.puck.position.set(0, 0.15, -9.5); game.pv.set(0, 0, -20);
+  step(10);
+  check(game.goals === 1, 'air-hockey: the puck through the far gap is your goal');
+  game.wait = 0;
+  game.puck.position.set(0, 0.15, 9.5); game.pv.set(0, 0, 20);
+  game.me.position.set(5, 0.35, 5);
+  step(10);
+  check(game.conceded === 1, 'air-hockey: the puck through your gap is conceded');
+  game.wait = 0;
+  game.puck.position.set(5, 0.15, 9.6); game.pv.set(0, 0, 20);
+  step(6);
+  check(game.conceded === 1 && game.pv.z <= 0, 'air-hockey: hitting the end wall beside the goal just bounces');
+  game.conceded = 4; game.wait = 0;
+  game.puck.position.set(0, 0.15, 9.5); game.pv.set(0, 0, 20);
+  step(10);
+  check(!!result.ended && result.ended.score === 1, 'air-hockey: conceding five ends the run with your goals', JSON.stringify(result.ended));
+  const a = await boot('air-hockey', 5);
+  a.game.groundPoint = () => null;
+  a.game.wait = 99;
+  a.game.puck.position.set(4, 0.15, -6); a.game.pv.set(0, 0, 0);
+  const x0 = a.game.ai.position.x;
+  a.step(60);
+  check(a.game.ai.position.x > x0 + 1, 'air-hockey: the bot slides across to defend');
+}
+
+// ---------- Tetra Drop ----------
+{
+  const m = await import('../src/games/tetra-drop.js');
+  const T = [[1, 0], [0, 1], [1, 1], [2, 1]];
+  let c = T;
+  for (let i = 0; i < 4; i++) c = m.rotate('T', c);
+  check(JSON.stringify(c.map((p) => p.join())) === JSON.stringify(T.map((p) => p.join())), 'tetra-drop: four quarter turns bring a piece home');
+  check(JSON.stringify(m.rotate('O', [[1, 0], [2, 0], [1, 1], [2, 1]])) === JSON.stringify([[1, 0], [2, 0], [1, 1], [2, 1]]), 'tetra-drop: the square does not change when turned');
+  const { game, step, input, result } = await boot('tetra-drop');
+  check(game.board.length === 20 && game.board[0].length === 10, 'tetra-drop: a ten by twenty well');
+  const seen = new Set();
+  for (let i = 0; i < 14; i++) { seen.add(game.name); game.spawn(); game.lock?.call; }
+  const bagCheck = await boot('tetra-drop', 5);
+  bagCheck.game.bag = [];
+  const seven = new Set(); for (let i = 0; i < 7; i++) seven.add(bagCheck.game.takeFromBag());
+  check(seven.size === 7, 'tetra-drop: the piece bag deals all seven shapes before repeating');
+  const g = (await boot('tetra-drop', 2)).game;
+  const x0 = g.px;
+  g.tryMove(-1, 0);
+  check(g.px === x0 - 1, 'tetra-drop: a piece moves sideways');
+  for (let i = 0; i < 12; i++) g.tryMove(-1, 0);
+  check(g.px >= -1 && !g.collides(g.cells, g.px, g.py), 'tetra-drop: it stops at the left wall');
+  const h = await boot('tetra-drop', 3);
+  h.game.hardDrop();
+  check(h.game.board[0].some(Boolean) || h.game.board[1].some(Boolean), 'tetra-drop: a hard drop sends the piece to the floor and locks it');
+  check(h.game.score > 0, 'tetra-drop: hard dropping scores 2 per row fallen');
+  // clearing four rows with a vertical I
+  const t = await boot('tetra-drop', 4);
+  for (let y = 0; y < 4; y++) for (let x = 0; x < 10; x++) t.game.board[y][x] = x === 4 ? null : 0xffffff;
+  t.game.name = 'I'; t.game.cells = m.rotate('I', [[0, 1], [1, 1], [2, 1], [3, 1]]); t.game.px = 2; t.game.py = 8;
+  const s0 = t.game.score;
+  t.game.hardDrop();
+  check(t.game.lines === 4 && t.game.score >= s0 + 800, 'tetra-drop: four rows at once is worth 800', `${t.game.lines} lines, +${t.game.score - s0}`);
+  check(t.game.board.slice(0, 4).every((row) => row.every((v) => !v)), 'tetra-drop: the cleared rows are gone');
+  t.game.lines = 9; t.game.level = 1;
+  t.game.board[0].fill(0xffffff); t.game.board[0][3] = null;
+  t.game.name = 'I'; t.game.cells = [[0, 1], [1, 1], [2, 1], [3, 1]]; t.game.px = 0; t.game.py = 5;
+  t.game.cells = m.rotate('I', t.game.cells); t.game.px = 1;
+  t.game.hardDrop();
+  check(t.game.level === 2, 'tetra-drop: ten lines bring the next level');
+  // the stack reaching the top ends the run
+  const o = await boot('tetra-drop', 6);
+  for (let y = 0; y < 20; y++) for (let x = 0; x < 10; x++) o.game.board[y][x] = 0xffffff;
+  o.game.board[19].fill(null); o.game.board[18].fill(null);
+  for (let x = 0; x < 10; x++) o.game.board[17][x] = 0xffffff;
+  o.game.board[19][4] = 0xffffff; o.game.board[19][5] = 0xffffff; o.game.board[18][4] = 0xffffff;
+  o.game.spawn();
+  check(!!o.result.ended, 'tetra-drop: a new piece with no room ends the run', JSON.stringify(o.result.ended));
+  const gravity = await boot('tetra-drop', 7);
+  const y0 = gravity.game.py;
+  gravity.step(90);
+  check(gravity.game.py < y0 || gravity.game.board.some((row) => row.some(Boolean)), 'tetra-drop: pieces fall by themselves');
+}
+
+// ---------- 2048 Merge ----------
+{
+  const m = await import('../src/games/merge-2048.js');
+  check(JSON.stringify(m.slideRow([2, 2, 2, 2])) === JSON.stringify({ row: [4, 4, 0, 0], gained: 8 }), '2048: 2 2 2 2 slides to 4 4 0 0 for 8 points');
+  check(JSON.stringify(m.slideRow([2, 0, 2, 4])) === JSON.stringify({ row: [4, 4, 0, 0], gained: 4 }), '2048: gaps close up before merging');
+  check(JSON.stringify(m.slideRow([4, 4, 8, 0])) === JSON.stringify({ row: [8, 8, 0, 0], gained: 8 }), '2048: a tile merges only once per move');
+  check(JSON.stringify(m.slideRow([2, 4, 8, 16])) === JSON.stringify({ row: [2, 4, 8, 16], gained: 0 }), '2048: nothing moves when nothing can');
+  const { game, input, step, result } = await boot('2048-merge'.replace('2048-merge', 'merge-2048'));
+  check(game.grid.flat().filter(Boolean).length === 2, '2048: starts with two tiles');
+  game.grid = [[2, 2, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 4]];
+  const moved = game.move('left');
+  check(moved && game.grid[0][0] === 4 && game.score === 4, '2048: sliding left merges and scores');
+  check(game.grid.flat().filter(Boolean).length === 3, '2048: a new tile appears after every move');
+  game.grid = [[2, 4, 8, 16], [4, 8, 16, 2], [8, 16, 2, 4], [16, 2, 4, 8]];
+  const before = game.moves;
+  check(game.move('left') === false && game.moves === before, '2048: a move that changes nothing is not a move');
+  game.grid = [[2, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]];
+  game.move('down');
+  check(game.grid[3][0] === 2 || game.grid[3].includes(2), '2048: sliding down drops tiles to the bottom');
+  game.grid = [[0, 0, 0, 2], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]];
+  game.move('right');
+  check(game.grid[0][3] === 2, '2048: sliding right keeps a tile at the right edge');
+  input.press('ArrowLeft'); game.grid = [[0, 0, 0, 8], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]]; step(1); input.release();
+  check(game.grid[0][0] === 8, '2048: the arrow keys slide the board');
+  game.grid = [[0, 3, 5, 7], [11, 13, 17, 19], [23, 29, 31, 37], [41, 43, 47, 53]];   // (no two neighbours can ever match)
+  game.score = 120;
+  game.move('left');    // slides row 0 left and fills the last gap with a 2 or 4 that cannot merge
+  check(!!result.ended || game.stuck(), '2048: a full board with no merges ends the run');
+}
+
+// ---------- Parking Panic ----------
+{
+  const { game, step, result } = await boot('parking-panic');
+  const axis = game.targetRow === 0 ? 0 : Math.PI;
+  check(!game.obstacles.some((o) => Math.abs(o.x - game.target.x) < 1 && Math.abs(o.z - game.target.z) < 1), 'parking-panic: the target bay is empty');
+  const near = game.obstacles.filter((o) => Math.abs(o.z - game.target.z) < 1 && Math.abs(Math.abs(o.x - game.target.x) - 3.4) < 0.5);
+  check(near.length === 2 || game.targetIdx === 0 || game.targetIdx === 8, 'parking-panic: both bays beside the target are taken');
+  const t0 = game.timeLeft;
+  game.pos.set(game.target.x, game.target.z); game.heading = axis + 0.9; game.speed = 0;
+  step(70);
+  check(game.score === 0, 'parking-panic: sitting crooked in the bay does not count');
+  game.heading = axis; game.stillFor = 0;
+  step(70);
+  check(game.score === 1 && game.timeLeft > t0 + 10, 'parking-panic: straight in the bay and stopped counts as parked (+18 s)', `${game.score} ${game.timeLeft - t0}`);
+  const g2 = await boot('parking-panic', 5);
+  const ob = g2.game.obstacles[0];
+  g2.game.pos.set(ob.x, ob.z + ob.hd + 0.6); g2.game.heading = Math.PI; g2.game.speed = 5;
+  const t1 = g2.game.timeLeft;
+  g2.step(1);
+  check(g2.game.timeLeft < t1 - 1.5, 'parking-panic: hitting a parked car costs 2 seconds');
+  check(Math.hypot(g2.game.pos.x - ob.x, g2.game.pos.y - ob.z) > 1, 'parking-panic: and you cannot drive through it');
+  const g3 = await boot('parking-panic', 6);
+  g3.input.hold('KeyW'); g3.step(60); g3.input.release();
+  check(g3.game.speed > 4 && g3.game.pos.x > -30, 'parking-panic: W accelerates');
+  const before = g3.game.heading;
+  g3.input.hold('KeyW', 'KeyD'); g3.step(30); g3.input.release();
+  check(Math.abs(g3.game.heading - before) > 0.2, 'parking-panic: steering turns the car while it moves');
+  const g4 = await boot('parking-panic', 8);
+  g4.game.timeLeft = 0.01;
+  g4.step(2);
+  check(!!g4.result.ended && g4.result.ended.score === 0, 'parking-panic: when time runs out the score is the cars parked');
+}
+
+// ---------- Battleship ----------
+{
+  const { game, result } = await boot('battleship');
+  const cells = game.ships.flatMap((s) => s.cells.map((c) => c.join()));
+  check(game.ships.length === 5 && cells.length === 17 && new Set(cells).size === 17, 'battleship: five ships, seventeen distinct squares');
+  check(game.ships.every((s) => s.cells.every(([r, c]) => r >= 0 && r < 8 && c >= 0 && c < 8)), 'battleship: every ship is inside the sea');
+  check(game.ships.every((s) => s.cells.every(([r, c], i) => i === 0 || (r === s.cells[0][0] || c === s.cells[0][1]))), 'battleship: every ship is a straight line');
+  let miss = null;
+  for (let r = 0; r < 8 && !miss; r++) for (let c = 0; c < 8; c++) if (game.cell(r, c).userData.ship < 0) { miss = [r, c]; break; }
+  check(game.fire(...miss) === 'miss' && game.shots === 1, 'battleship: an empty square is a miss');
+  check(game.fire(...miss) === null && game.shots === 1, 'battleship: shooting the same square twice is ignored');
+  const ship = game.ships[4];
+  check(game.fire(...ship.cells[0]) === 'hit', 'battleship: a ship square is a hit');
+  check(game.fire(...ship.cells[1]) === 'sunk' && ship.sunk, 'battleship: the last square sinks the ship');
+  check(game.fire(-1, 0) === null && game.fire(3, 9) === null, 'battleship: off-board shots are ignored');
+  for (const s of game.ships) for (const [r, c] of s.cells) game.fire(r, c);
+  check(!!result.ended && result.ended.score === game.shots, 'battleship: sinking the fleet ends the run with the shots used (lower is better)', JSON.stringify(result.ended));
+  const perfect = await boot('battleship', 4);
+  for (const s of perfect.game.ships) for (const [r, c] of s.cells) perfect.game.fire(r, c);
+  check(perfect.result.ended.score === 17, 'battleship: a perfect game takes 17 shots');
+}
+
 finish('new game');

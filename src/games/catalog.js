@@ -226,6 +226,51 @@ export const CATALOG = [
     blurb: 'Slide a basket under falling stars. Gold is worth triple; bombs cost a life.',
     controls: 'Mouse or A / D to move the basket', unit: 'pts',
   },
+  {
+    id: 'tank-battle', n: 42, name: 'Tank Battle', tags: ['shooter', 'arcade'],
+    blurb: 'Drive a tank around a walled arena and blow up waves of enemy tanks before they wreck you.',
+    controls: 'WASD to drive · mouse or right stick to aim · click / Space to fire', unit: 'pts',
+  },
+  {
+    id: 'horde-survivor', n: 43, name: 'Horde Survivor', tags: ['arcade', 'chase'],
+    blurb: 'Endless swarms close in. You shoot on your own — collect gems to level up and survive as long as you can.',
+    controls: 'WASD to move (you fire automatically)', unit: 'kills',
+  },
+  {
+    id: 'rocket-lander', n: 44, name: 'Rocket Lander', tags: ['skill', 'physics'],
+    blurb: 'Tilt and thrust a rocket down onto a small landing pad. Land slowly and upright, with fuel to spare.',
+    controls: 'A / D to tilt · W, Space or hold click to thrust', unit: 'pts',
+  },
+  {
+    id: 'slalom-ski', n: 45, name: 'Slalom Ski', tags: ['skill', 'runner'],
+    blurb: 'Carve down the mountain through the gates. Every gate adds time; missing one or hitting a tree costs it.',
+    controls: 'A / D or ← → to carve', unit: 'gates',
+  },
+  {
+    id: 'air-hockey', n: 46, name: 'Air Hockey', tags: ['sport', 'reflex'],
+    blurb: 'A fast table game against a bot that improves with every goal you score. Concede five and you are out.',
+    controls: 'Move the mouse (or stick) to slide your mallet', unit: 'goals',
+  },
+  {
+    id: 'tetra-drop', n: 47, name: 'Tetra Drop', tags: ['puzzle', 'arcade'],
+    blurb: 'Falling blocks: turn and slot them into complete rows to clear them. The stack speeds up as you go.',
+    controls: '← → move · ↑ rotate · ↓ soft drop · Space hard drop', unit: 'pts',
+  },
+  {
+    id: 'merge-2048', n: 48, name: '2048 Merge', tags: ['puzzle'],
+    blurb: 'Slide the whole board and merge equal tiles to build bigger numbers. Run out of moves and it is over.',
+    controls: 'Arrows / WASD or swipe', unit: 'pts',
+  },
+  {
+    id: 'parking-panic', n: 49, name: 'Parking Panic', tags: ['skill', 'racing'],
+    blurb: 'Squeeze the car into the one free bay before time runs out. Every bump costs seconds; every park adds them.',
+    controls: 'W / S throttle and reverse · A / D steer', unit: 'cars',
+  },
+  {
+    id: 'battleship', n: 50, name: 'Battleship', tags: ['puzzle', 'strategy'],
+    blurb: 'Five ships are hidden on an eight-by-eight sea. Sink the fleet in as few shots as you can.',
+    controls: 'Click a square to fire', unit: 'shots', higherIsBetter: false,
+  },
 ];
 
 export const BY_ID = new Map(CATALOG.map((e) => [e.id, e]));

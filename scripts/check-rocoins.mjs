@@ -65,7 +65,8 @@ ok(Rocoins.balance() === 5, '…which is 5 Rocoins');
 r = submit('cube-dodger', 420);
 const goalIds = r.filter((c) => c.id.startsWith('goal:')).map((c) => c.id);
 ok(goalIds.includes('goal:cube-dodger:0') && goalIds.includes('goal:cube-dodger:1') && !goalIds.includes('goal:cube-dodger:2'), '420 m clears easy and medium but not hard');
-ok(Rocoins.balance() === 5 + 5 + 12, 'and pays 5 + 12');
+const dailyBonus = ch.dailyChallenges().some((d) => d.gameId === 'cube-dodger') ? ch.DAILY_REWARD : 0;   // (if today's daily happens to be this game, its medium target pays too)
+ok(Rocoins.balance() === 5 + 5 + 12 + dailyBonus, 'and pays 5 + 12');
 const before = Rocoins.balance();
 r = submit('cube-dodger', 430);
 ok(r.length === 0 && Rocoins.balance() === before, 'the same targets never pay twice');

@@ -29,6 +29,12 @@ const TABLE = {
   'invader-grid': { pad: 'lr', keys: [{ label: 'FIRE', code: 'Space' }] },
   'pac-cube': { pad: 'wasd' },
   'catch-the-stars': { pad: 'lr' },
+  'tank-battle': { pad: 'wasd', keys: [{ label: 'FIRE', code: 'Space' }] },
+  'horde-survivor': { pad: 'wasd' },
+  'rocket-lander': { pad: 'lr', keys: [{ label: 'THRUST', code: 'Space' }] },
+  'slalom-ski': { pad: 'lr' },
+  'tetra-drop': { pad: 'wasd', keys: [{ label: 'ROTATE', code: 'KeyW' }, { label: 'DROP', code: 'Space' }] },
+  'parking-panic': { pad: 'wasd' },
   'beat-lanes':    { row: [{ label: 'D', code: 'KeyD' }, { label: 'F', code: 'KeyF' }, { label: 'J', code: 'KeyJ' }, { label: 'K', code: 'KeyK' }] },
 };
 

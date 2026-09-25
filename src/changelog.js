@@ -2,6 +2,10 @@
  *  menu, under the trailer. Keep entries brief; this isn't a commit log. */
 export const CHANGELOG = [
   {
+    title: '9 more new games (42-50)',
+    detail: 'Action: Tank Battle, Horde Survivor, Rocket Lander, Slalom Ski and Air Hockey. Puzzle and strategy: Tetra Drop, 2048 Merge, Parking Panic and Battleship. That makes 50 games.',
+  },
+  {
     title: '10 new games (32-41)',
     detail: 'Puzzles: Memory Match, Sliding Puzzle, Lights Out, Colour Flood and Connect Four (vs a bot that gets sharper). Arcade: Invader Grid, Pac-Cube, Flappy Cube, Gravity Flip and Catch the Stars. Each one has its own Rocoin challenges.',
   },
