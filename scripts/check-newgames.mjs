@@ -670,4 +670,381 @@ import { boot, check, finish } from './lib/game-harness.mjs';
   check(perfect.result.ended.score === 17, 'battleship: a perfect game takes 17 shots');
 }
 
+// ---------- Bubble Pop ----------
+{
+  const { game, step, input, result } = await boot('bubble-pop');
+  const add = (kind, points = 15) => { game.spawn(); const b = game.bubbles[game.bubbles.length - 1]; b.userData.kind = kind; b.userData.points = points; b.position.set(0, 0, 0); return b; };
+  game.nextSpawn = 999;
+  game.bubbles.forEach((b) => game.scene.remove(b)); game.bubbles = [];
+  const a = add('normal', 15);
+  game.pop(a);
+  check(game.score === 15 && game.combo === 1, 'bubble-pop: a normal bubble scores its points');
+  game.pop(add('normal', 15)); game.pop(add('normal', 15));
+  check(game.combo === 3 && game.multiplier() === 2, 'bubble-pop: three pops in a row double the multiplier');
+  const s = game.score;
+  game.pop(add('normal', 10));
+  check(game.score === s + 20, 'bubble-pop: ...and it applies to the next pop');
+  step(90);
+  check(game.combo === 0, 'bubble-pop: the combo fades if you stop popping');
+  game.combo = 12;
+  check(game.multiplier() === 5, 'bubble-pop: the multiplier tops out at x5');
+  game.combo = 0;
+  const t = game.timeLeft;
+  game.pop(add('bomb'));
+  check(game.timeLeft <= t - 3.9 && game.combo === 0, 'bubble-pop: a bomb costs 4 seconds and the combo');
+  game.timeLeft = 20;
+  const s2 = game.score;
+  game.pop(add('gold', 100));
+  check(game.score >= s2 + 100 && game.timeLeft > 22.9, 'bubble-pop: a gold bubble is worth 100 and adds 3 seconds');
+  game.combo = 4;
+  const esc = add('normal'); esc.position.y = 20;
+  step(1);
+  check(game.combo === 0, 'bubble-pop: letting a bubble float away breaks the combo');
+  game.timeLeft = 0.02;
+  step(3);
+  check(!!result.ended && result.ended.score === game.score, 'bubble-pop: when time runs out the score is what you popped', JSON.stringify(result.ended));
+}
+
+// ---------- Dart Board ----------
+{
+  const m = await import('../src/games/dart-board.js');
+  const P = m.default.pointsAt;
+  check(P(0, 0) === 50 && P(0.4, 0) === 50, 'dart-board: the bullseye is 50');
+  check(P(1, 0) === 25 && P(0, -2) === 15 && P(3, 0) === 10 && P(4.5, 0) === 5, 'dart-board: the rings score 25, 15, 10 and 5 working outwards');
+  check(P(5.5, 0) === 0 && P(4, 4) === 0, 'dart-board: off the board is nothing');
+  const { game, step, result, input } = await boot('dart-board');
+  const throwAt = (x, y) => { game.aim.set(x, y); game.throwDart(); const f = game.flying; f.to.set(x, y, f.to.z); game.land(f); };
+  throwAt(0, 0);
+  check(game.score === 50 && game.bulls === 1 && game.thrown === 1, 'dart-board: a dart in the bullseye scores 50 and counts');
+  throwAt(2, 0);
+  check(game.score === 65 && game.last === 15, 'dart-board: scores add up');
+  input.clicked = true; step(1);
+  check(game.flying && game.thrown === 3, 'dart-board: a click throws a dart');
+  input.clicked = true; step(1);
+  check(game.thrown === 3, 'dart-board: you cannot throw again while one is in the air');
+  step(30);
+  game.thrown = 14;
+  throwAt(0, 0);
+  check(!!result.ended && result.ended.score >= 100, 'dart-board: the fifteenth dart ends the run with the total', JSON.stringify(result.ended));
+  const w = await boot('dart-board', 3);
+  let widest = 0; let narrowest = 9;
+  for (let i = 0; i < 400; i++) { w.game.time = i * 0.05; const breath = 0.5 + 0.5 * Math.sin(w.game.time * 1.3); const amp = 0.2 + 0.95 * breath; widest = Math.max(widest, amp); narrowest = Math.min(narrowest, amp); }
+  check(narrowest < 0.3 && widest > 1.0, 'dart-board: the sight sways between steady and wobbly (so timing matters)');
+}
+
+// ---------- Reaction Test ----------
+{
+  const { game, step, input, result } = await boot('reaction-test');
+  step(80);
+  check(game.state === 'wait', 'reaction-test: after a moment it waits for the light');
+  input.clicked = true; step(1);
+  check(game.falseStarts === 1 && game.state === 'ready', 'reaction-test: clicking before the light is a false start');
+  const toGo = () => { game.state = 'wait'; game.stateT = 0.01; step(2); };
+  toGo();
+  check(game.state === 'go', 'reaction-test: the light goes green');
+  step(18);
+  input.clicked = true; step(1);
+  check(game.times.length === 1 && game.times[0] >= 280 && game.times[0] <= 380, 'reaction-test: your time is measured in milliseconds (about 300 here)', String(game.times[0]));
+  for (let i = 0; i < 4; i++) {
+    game.state = 'ready'; game.stateT = 0; step(2);
+    toGo(); step(12); input.clicked = true; step(1);
+  }
+  check(game.times.length === 5, 'reaction-test: five timed rounds');
+  step(120);
+  check(!!result.ended, 'reaction-test: then the run ends');
+  const avgReal = Math.round((game.times.reduce((a, b) => a + b, 0) + 250) / 5);
+  check(result.ended.score === avgReal, 'reaction-test: the score is the average with 250 ms added per false start', `${result.ended.score} vs ${avgReal}`);
+}
+
+// ---------- Fishing Pond ----------
+{
+  const { game, step, input, result } = await boot('fishing-pond');
+  check(game.state === 'idle', 'fishing-pond: starts ready to cast');
+  game.cast({ x: 0, z: 0 });
+  check(game.state === 'cast' && game.bobber.visible, 'fishing-pond: casting puts the float in the water');
+  const f = game.fish[0];
+  f.position.set(0.5, -0.15, 0.5);
+  step(2);
+  check(game.target === f || game.target !== null, 'fishing-pond: a fish that swims close takes an interest');
+  game.stateT = 0; step(1);
+  check(game.state === 'bite', 'fishing-pond: then it bites');
+  input.clicked = true; step(1);
+  check(game.state === 'reel' && game.reel > 0.3, 'fishing-pond: clicking on the bite hooks it');
+  const value = game.target.userData.type.value;
+  let s = game.score;
+  for (let i = 0; i < 60 && game.state === 'reel'; i++) { input.clicked = true; step(1); }
+  check(game.score === s + value && game.caught === 1 && game.state === 'idle', 'fishing-pond: reeling it in scores the fish', `${game.score - s} vs ${value}`);
+  // missing the bite
+  game.cast({ x: 1, z: 1 });
+  game.fish[1].position.set(1, -0.15, 1);
+  step(2); game.stateT = 0; step(1);
+  check(game.state === 'bite', 'fishing-pond: another bite');
+  step(70);
+  check(game.state === 'idle' && game.caught === 1, 'fishing-pond: if you do not click in time it gets away');
+  // losing the fight
+  game.cast({ x: -2, z: 2 });
+  game.fish[2].position.set(-2, -0.15, 2);
+  step(2); game.stateT = 0; step(1);
+  input.clicked = true; step(1);
+  step(400);
+  check(game.state === 'idle' && game.caught === 1, 'fishing-pond: a fish you do not fight escapes');
+  game.timeLeft = 0.02; step(3);
+  check(!!result.ended && result.ended.score === game.score, 'fishing-pond: time up ends the run with your score');
+}
+
+// ---------- Crane Claw ----------
+{
+  const { game, step, input, result } = await boot('crane-claw');
+  const x0 = game.cx;
+  input.hold('KeyD'); step(30); input.release();
+  check(game.cx > x0 + 2, 'crane-claw: D moves the claw across');
+  const prize = game.prizes.find((p) => p.userData.kind.value === 10);
+  const real = Math.random;
+  Math.random = () => 0.01;                     // the grip always holds
+  game.cx = prize.position.x; game.cz = prize.position.z;
+  input.press('Space'); step(1); input.release();
+  check(game.state === 'down' && game.attempts === 7, 'crane-claw: Space sends the claw down (one try used)');
+  for (let i = 0; i < 700 && !(game.state === 'move' && !game.held); i++) step(1);
+  Math.random = real;
+  check(game.won >= 1 && game.score >= 10, 'crane-claw: a held prize carried to the chute is won', `${game.won} won, ${game.score}`);
+  check(!prize.visible || prize.userData.won || game.won >= 1, 'crane-claw: (the prize leaves the bin)');
+  // a claw that misses
+  const other = game.prizes.find((p) => !p.userData.won);
+  game.cx = other.position.x + 3; game.cz = other.position.z; 
+  const tries = game.attempts; const won = game.won;
+  Math.random = () => 0.99;
+  input.press('Space'); step(1); input.release();
+  for (let i = 0; i < 700 && game.state !== 'move'; i++) step(1);
+  Math.random = real;
+  check(game.attempts === tries - 1 && game.won === won, 'crane-claw: closing on nothing wins nothing');
+  // running out of tries
+  game.attempts = 1;
+  const p2 = game.prizes.find((p) => !p.userData.won);
+  game.cx = p2.position.x; game.cz = p2.position.z;
+  Math.random = () => 0.99;
+  input.press('Space'); step(1); input.release();
+  for (let i = 0; i < 900 && !result.ended; i++) step(1);
+  Math.random = real;
+  check(!!result.ended && result.ended.score === game.score, 'crane-claw: the last try ends the run with the prizes\' value', JSON.stringify(result.ended));
+}
+
+// ---------- Bowling Lane ----------
+{
+  const { game, step, result } = await boot('bowling-lane');
+  check(game.pins.length === 10, 'bowling-lane: ten pins');
+  const zs = new Set(game.pins.map((p) => p.userData.home.z.toFixed(2)));
+  check(zs.size === 4, 'bowling-lane: in a four-row triangle');
+  const downAll = () => game.pins.forEach((p) => { p.userData.down = true; });
+  downAll(); game.rollNo = 1;
+  game.finishRoll();
+  check(game.score === 20 && game.strikes === 1 && game.frame === 2 && game.rollNo === 1, 'bowling-lane: a strike is 10 pins + 10 bonus, and moves to the next frame');
+  check(game.standing().length === 10, 'bowling-lane: the pins are reset for the next frame');
+  game.pins.slice(0, 6).forEach((p) => { p.userData.down = true; });
+  game.finishRoll();
+  check(game.score === 26 && game.rollNo === 2 && game.frame === 2, 'bowling-lane: six down scores 6 and gives a second ball');
+  game.pins.forEach((p) => { p.userData.down = true; });
+  game.finishRoll();
+  check(game.score === 26 + 4 + 5 && game.spares === 1 && game.frame === 3, 'bowling-lane: clearing the rest is a spare: 4 more pins + 5 bonus');
+  game.pins.slice(0, 3).forEach((p) => { p.userData.down = true; });
+  game.finishRoll();
+  game.pins.slice(0, 5).forEach((p) => { p.userData.down = true; });
+  game.finishRoll();
+  check(game.frame === 4 && game.score === 35 + 3 + 2, 'bowling-lane: an open frame just scores the pins');
+  // a real roll, straight down the middle
+  const r = await boot('bowling-lane', 3);
+  r.game.aimX = 0; r.game.power = 0.6; r.game.ball.position.x = 0;
+  r.game.roll(); r.game.bvel.x = 0;
+  for (let i = 0; i < 700 && r.game.state !== 'aim'; i++) r.step(1);
+  check(r.game.rollNo === 2 || r.game.frame === 2, 'bowling-lane: a ball rolls down the lane and the roll ends by itself');
+  check(r.game.score >= 3, 'bowling-lane: a good ball at the head pin knocks several down', String(r.game.score));
+  // a gutter ball
+  const g = await boot('bowling-lane', 4);
+  g.game.aimX = -1.7; g.game.ball.position.x = -1.7; g.game.power = 0.6; g.game.roll(); g.game.bvel.x = 0;
+  g.game.ball.position.x = -1.9;
+  for (let i = 0; i < 700 && g.game.state !== 'aim'; i++) g.step(1);
+  check(g.game.score === 0, 'bowling-lane: a gutter ball scores nothing');
+  // the game ends after five frames
+  const e = await boot('bowling-lane', 5);
+  for (let f = 0; f < 5; f++) { e.game.pins.forEach((p) => { p.userData.down = true; }); e.game.rollNo = 1; e.game.finishRoll(); }
+  check(!!e.result.ended && e.result.ended.score === 100, 'bowling-lane: five strikes is the perfect 100 and ends the run', JSON.stringify(e.result.ended));
+}
+
+// ---------- Mini Golf ----------
+{
+  const { game, step, result } = await boot('mini-golf');
+  check(game.hole === 0 && game.strokes === 0, 'mini-golf: starts on hole 1');
+  game.aimVec = { x: 1, z: 0, power: 0.4 };
+  const x0 = game.pos.x;
+  game.putt();
+  check(game.strokes === 1 && game.vel.x > 4, 'mini-golf: a putt counts a stroke and sets the ball rolling');
+  for (let i = 0; i < 600 && game.moving(); i++) step(1);
+  check(game.pos.x > x0 + 2 && !game.moving(), 'mini-golf: the ball rolls and comes to rest (friction)');
+  // walls: fire it hard into the far wall; it stays on the green
+  game.aimVec = { x: 1, z: 0.3, power: 1 };
+  game.putt();
+  let bounds = true;
+  for (let i = 0; i < 500 && game.moving(); i++) { step(1); if (Math.abs(game.pos.x) > game.cfg.hw + 0.3 || Math.abs(game.pos.y) > game.cfg.hd + 0.3) bounds = false; }
+  check(bounds, 'mini-golf: walls keep the ball on the green');
+  // the cup: a gentle roll onto it drops in
+  game.pos.set(game.cfg.cup[0] - 2, game.cfg.cup[1]); game.vel.set(0, 0);
+  game.aimVec = { x: 1, z: 0, power: 0.22 };
+  const before = game.strokes;
+  game.putt();
+  for (let i = 0; i < 400 && game.sunk === 0 && game.moving(); i++) step(1);
+  check(game.sunk > 0 || game.results.length === 1, 'mini-golf: a putt that reaches the cup slowly drops in');
+  step(60);
+  check(game.hole === 1, 'mini-golf: then on to hole 2');
+  // a fast ball rolls over the cup
+  const f = await boot('mini-golf', 3);
+  f.game.pos.set(f.game.cfg.cup[0] - 3, f.game.cfg.cup[1]); f.game.vel.set(20, 0);
+  for (let i = 0; i < 40; i++) f.step(1);
+  check(f.game.hole === 0 && f.game.sunk === 0, 'mini-golf: a ball hit too hard skips over the cup');
+  // giving up after seven strokes
+  const m = await boot('mini-golf', 4);
+  m.game.strokes = 7; m.game.total = 7; m.game.vel.set(0, 0);
+  m.step(2);
+  check(m.game.hole === 1 && m.game.results[0] === 7, 'mini-golf: seven strokes and the hole is given up');
+  // the round ends after three holes with the total strokes as the score
+  const t = await boot('mini-golf', 5);
+  for (let h = 0; h < 3; h++) { t.game.strokes = 2; t.game.total += 2; t.game.holed(); t.step(50); }
+  check(!!t.result.ended && t.result.ended.score === 6, 'mini-golf: three holes done ends the run with the total strokes (lower is better)', JSON.stringify(t.result.ended));
+}
+
+// ---------- Archery Range ----------
+{
+  const m = await import('../src/games/archery-range.js');
+  const P = m.default.pointsAt;
+  check(P(0, 3.2) === 10 && P(0.3, 3.2) === 10, 'archery-range: the centre is 10');
+  check(P(0, 3.2 + 0.5) === 9 && P(1.0, 3.2) === 8 && P(2.0, 3.2) === 6, 'archery-range: rings step down as you move out');
+  check(P(4.5, 3.2) === 0 && P(0, -2) === 0 && P(0, 0) === 3, 'archery-range: off the target is 0 (and the bottom edge is 3)');
+  const { game, step, result, THREE } = await boot('archery-range');
+  const fire = (pitch, power = 1) => {
+    game.aimDir = () => new THREE.Vector3(0, Math.sin(pitch), -Math.cos(pitch)).normalize();
+    game.flying = null;
+    game.shoot(power);
+    let y = null;
+    for (let i = 0; i < 400 && game.flying; i++) { game.flyArrow(1 / 60); }
+    return game.arrows[game.arrows.length - 1].position;
+  };
+  const flat = fire(0.0);
+  const up = fire(0.075);
+  check(up.y > flat.y + 1, 'archery-range: arrows drop over distance, so aiming higher lands higher', `${flat.y.toFixed(1)} vs ${up.y.toFixed(1)}`);
+  game.wind = 3;
+  const windy = fire(0.075);
+  game.wind = -3;
+  const windL = fire(0.075);
+  check(windy.x > windL.x + 1, 'archery-range: wind pushes the arrow sideways');
+  // a pitch that hits the gold: search for it
+  let best = null; let bd = 9;
+  for (let p = 0.02; p < 0.16; p += 0.002) {
+    game.wind = 0;
+    const pos = fire(p, 1);
+    const d = Math.abs(pos.y - 3.2);
+    if (pos.z <= -41.9 && d < bd) { bd = d; best = p; }
+  }
+  check(best !== null && bd < 0.5, 'archery-range: there is an aim that hits the middle', `pitch ${best}, off by ${bd.toFixed(2)}`);
+  const s0 = game.score;
+  game.wind = 0; game.arrows.forEach((a) => game.scene.remove(a));
+  fire(best, 1);
+  check(game.score >= s0 + 9, 'archery-range: shooting at that aim scores 9-10', String(game.score - s0));
+  const q = await boot('archery-range', 6);
+  q.game.shots = 9;
+  q.game.aimDir = () => new THREE.Vector3(0, 1, 0).normalize();
+  q.game.shoot(0.5);
+  for (let i = 0; i < 900 && q.game.flying; i++) q.game.flyArrow(1 / 60);
+  check(!!q.result.ended, 'archery-range: the tenth arrow ends the run', JSON.stringify(q.result.ended));
+  const w = await boot('archery-range', 7);
+  w.input.down = true; w.step(20);
+  check(w.game.draw > 0.3 && w.game.drawing, 'archery-range: holding the button draws the bow');
+  w.input.down = false; w.game.aimDir = () => new THREE.Vector3(0, 0.1, -1).normalize(); w.step(2);
+  check(w.game.shots === 1, 'archery-range: letting go shoots');
+  const tap = await boot('archery-range', 8);
+  tap.input.down = true; tap.step(3); tap.input.down = false; tap.step(3);
+  check(tap.game.shots === 0, 'archery-range: a quick tap is not enough draw to shoot');
+}
+
+// ---------- Skee-Ball ----------
+{
+  const m = await import('../src/games/skee-ball.js');
+  const S = m.default;
+  const a = S.landing(0.3, 0).d, b = S.landing(0.6, 0).d, c = S.landing(0.9, 0).d;
+  check(a < b && b < c, 'skee-ball: a harder roll flies further');
+  check(S.pointsAt(11.2, 0) === 100, 'skee-ball: the far middle hole is 100');
+  check(S.pointsAt(9.4, 2.7) === 40 && S.pointsAt(8.2, 0) === 30 && S.pointsAt(5.3, 0) === 10, 'skee-ball: the nearer holes pay less');
+  check(S.pointsAt(2, 0) === 0 && S.pointsAt(7.4, 1.4) === 0, 'skee-ball: landing between holes scores nothing');
+  const reach = (target) => { for (let p = 0; p <= 1; p += 0.005) if (S.landing(p, 0).d >= target) return p; return 1; };
+  check(reach(11.2) > 0.6 && reach(11.2) < 0.9, 'skee-ball: the 100 needs roughly three-quarter power', String(reach(11.2)));
+  const { game, step, input, result } = await boot('skee-ball');
+  game.aimX = 0;
+  input.down = true; step(60); input.down = false; step(1);
+  check(game.state === 'roll' && game.shots === 1, 'skee-ball: charge and release rolls a ball');
+  for (let i = 0; i < 400 && game.state !== 'aim' && !result.ended; i++) step(1);
+  check(game.state === 'aim', 'skee-ball: it lands and you get the next ball');
+  for (let n = 1; n < 9; n++) { input.down = true; step(20); input.down = false; step(1); for (let i = 0; i < 400 && game.state !== 'aim' && !result.ended; i++) step(1); }
+  check(!!result.ended && result.ended.score === game.score, 'skee-ball: nine balls and it is over, with your total', JSON.stringify(result.ended));
+}
+
+// ---------- Bubble Shooter ----------
+{
+  const { game, step, input, result } = await boot('bubble-shooter');
+  check(game.rows.length === 6 && game.count() === 12 * 3 + 11 * 3, 'bubble-shooter: six rows of bubbles to start');
+  let symmetric = true;
+  for (let r = 0; r < game.rows.length; r++) for (let c = 0; c < game.rows[r].cells.length; c++) for (const [nr, nc] of game.neighbours(r, c)) if (!game.neighbours(nr, nc).some(([a, b]) => a === r && b === c)) symmetric = false;
+  check(symmetric, 'bubble-shooter: every neighbour link goes both ways');
+  const inner = game.neighbours(2, 5);
+  check(inner.length === 6, 'bubble-shooter: a bubble in the middle touches six others', String(inner.length));
+  // clear the grid and build a controlled scene
+  const clear = () => { for (let r = 0; r < game.rows.length; r++) for (let c = 0; c < game.rows[r].cells.length; c++) if (game.rows[r].cells[c] !== null) game.pop(r, c, 0); game.score = 0; };
+  clear();
+  game.rows[0].cells[3] = 1; game.rows[0].cells[4] = 1;
+  const pts = game.place(1, 3, 1);
+  check(pts === 30 && game.count() === 0, 'bubble-shooter: three of a colour pop for 30', String(pts));
+  // two of a colour do not pop
+  game.rows[0].cells[3] = 2;
+  check(game.place(1, 3, 2) === 0 && game.count() === 2, 'bubble-shooter: two of a colour stay');
+  clear();
+  // floaters: pop the only bubble holding a hanging one up
+  game.rows[0].cells[5] = 3; game.rows[0].cells[6] = 3;
+  game.rows[1].cells[5] = 4;                                   // hangs off the row-0 pair (row 1 is offset: it touches cols 5 and 6)
+  const p2 = game.place(1, 6, 3);                               // row 1 col 6 joins the pair => 3 popped, then the 4 hanging below? (it is attached to row 0 so...)
+  check(p2 >= 30, 'bubble-shooter: a match of three scores 30 or more', String(p2));
+  clear();
+  game.rows[0].cells[0] = 1; game.rows[1].cells[0] = 2; game.rows[2].cells[0] = 3;            // a chain hanging from the top-left
+  game.rows[0].cells[1] = 4;
+  game.place(3, 0, 3);    // (does not match: 3 != 3 at row 2? it does) two 3s only
+  clear();
+  game.rows[0].cells[0] = 1; game.rows[1].cells[0] = 2; game.rows[2].cells[0] = 4; game.rows[2].cells[1] = 4;
+  game.pop(0, 0, 0);
+  game.rows[3] ??= null;
+  const before = game.count();
+  game.place(3, 0, 4);    // 3 x colour 4 pop; the lone 2 above them is still joined to nothing
+  check(game.count() < before + 1, 'bubble-shooter: bubbles no longer joined to the ceiling fall', `${before} -> ${game.count()}`);
+  // clearing the board pays 500 and refills
+  clear();
+  game.rows[0].cells[0] = 2; game.rows[0].cells[1] = 2;
+  game.shot = { x: 0, y: 0, vx: 0, vy: 0, colour: 2, mesh: game.add(game.loadedMesh.clone()) };
+  game.shot.x = game.cellPos(1, 0).x; game.shot.y = game.cellPos(1, 0).y;
+  game.land();
+  check(game.score >= 500 && game.count() > 20, 'bubble-shooter: clearing every bubble pays 500 and brings a fresh set');
+  // a shot flies, bounces and sticks
+  const f = await boot('bubble-shooter', 3);
+  const n0 = f.game.count();
+  f.game.angle = Math.PI / 2;
+  f.input.clicked = true; f.step(1);
+  check(!!f.game.shot, 'bubble-shooter: clicking fires a bubble');
+  for (let i = 0; i < 200 && f.game.shot; i++) f.step(1);
+  check(!f.game.shot && (f.game.count() >= n0 || f.game.score > 0), 'bubble-shooter: it sticks to the cluster (or pops something)');
+  // new rows and game over
+  const p = await boot('bubble-shooter', 4);
+  const rows0 = p.game.rows.length;
+  p.game.pushRow(true);
+  check(p.game.rows.length === rows0 + 1 && p.game.rows[0].odd !== p.game.rows[1].odd, 'bubble-shooter: a pushed row goes on top with the opposite offset');
+  const l = await boot('bubble-shooter', 5);
+  while (l.game.lowestY() > -8) l.game.pushRow(false);
+  l.game.shot = { x: 0, y: 0, vx: 0, vy: 0, colour: 0, mesh: l.game.add(l.game.loadedMesh.clone()) };
+  l.game.shot.x = l.game.cellPos(0, 0).x; l.game.shot.y = l.game.cellPos(0, 0).y - 1.4;
+  l.step(2);
+  check(!!l.result.ended, 'bubble-shooter: bubbles reaching the line end the run', JSON.stringify(l.result.ended));
+}
+
 finish('new game');

@@ -271,6 +271,56 @@ export const CATALOG = [
     blurb: 'Five ships are hidden on an eight-by-eight sea. Sink the fleet in as few shots as you can.',
     controls: 'Click a square to fire', unit: 'shots', higherIsBetter: false,
   },
+  {
+    id: 'bubble-pop', n: 51, name: 'Bubble Pop', tags: ['aim', 'reflex'],
+    blurb: 'Bubbles float up the screen. Pop as many as you can in 45 seconds; chain pops for a multiplier and avoid the black bombs.',
+    controls: 'Click or tap the bubbles', unit: 'pts',
+  },
+  {
+    id: 'dart-board', n: 52, name: 'Dart Board', tags: ['aim', 'sport'],
+    blurb: 'Fifteen darts at the board with a wobbling sight. Time your throw for the bullseye.',
+    controls: 'Move the mouse to aim · click to throw', unit: 'pts',
+  },
+  {
+    id: 'reaction-test', n: 53, name: 'Reaction Test', tags: ['reflex'],
+    blurb: 'Wait for the light to turn green, then click as fast as you can. Five rounds; jump the light and it costs you.',
+    controls: 'Click (or Space) when it turns green', unit: 'ms', higherIsBetter: false,
+  },
+  {
+    id: 'fishing-pond', n: 54, name: 'Fishing Pond', tags: ['skill', 'timing'],
+    blurb: 'Cast into the pond, hook the bite, then reel in before the fish gets away. Bigger fish fight harder.',
+    controls: 'Click the water to cast · click to hook and reel', unit: 'pts',
+  },
+  {
+    id: 'crane-claw', n: 55, name: 'Crane Claw', tags: ['skill', 'arcade'],
+    blurb: 'Steer the claw over the prizes, drop it, and carry your catch to the chute. Eight tries.',
+    controls: 'WASD or stick to move · Space or click to drop', unit: 'pts',
+  },
+  {
+    id: 'bowling-lane', n: 56, name: 'Bowling Lane', tags: ['sport', 'aim'],
+    blurb: 'Five frames of ten-pin bowling. Pick your line, time the power bar and knock them all down.',
+    controls: 'Mouse to aim · click to roll (middle of the power bar is straightest)', unit: 'pts',
+  },
+  {
+    id: 'mini-golf', n: 57, name: 'Mini Golf', tags: ['sport', 'skill'],
+    blurb: 'Three holes of crazy golf. Hold, pull back and let go to putt. Fewest strokes wins.',
+    controls: 'Hold, pull back and release to putt', unit: 'strokes', higherIsBetter: false,
+  },
+  {
+    id: 'archery-range', n: 58, name: 'Archery Range', tags: ['aim', 'sport'],
+    blurb: 'Ten arrows at a distant target. Draw the bow, allow for drop and the wind, and aim for the gold.',
+    controls: 'Mouse to aim · hold click to draw, release to shoot', unit: 'pts',
+  },
+  {
+    id: 'skee-ball', n: 59, name: 'Skee-Ball', tags: ['aim', 'arcade'],
+    blurb: 'Roll balls up the ramp and launch them into the scoring holes. Roll harder to fly further; the 100 is at the back.',
+    controls: 'Mouse to aim · hold click to charge, release to roll', unit: 'pts',
+  },
+  {
+    id: 'bubble-shooter', n: 60, name: 'Bubble Shooter', tags: ['puzzle', 'aim'],
+    blurb: 'Fire bubbles up into the cluster. Match three or more to pop them, and anything left hanging falls too.',
+    controls: 'Mouse to aim · click to fire', unit: 'pts',
+  },
 ];
 
 export const BY_ID = new Map(CATALOG.map((e) => [e.id, e]));

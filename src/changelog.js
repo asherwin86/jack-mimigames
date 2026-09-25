@@ -2,6 +2,10 @@
  *  menu, under the trailer. Keep entries brief; this isn't a commit log. */
 export const CHANGELOG = [
   {
+    title: '10 more new games (51-60) — now 60 games',
+    detail: 'Aim and timing: Bubble Pop, Dart Board, Reaction Test, Fishing Pond, Crane Claw, Bowling Lane, Mini Golf, Archery Range and Skee-Ball. Puzzle: Bubble Shooter. Every one has its own Rocoin challenges.',
+  },
+  {
     title: '9 more new games (42-50)',
     detail: 'Action: Tank Battle, Horde Survivor, Rocket Lander, Slalom Ski and Air Hockey. Puzzle and strategy: Tetra Drop, 2048 Merge, Parking Panic and Battleship. That makes 50 games.',
   },

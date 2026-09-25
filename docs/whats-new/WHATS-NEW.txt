@@ -5,6 +5,31 @@ Newest update first. Every update is also in its own file in the "updates"
 folder. Each one is released to the website and the Windows app together
 (the app updates itself the next time you open it).
 
+v1.0.38  -  25 Sep 2026
+10 more new games (51 to 60) - now 60 games
+-------------------------------------------
+Aim and timing games
+- Bubble Pop - pop bubbles as they float up in 45 seconds; small ones pay most, chains
+  build a multiplier, black bombs cost time.
+- Dart Board - fifteen darts at a board with a wobbling sight; time your throw for the bullseye.
+- Reaction Test - wait for green and click: five rounds, your score is the average in
+  milliseconds (lower is better). Jumping the light costs you.
+- Fishing Pond - cast, hook the bite, then click fast to reel in before the fish escapes.
+  Bigger fish fight harder and pay more.
+- Crane Claw - steer the claw over the prizes, drop it, and carry your catch to the chute.
+  Eight tries.
+- Bowling Lane - five frames with strikes and spares; pick your line and time the power bar.
+- Mini Golf - three holes; hold, pull back and let go to putt. Your score is total strokes
+  (lower is better).
+- Archery Range - ten arrows at a distant target with arrow drop and wind.
+- Skee-Ball - roll balls up the ramp into the scoring holes; harder rolls fly further and the
+  100 is at the back.
+Puzzle
+- Bubble Shooter - fire bubbles at the cluster, match three or more to pop them; anything left
+  hanging falls too. New rows keep coming.
+All ten work with mouse or touch and each has its own Rocoin challenges (three targets per game).
+The Android app's TV banner now says "60 games".
+
 v1.0.37  -  25 Sep 2026
 9 more new games (42 to 50) - now 50 games
 ------------------------------------------
