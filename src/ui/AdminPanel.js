@@ -1,4 +1,4 @@
-import { Rocoins } from '../engine/Rocoins.js';
+import { Rocoins, coinText } from '../engine/Rocoins.js';
 import {
   dailyChallenges, gameChallenges, EVERYWHERE, minutesSoFar, TIERS, todayKey,
 } from '../engine/challenges.js';
@@ -106,7 +106,7 @@ export function createAdmin({ engine, getEntry, onOpen, onClose }) {
 
   function updateBalance() {
     const b = root?.querySelector('.rc-bal');
-    if (b) b.textContent = Rocoins.balance();
+    if (b) b.textContent = coinText(Rocoins.balance());
   }
 
   function render() {
@@ -114,7 +114,7 @@ export function createAdmin({ engine, getEntry, onOpen, onClose }) {
     root.innerHTML = `
       <div class="acct-card rc-card" role="dialog" aria-label="Rocoins and powers">
         <button class="acct-x" data-act="close" aria-label="Close">&times;</button>
-        <h2>${COIN} Rocoins <span class="rc-bal">${Rocoins.balance()}</span></h2>
+        <h2>${COIN} Rocoins <span class="rc-bal">${coinText(Rocoins.balance())}</span></h2>
         <p class="rc-sync"></p>
         <p class="acct-note">Beat challenges to earn Rocoins, then spend them on powers in any game.${entry ? '' : ' Powers work while you are playing.'} Press <kbd>\`</kbd> any time to open this.</p>
         <div class="acct-tabs">
@@ -206,7 +206,7 @@ export function createAdmin({ engine, getEntry, onOpen, onClose }) {
       showOut(); return;
     }
     if (word === 'coins' || word === 'balance') {
-      outMsg = { ok: true, text: `You have ${Rocoins.balance()} Rocoins (${Rocoins.earned()} earned, ${Rocoins.spent()} spent).` };
+      outMsg = { ok: true, text: `You have ${coinText(Rocoins.balance())} Rocoins (${Rocoins.earned()} earned, ${Rocoins.spent()} spent).` };
       showOut(); return;
     }
     const p = findPower(word, list);

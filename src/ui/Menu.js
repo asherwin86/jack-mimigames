@@ -149,7 +149,7 @@ export class Menu {
   /** The coin button shows your Rocoin balance. */
   setCoins(n) {
     const el = this.root.querySelector('.coins-n');
-    if (el) el.textContent = String(n);
+    if (el) el.textContent = n === Infinity ? '\u221e' : String(n);
   }
 
   /** The menu's account button says who you're signed in as (or invites you to sign in). */

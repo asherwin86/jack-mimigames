@@ -1,4 +1,5 @@
 const KEY = 'mg.rocoins.v1';
+const INF_KEY = 'mg.rocoins.infinite';   // a per-browser switch (see RocoinTools.js); never synced to the account
 const MAX_SLOTS = 40;
 const MAX_DONE = 1500;   // ~93 game challenges + 3 a day for over a year, and still under the server's request size limit
 
@@ -129,7 +130,16 @@ function totals(s) {
   return t;
 }
 
-const balanceOf = (s) => { const t = totals(s); return Math.max(0, t.reward + t.bonus - t.spent + t.refunded); };
+let infinite = null;
+const isInfinite = () => {
+  if (infinite === null) { try { infinite = localStorage.getItem(INF_KEY) === '1'; } catch { infinite = false; } }
+  return infinite;
+};
+
+const balanceOf = (s) => { if (isInfinite()) return Infinity; const t = totals(s); return Math.max(0, t.reward + t.bonus - t.spent + t.refunded); };
+
+/** What to show for a balance: the number, or an infinity sign. */
+export const coinText = (n) => (n === Infinity ? '\u221e' : String(n));
 
 function save(fromSync = false) {
   try {
@@ -141,6 +151,13 @@ function save(fromSync = false) {
 
 export const Rocoins = {
   balance() { return balanceOf(load()); },
+  infinite() { return isInfinite(); },
+  /** Infinite Rocoins: everything is free while it is on. */
+  setInfinite(on) {
+    infinite = !!on;
+    try { localStorage.setItem(INF_KEY, infinite ? '1' : '0'); } catch { /* private mode: lasts this session */ }
+    save();
+  },
   /** Everything ever earned (challenge rewards and bonuses). */
   earned() { const t = totals(load()); return t.reward + t.bonus; },
   spent() { const t = totals(load()); return Math.max(0, t.spent - t.refunded); },
@@ -163,7 +180,7 @@ export const Rocoins = {
     n = Math.floor(n);
     const s = load();
     if (!(n >= 0) || balanceOf(s) < n) return false;
-    if (n === 0) return true;
+    if (n === 0 || isInfinite()) return true;
     mine(s).spent += n;
     save();
     return true;
@@ -240,5 +257,5 @@ export const Rocoins = {
   /** Wipes everything (used by tests). */
   reset() { cache = blank(); save(); },
   /** Forgets the in-memory copy so the next read comes from storage (tests). */
-  _drop() { cache = null; },
+  _drop() { cache = null; infinite = null; },
 };

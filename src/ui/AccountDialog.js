@@ -1,4 +1,6 @@
 import { Account, hubUrl } from '../engine/Account.js';
+import { Rocoins, coinText } from '../engine/Rocoins.js';
+import { RocoinTools } from '../engine/RocoinTools.js';
 
 /**
  * The sign-in / create-account / sign-out window. One dialog for the whole
@@ -34,6 +36,8 @@ export function openAccountDialog() {
   let confirmDelete = false;
   let devices = null;        // null = not asked yet, else { loading } | { list } | { error }
   let unsub = null;
+  let toolsOn = false;       // the "Rocoin tools" tick-box
+  let toolsMsg = null;       // { ok, text }
 
   const close = () => {
     unsub?.();
@@ -104,6 +108,42 @@ export function openAccountDialog() {
     render();
   }
 
+  async function unlockTools() {
+    if (busy) return;
+    const pw = root.querySelector('[name="toolpw"]')?.value ?? '';
+    busy = true; render();
+    const ok = await RocoinTools.unlock(pw);
+    busy = false;
+    toolsMsg = ok ? { ok: true, text: 'Unlocked.' } : { ok: false, text: 'Wrong password.' };
+    if (!open) return;
+    render();
+  }
+
+  function giveCoins() {
+    const n = root.querySelector('[name="toolamount"]')?.value ?? '';
+    const bal = RocoinTools.give(n);
+    toolsMsg = bal === null ? { ok: false, text: 'Enter a whole number above 0.' } : { ok: true, text: `Added. You now have ${coinText(bal)} Rocoins.` };
+    render();
+  }
+
+  function toolsHtml() {
+    const inner = !toolsOn ? '' : !RocoinTools.isUnlocked() ? `
+      <div class="acct-tools-body">
+        <input name="toolpw" type="password" autocomplete="off" placeholder="Password" />
+        <button class="acct-btn primary" type="button" data-act="tools-unlock"${busy ? ' disabled' : ''}>Unlock</button>
+      </div>` : `
+      <div class="acct-tools-body">
+        <div class="acct-tools-row">
+          <input name="toolamount" type="number" min="1" step="1" value="1000" />
+          <button class="acct-btn primary" type="button" data-act="tools-give">Give myself Rocoins</button>
+        </div>
+        <label class="acct-check"><input name="toolinf" type="checkbox"${Rocoins.infinite() ? ' checked' : ''} /> Infinite Rocoins (powers cost nothing)</label>
+        <button class="acct-btn small" type="button" data-act="tools-lock">Lock again</button>
+      </div>`;
+    const m = toolsMsg ? `<p class="acct-msg ${toolsMsg.ok ? 'ok' : 'bad'}" role="status">${esc(toolsMsg.text)}</p>` : '';
+    return `<div class="acct-tools"><label class="acct-check"><input name="toolson" type="checkbox"${toolsOn ? ' checked' : ''} /> Rocoin tools</label>${inner}${toolsOn ? m : ''}</div>`;
+  }
+
   function devicesHtml() {
     if (!devices || devices.loading) return '<div class="acct-devices"><h3>Signed in on</h3><p class="acct-note">Loading your devices…</p></div>';
     if (devices.error) return `<div class="acct-devices"><h3>Signed in on</h3><p class="acct-msg bad">${esc(devices.error)}</p><button class="acct-btn" type="button" data-act="devices-retry">Try again</button></div>`;
@@ -162,8 +202,9 @@ export function openAccountDialog() {
           </form>
           <p class="acct-fine">Server: ${esc(hubUrl().replace(/^https?:\/\//, ''))}</p>
         `}
+        ${toolsHtml()}
       </div>`;
-    root.querySelectorAll('input').forEach((i) => { if (typed[i.name]) i.value = typed[i.name]; });
+    root.querySelectorAll('input').forEach((i) => { if (typed[i.name] && i.type !== 'checkbox') i.value = typed[i.name]; });
     root.querySelector('.acct-x')?.addEventListener('click', close);
     root.querySelectorAll('[data-tab]').forEach((b) => b.addEventListener('click', () => { tab = b.dataset.tab; message = null; render(); }));
     root.querySelector('.acct-form')?.addEventListener('submit', (e) => { e.preventDefault(); submit(); });
@@ -173,6 +214,12 @@ export function openAccountDialog() {
     root.querySelectorAll('[data-revoke]').forEach((b) => b.addEventListener('click', () => revoke(b.dataset.revoke)));
     root.querySelector('[data-act="revoke-others"]')?.addEventListener('click', revokeOthers);
     root.querySelector('[data-act="devices-retry"]')?.addEventListener('click', loadDevices);
+    root.querySelector('[name="toolson"]')?.addEventListener('change', (e) => { toolsOn = e.target.checked; toolsMsg = null; render(); });
+    root.querySelector('[data-act="tools-unlock"]')?.addEventListener('click', unlockTools);
+    root.querySelector('[name="toolpw"]')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); unlockTools(); } });
+    root.querySelector('[data-act="tools-give"]')?.addEventListener('click', giveCoins);
+    root.querySelector('[name="toolinf"]')?.addEventListener('change', (e) => { RocoinTools.setInfinite(e.target.checked); toolsMsg = { ok: true, text: e.target.checked ? 'Infinite Rocoins is on.' : 'Infinite Rocoins is off.' }; render(); });
+    root.querySelector('[data-act="tools-lock"]')?.addEventListener('click', () => { RocoinTools.setInfinite(false); RocoinTools.lock(); toolsMsg = null; render(); });
     // Typing here must never reach the game's own key handling (WASD, Space, Q/E…).
     for (const el of root.querySelectorAll('input')) {
       el.addEventListener('keydown', (e) => e.stopPropagation());
@@ -180,7 +227,7 @@ export function openAccountDialog() {
       el.addEventListener('pointerdown', (e) => e.stopPropagation());
     }
     root.querySelector('.acct-card')?.addEventListener('pointerdown', (e) => e.stopPropagation());
-    if (!busy) root.querySelector('input')?.focus();
+    if (!busy) (toolsOn && !RocoinTools.isUnlocked() ? root.querySelector('[name="toolpw"]') : root.querySelector('input:not([type="checkbox"])'))?.focus();
     if (s && devices === null) loadDevices();
   }
 

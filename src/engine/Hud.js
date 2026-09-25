@@ -82,7 +82,7 @@ export class Hud {
   coins(n) {
     this._coins = n;
     const b = this.$coins?.querySelector('b');
-    if (b) b.textContent = String(n);
+    if (b) b.textContent = n === Infinity ? '\u221e' : String(n);
   }
 
   clear() {

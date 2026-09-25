@@ -5,6 +5,15 @@ Newest update first. Every update is also in its own file in the "updates"
 folder. Each one is released to the website and the Windows app together
 (the app updates itself the next time you open it).
 
+v1.0.40  -  25 Sep 2026
+Rocoin tools in your profile
+----------------------------
+In the account window (the button in the menu) there is a new "Rocoin tools" tick-box. Tick it and a password box appears.
+With the right password you can give yourself any number of Rocoins, or switch on Infinite Rocoins so every power in every game is free. While infinite is on, the coin button shows an infinity sign.
+"Lock again" shuts the tools and turns infinite off; your real balance comes straight back.
+The password is not stored in the game (only a scrambled hash of it), and infinite mode is never copied to your account backup. It is a simple gate for personal use, not real security.
+Also fixes from the last update: Tightrope and Keepie Uppie now give you a moment to get ready, and a few boards and menus are brighter and better placed.
+
 v1.0.39  -  25 Sep 2026
 40 new games - now 100 games in the arcade
 ------------------------------------------

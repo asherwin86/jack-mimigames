@@ -368,6 +368,12 @@ html, body {
 .acct-msg { margin: 0; font-size: 12px; line-height: 1.45; }
 .acct-msg.ok { color: #9be7ff; }
 .acct-msg.bad { color: #ff9a92; }
+.acct-tools { margin-top: 14px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,.12); display: flex; flex-direction: column; gap: 10px; }
+.acct-check { display: flex; flex-direction: row !important; align-items: center; gap: 8px; font-size: 13px !important; color: rgba(255,255,255,.8) !important; cursor: pointer; }
+.acct-card .acct-check input { width: auto; margin: 0; }
+.acct-tools-body { display: flex; flex-direction: column; gap: 8px; }
+.acct-tools-row { display: flex; gap: 8px; }
+.acct-tools-row input { flex: 1; min-width: 0; }
 .acct-fine { margin: 12px 0 0; font-size: 11px; color: rgba(255,255,255,.4); }
 
 .acct-devices { margin: 14px 0 6px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,.12); display: flex; flex-direction: column; gap: 8px; }

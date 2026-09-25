@@ -208,5 +208,36 @@ ok(Rocoins.balance() === 5 && Rocoins.owner() === 'bob', 'adopting another accou
 Rocoins._drop();
 ok(Rocoins.balance() === 5 && Rocoins.owner() === 'bob', '…and that is what was stored');
 
+// ---------- password-protected tools ----------
+{
+  const memory = new Map();
+  const { Settings } = await import('../src/engine/Settings.js');
+  const { RocoinTools } = await import('../src/engine/RocoinTools.js');
+  fresh();
+  ok(!RocoinTools.isUnlocked(), 'tools: locked to begin with');
+  ok(RocoinTools.give(500) === null && Rocoins.balance() === 0, 'tools: locked tools give nothing');
+  ok(!RocoinTools.setInfinite(true) && !Rocoins.infinite(), 'tools: locked tools cannot switch on infinite Rocoins');
+  ok(!(await RocoinTools.unlock('wrong password')) && !RocoinTools.isUnlocked(), 'tools: a wrong password does not unlock');
+  ok(!(await RocoinTools.unlock('')) && !(await RocoinTools.unlock(undefined)), 'tools: an empty password does not unlock');
+  ok(await RocoinTools.unlock('FoR$oy315'), 'tools: the right password unlocks');
+  ok(RocoinTools.isUnlocked(), 'tools: and it stays unlocked');
+  ok(RocoinTools.give(500) === 500 && Rocoins.balance() === 500, 'tools: give adds Rocoins');
+  ok(RocoinTools.give(0) === null && RocoinTools.give(-5) === null && RocoinTools.give('abc') === null, 'tools: bad amounts are refused');
+  ok(RocoinTools.give(2.9) === 502, 'tools: fractions are rounded down');
+  RocoinTools.setInfinite(true);
+  ok(Rocoins.infinite() && Rocoins.balance() === Infinity, 'tools: infinite Rocoins shows an unlimited balance');
+  ok(Rocoins.spend(1e9) === true && Rocoins.infinite(), 'tools: with infinite Rocoins everything is free');
+  Rocoins._drop();
+  ok(Rocoins.infinite() && Rocoins.balance() === Infinity, 'tools: infinite survives a reload');
+  RocoinTools.setInfinite(false);
+  ok(!Rocoins.infinite() && Rocoins.balance() === 502, 'tools: switching it off gives the real balance back (nothing was lost or spent)');
+  ok(!JSON.stringify(Rocoins.snapshot()).includes('nfinite'), 'tools: infinite is never part of the account backup');
+  RocoinTools.lock();
+  ok(!RocoinTools.isUnlocked() && RocoinTools.give(5) === null, 'tools: locking again shuts them');
+  const src = (await import('node:fs')).readFileSync(new URL('../src/engine/RocoinTools.js', import.meta.url), 'utf8');
+  ok(!src.includes('FoR$oy315') && !src.includes('oy315'), 'tools: the password itself is not in the source');
+  void memory; void Settings;
+}
+
 console.log(failed ? `\n\x1b[31m${failed} check(s) failed.\x1b[0m` : '\n\x1b[32mAll Rocoin checks passed.\x1b[0m');
 process.exit(failed ? 1 : 0);
