@@ -116,6 +116,19 @@ git tag v1.0.1 && git push origin v1.0.1
 
 Or build and publish by hand with `npm run release:win` (needs `GH_TOKEN`), or just build locally with `npm run dist:win` (output in `release/`).
 
+## Android app (works offline)
+
+`android/` is a Capacitor project that wraps the built arcade (`dist/`) inside an APK, so all 31 games run with no internet.
+It is landscape and full-screen, shows up in the Android TV launcher too (banner + leanback), and on touch screens gets an
+on-screen thumb-stick and buttons (`src/ui/TouchControls.js` — a per-game table; tap/drag games need no pad). A controller
+or a TV remote works as on desktop. Only sign-in, cloud worlds, multiplayer and the daily online bits need a connection.
+
+`.github/workflows/android.yml` builds a signed release APK for every version tag and attaches it to the GitHub release as
+`100-Mimi-Games.apk` (it can also be run by hand from the Actions tab). The signing key lives in the repository secrets
+`ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` — keep a backup, because an update only installs
+over an existing copy if it is signed with the same key. The version code follows the tag (v1.0.29 → 10029). To build locally
+you need JDK 21 and the Android SDK: `npm run build && npx cap sync android && cd android && ./gradlew assembleRelease`.
+
 ## Accounts, cloud worlds and Kart Circuit online
 
 **Sign in** (top of the menu, or the ☁ strip in Blockcraft's World panel) with a name and password — no email needed. While signed in, every Blockcraft world you make or play is also saved to your account, so it shows up (with a ☁) on any device you sign in on; Load fetches it. Your account window lists the devices you're signed in on and lets you sign any of them (or all the others) out. An account holds 8 worlds; if two devices edit the same world, the older copy is refused rather than overwriting the newer. Kart Circuit's *Play with Friends* and *Play Online* modes run through the same server. The server is `hub-server/` (see [`deploy/`](deploy/README.md#the-account-server-sign-in-cloud-worlds-kart-circuit-online)); `npm run check:hub` and `npm run check:cloud` test it.

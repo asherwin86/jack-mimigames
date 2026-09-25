@@ -32,11 +32,11 @@ const TABLE = {
 const KEY_NAMES = { Space: ' ', ShiftLeft: 'Shift', Escape: 'Escape' };
 const keyName = (code) => KEY_NAMES[code] ?? (code.startsWith('Key') ? code.slice(3).toLowerCase() : code);
 
-/** Touch screen? A phone/tablet's primary pointer is "coarse"; the Android app always counts. */
+/** Touch screen? A phone/tablet's primary pointer is "coarse". (A TV in the Android app has a controller or remote,
+ *  not a touch screen, so it correctly gets no on-screen pad.) */
 export function touchWanted() {
   try { if (localStorage.getItem('mimiTouch') === '1') return true; } catch { /* storage blocked */ }
   if (typeof window === 'undefined') return false;
-  if (window.Capacitor) return true;
   return typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
 }
 

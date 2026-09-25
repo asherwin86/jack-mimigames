@@ -1,0 +1,16 @@
+v1.0.29  -  25 Sep 2026
+Android app (APK) that works offline, with touch controls
+---------------------------------------------------------
+- New: 100-Mimi-Games.apk - the whole arcade bundled inside an Android app, so
+  it runs with no internet. It is attached to each release on GitHub, and a copy
+  goes in the "100 mimi games" folder on the E: drive next to the Windows installer.
+- Landscape and full-screen. It appears in the Android TV launcher as well as
+  on phones and tablets (a controller or TV remote works like on the desktop).
+- On touch screens there is now an on-screen thumb-stick and buttons in the
+  games that need a keyboard (Cube Dodger, Hurdle Runner, Gem Grab, Snake Cube,
+  Frog Hopper, Platform Hop, Lava Floor, Sumo Arena, Marble Maze, Tunnel Run,
+  Orbit Dodge, Maze Escape, Grapple Gap, Arena Fighter), four big lane buttons in
+  Beat Lanes, and a pause button in every game. Tap-and-drag games work by
+  touch as they are. Blockcraft and Kart Circuit keep their own touch controls.
+- Things that need the internet (signing in, cloud worlds, multiplayer, Kart
+  online) still do; everything else works offline.
