@@ -2,6 +2,10 @@
  *  menu, under the trailer. Keep entries brief; this isn't a commit log. */
 export const CHANGELOG = [
   {
+    title: '40 new games (61-100) — now 100 games',
+    detail: 'Puzzles: Minesweeper, Crate Push, Tower of Hanoi, Peg Solitaire, Knight\'s Tour, Eight Queens, Water Sort, Pipe Turn, Gem Swap, Odd Cube, Math Dash and Colour Clash. Vs the bot or the house: Tic-Tac-Toe, Reversi, Five in a Row, Mancala, Dots and Boxes, Blackjack, Pig Dice and Slot Machine. Action: Star Fighter, Missile Defence, Turret Defence, Light Cycles, Ghost Hunt, Jetpack Run, Sky Climb, Tightrope, Highway Rush and Numbers Blast. Sport: Penalty Kicks, Goalkeeper, Home Run Derby, Curling, Plinko, Track Sprint, Keepie Uppie, Ski Jump, Pool Break and Slingshot Smash. Every one has its own Rocoin challenges.',
+  },
+  {
     title: '10 more new games (51-60) — now 60 games',
     detail: 'Aim and timing: Bubble Pop, Dart Board, Reaction Test, Fishing Pond, Crane Claw, Bowling Lane, Mini Golf, Archery Range and Skee-Ball. Puzzle: Bubble Shooter. Every one has its own Rocoin challenges.',
   },

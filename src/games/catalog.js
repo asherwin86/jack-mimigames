@@ -321,6 +321,206 @@ export const CATALOG = [
     blurb: 'Fire bubbles up into the cluster. Match three or more to pop them, and anything left hanging falls too.',
     controls: 'Mouse to aim · click to fire', unit: 'pts',
   },
+  {
+    id: 'minesweeper', n: 61, name: 'Minesweeper', tags: ['puzzle', 'strategy'],
+    blurb: 'The classic mine field. Dig safe tiles, read the numbers, flag the mines and clear the board as fast as you can.',
+    controls: 'Click to dig · right-click or F to flag · click a number to clear around it', unit: 'pts',
+  },
+  {
+    id: 'crate-push', n: 62, name: 'Crate Push', tags: ['puzzle', 'strategy'],
+    blurb: 'Push every crate onto a goal. You can only push, never pull, so plan ahead. Seven warehouse levels.',
+    controls: 'Arrows or WASD to move · Z to undo · R to restart the level', unit: 'pts',
+  },
+  {
+    id: 'tower-of-hanoi', n: 63, name: 'Tower of Hanoi', tags: ['puzzle', 'strategy'],
+    blurb: 'Move the whole stack of discs to the far tower, one at a time, never a big disc on a small one. Each round adds a disc.',
+    controls: 'Click a tower to lift its top disc, click another to drop it', unit: 'pts',
+  },
+  {
+    id: 'peg-solitaire', n: 64, name: 'Peg Solitaire', tags: ['puzzle', 'strategy'],
+    blurb: 'Jump pegs over each other to capture them. Leave just one peg, ideally in the centre, and you have cracked it.',
+    controls: 'Click a peg, then click the empty hole to jump into', unit: 'pts',
+  },
+  {
+    id: 'knights-tour', n: 65, name: 'Knight\'s Tour', tags: ['puzzle', 'strategy'],
+    blurb: 'Hop a chess knight around the board, landing on every square exactly once. Look ahead or get stuck.',
+    controls: 'Click a square to start, then click where the knight jumps next', unit: 'squares',
+  },
+  {
+    id: 'eight-queens', n: 66, name: 'Eight Queens', tags: ['puzzle', 'strategy'],
+    blurb: 'Place queens so that none can capture another. The board grows from 5x5 up to the full eight queens.',
+    controls: 'Click a square to place or remove a queen', unit: 'pts',
+  },
+  {
+    id: 'water-sort', n: 67, name: 'Water Sort', tags: ['puzzle', 'skill'],
+    blurb: 'Pour coloured liquid between tubes until every tube holds a single colour. More colours every level.',
+    controls: 'Click a tube, then click where to pour (or press 1-9)', unit: 'pts',
+  },
+  {
+    id: 'pipe-turn', n: 68, name: 'Pipe Turn', tags: ['puzzle', 'skill'],
+    blurb: 'Turn the pipe pieces until every one is connected to the glowing source. The network grows with each level.',
+    controls: 'Click a tile to turn it a quarter', unit: 'pts',
+  },
+  {
+    id: 'gem-swap', n: 69, name: 'Gem Swap', tags: ['puzzle', 'arcade'],
+    blurb: 'Swap neighbouring gems to line up three or more. Chain reactions score big and buy you extra seconds.',
+    controls: 'Click a gem, then click a neighbour to swap', unit: 'pts',
+  },
+  {
+    id: 'odd-cube', n: 70, name: 'Odd Cube', tags: ['skill', 'puzzle'],
+    blurb: 'One tile is a slightly different shade. Spot it before the clock runs out. The board grows and the shades get closer.',
+    controls: 'Click the odd tile out', unit: 'found',
+  },
+  {
+    id: 'math-dash', n: 71, name: 'Math Dash', tags: ['skill', 'puzzle'],
+    blurb: 'Sixty seconds of quick sums. Pick the right answer out of four; streaks score more and the sums get harder.',
+    controls: 'Click an answer · 1-4 keys · A / B / X / Y on a controller', unit: 'pts',
+  },
+  {
+    id: 'colour-clash', n: 72, name: 'Colour Clash', tags: ['skill', 'puzzle'],
+    blurb: 'The word says one colour but is written in another. Pick the colour of the ink and ignore the word. Harder than it sounds.',
+    controls: 'Click the matching colour · 1-4 keys · A / B / X / Y on a controller', unit: 'right',
+  },
+  {
+    id: 'tic-tac-toe', n: 73, name: 'Tic-Tac-Toe', tags: ['strategy', 'puzzle'],
+    blurb: 'Eight games of noughts and crosses against a bot that starts sloppy and finishes perfect. Win three points, draw one.',
+    controls: 'Click a square', unit: 'pts',
+  },
+  {
+    id: 'reversi', n: 74, name: 'Reversi', tags: ['strategy', 'puzzle'],
+    blurb: 'Trap the white discs between your black ones to flip them. Most discs wins, and each win brings a sharper bot.',
+    controls: 'Click a lit square to place a disc', unit: 'wins',
+  },
+  {
+    id: 'five-in-a-row', n: 75, name: 'Five in a Row', tags: ['strategy', 'puzzle'],
+    blurb: 'Gomoku: take turns placing stones on an 11x11 board and be first to line up five. The bot learns to block.',
+    controls: 'Click a point to place a stone', unit: 'wins',
+  },
+  {
+    id: 'mancala', n: 76, name: 'Mancala', tags: ['strategy', 'puzzle'],
+    blurb: 'Sow seeds round the board, land in your store for another turn, and capture what sits opposite. Most seeds wins.',
+    controls: 'Click one of your pits (front row)', unit: 'wins',
+  },
+  {
+    id: 'dots-and-boxes', n: 77, name: 'Dots and Boxes', tags: ['strategy', 'puzzle'],
+    blurb: 'Draw lines between dots and close the fourth side of a box to claim it and go again. Don\'t hand the bot a chain.',
+    controls: 'Click the gap between two dots', unit: 'wins',
+  },
+  {
+    id: 'blackjack', n: 78, name: 'Blackjack', tags: ['strategy', 'arcade'],
+    blurb: 'Beat the dealer to 21 without going bust. Twenty hands, a pile of chips, and the choice to hit, stand or double.',
+    controls: 'Click the buttons · 1-4 bets · H hit · S stand · D double', unit: 'chips',
+  },
+  {
+    id: 'pig-dice', n: 79, name: 'Pig Dice', tags: ['strategy', 'arcade'],
+    blurb: 'Push your luck: keep rolling to build your turn total, but a 1 wipes it out. First to 100 wins, then the bot gets greedier.',
+    controls: 'R, A or click to roll · H, B or click HOLD to bank', unit: 'wins',
+  },
+  {
+    id: 'slot-machine', n: 80, name: 'Slot Machine', tags: ['arcade', 'skill'],
+    blurb: 'Twenty-five spins of the reels. Line up three for a jackpot, and hold your best reels for one respin per spin.',
+    controls: 'Space or click SPIN · click reels to hold, then HOLD & RESPIN', unit: 'coins',
+  },
+  {
+    id: 'star-fighter', n: 81, name: 'Star Fighter', tags: ['shooter', 'arcade'],
+    blurb: 'A side-scrolling space shooter. Blast waves of drones, gunships and tanks, and grab spread-shot and rapid-fire drops.',
+    controls: 'WASD or stick to fly · hold Space, click or A to fire', unit: 'pts',
+  },
+  {
+    id: 'missile-defence', n: 82, name: 'Missile Defence', tags: ['shooter', 'aim'],
+    blurb: 'Enemy missiles rain on your six cities. Click the sky to launch counter-missiles and blow them up before they land.',
+    controls: 'Click (or A) to launch a counter-missile', unit: 'pts',
+  },
+  {
+    id: 'turret-defence', n: 83, name: 'Turret Defence', tags: ['shooter', 'aim'],
+    blurb: 'Hold the centre against waves of zombies. Aim, fire, reload, and keep them off your base as the waves get bigger.',
+    controls: 'Mouse to aim · hold click or A to fire · R to reload', unit: 'pts',
+  },
+  {
+    id: 'light-cycles', n: 84, name: 'Light Cycles', tags: ['arcade', 'chase'],
+    blurb: 'Race a glowing cycle that leaves a wall behind it. Trap the rival cycles and don\'t touch a wall, a trail or a head-on crash.',
+    controls: 'Arrows or WASD to point your cycle', unit: 'pts',
+  },
+  {
+    id: 'ghost-hunt', n: 85, name: 'Ghost Hunt', tags: ['aim', 'shooter'],
+    blurb: 'Hold your torch on the ghosts drifting out of the graveyard until they pop. Five getting through ends the night.',
+    controls: 'Mouse to aim the torch · hold click or A to shine it', unit: 'pts',
+  },
+  {
+    id: 'jetpack-run', n: 86, name: 'Jetpack Run', tags: ['runner', 'reflex'],
+    blurb: 'Hold to fire your jetpack and rise, let go to drop. Weave through zappers and rockets and scoop up coins.',
+    controls: 'Hold Space, click or A to rise', unit: 'm',
+  },
+  {
+    id: 'sky-climb', n: 87, name: 'Sky Climb', tags: ['platformer', 'skill'],
+    blurb: 'Bounce endlessly upward. Steer onto platforms, ride the springs, and don\'t trust the crumbly brown ones.',
+    controls: 'A / D or the mouse to steer', unit: 'm',
+  },
+  {
+    id: 'tightrope', n: 88, name: 'Tightrope', tags: ['skill', 'timing'],
+    blurb: 'Cross a rope high above the clouds. Lean against every wobble and the gusts that try to push you off.',
+    controls: 'A / D or the mouse to lean', unit: 'm',
+  },
+  {
+    id: 'highway-rush', n: 89, name: 'Highway Rush', tags: ['racing', 'skill'],
+    blurb: 'Weave through five lanes of traffic. Speed up, brake, and squeeze past cars for chained near-miss bonuses.',
+    controls: 'A / D change lane · W faster · S brake', unit: 'pts',
+  },
+  {
+    id: 'numbers-blast', n: 90, name: 'Numbers Blast', tags: ['shooter', 'arcade'],
+    blurb: 'Blocks with numbers fall from above. Your cannon fires on its own; slide under them and pop each one before it lands.',
+    controls: 'Mouse or A / D to slide the cannon', unit: 'pts',
+  },
+  {
+    id: 'penalty-kicks', n: 91, name: 'Penalty Kicks', tags: ['sport', 'aim'],
+    blurb: 'Ten penalties against a goalkeeper who learns to read you. Aim, time the power bar, and go for the top corners.',
+    controls: 'Mouse to aim · click to start the power bar, click again to shoot', unit: 'pts',
+  },
+  {
+    id: 'goalkeeper', n: 92, name: 'Goalkeeper', tags: ['sport', 'reflex'],
+    blurb: 'Now you\'re in goal. Get your gloves to each shot before it crosses the line. Shots get faster and start to bend.',
+    controls: 'Mouse to move your gloves · or WASD / stick', unit: 'pts',
+  },
+  {
+    id: 'home-run-derby', n: 93, name: 'Home Run Derby', tags: ['sport', 'timing'],
+    blurb: 'Ten pitches, fastballs, curves and changeups. Line the bat up with the ball, time the swing and send it over the fence.',
+    controls: 'Mouse to position the bat · click to swing', unit: 'pts',
+  },
+  {
+    id: 'curling', n: 94, name: 'Curling', tags: ['sport', 'skill'],
+    blurb: 'Slide six stones down the ice towards the house. Set the aim and the power, sweep to carry them, and knock rivals out of the way.',
+    controls: 'Mouse to aim · hold click to set power, release to throw · Space to sweep · C for curl', unit: 'pts',
+  },
+  {
+    id: 'plinko', n: 95, name: 'Plinko', tags: ['arcade', 'skill'],
+    blurb: 'Drop discs down a field of pegs and watch them bounce into the bins. The edge bins pay 50, but the middle is where they like to land.',
+    controls: 'Mouse to choose where · click to drop', unit: 'pts',
+  },
+  {
+    id: 'track-sprint', n: 96, name: 'Track Sprint', tags: ['sport', 'reflex'],
+    blurb: 'A 100 metre dash against three rivals. Wait for the gun, then mash left and right as fast as you can. Four heats.',
+    controls: 'Alternate A and D (or the arrow keys, or click) as fast as you can', unit: 'pts',
+  },
+  {
+    id: 'keepie-uppie', n: 97, name: 'Keepie Uppie', tags: ['sport', 'skill'],
+    blurb: 'Keep the ball in the air with your foot. Where you meet it decides where it goes, and gravity gets stronger the longer you last.',
+    controls: 'Mouse to move your foot · click to kick', unit: 'touches',
+  },
+  {
+    id: 'ski-jump', n: 98, name: 'Ski Jump', tags: ['sport', 'timing'],
+    blurb: 'Race down the in-run, jump at the very edge, and steer your body angle for the longest glide. Three jumps, best distance wins.',
+    controls: 'Space to jump and flare · W / S or the mouse to change body angle', unit: 'pts',
+  },
+  {
+    id: 'pool-break', n: 99, name: 'Pool Break', tags: ['sport', 'aim'],
+    blurb: 'Break the rack and pot ten balls in fourteen shots. Line up the ghost ball, pull back and let fly. Watch out for the scratch.',
+    controls: 'Mouse to aim · hold click to pull back, release to shoot', unit: 'pts',
+  },
+  {
+    id: 'slingshot-smash', n: 100, name: 'Slingshot Smash', tags: ['aim', 'physics'],
+    blurb: 'Fling balls at wooden and stone towers and pop every green pig. Three levels, four shots each, bonus for shots to spare.',
+    controls: 'Drag back and release to fire', unit: 'pts',
+  },
 ];
 
 export const BY_ID = new Map(CATALOG.map((e) => [e.id, e]));

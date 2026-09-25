@@ -5,6 +5,16 @@ Newest update first. Every update is also in its own file in the "updates"
 folder. Each one is released to the website and the Windows app together
 (the app updates itself the next time you open it).
 
+v1.0.39  -  25 Sep 2026
+40 new games - now 100 games in the arcade
+------------------------------------------
+Puzzle (12): Minesweeper, Crate Push (Sokoban, 7 levels), Tower of Hanoi, Peg Solitaire, Knight's Tour, Eight Queens, Water Sort, Pipe Turn, Gem Swap (match-3), Odd Cube, Math Dash, Colour Clash.
+Play the bot or the house (8): Tic-Tac-Toe, Reversi, Five in a Row, Mancala, Dots and Boxes (all get sharper bots as you win), Blackjack, Pig Dice, Slot Machine (hold and respin).
+Action and arcade (10): Star Fighter (side-scrolling shooter), Missile Defence, Turret Defence, Light Cycles, Ghost Hunt, Jetpack Run, Sky Climb, Tightrope, Highway Rush, Numbers Blast.
+Sport and aim (10): Penalty Kicks, Goalkeeper, Home Run Derby, Curling, Plinko, Track Sprint, Keepie Uppie, Ski Jump, Pool Break, Slingshot Smash.
+Every new game has three Rocoin challenges, works with mouse or touch, and the click games work with the controller's cursor. The on-screen pad is set up for the games that need keys.
+Tests: about 360 new rule checks (scripts/check-more-games.mjs) cover the puzzle rules, every bot, the physics and the scoring, plus a real-browser run of all 40.
+
 v1.0.38  -  25 Sep 2026
 10 more new games (51 to 60) - now 60 games
 -------------------------------------------
