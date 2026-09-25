@@ -5,6 +5,16 @@ Newest update first. Every update is also in its own file in the "updates"
 folder. Each one is released to the website and the Windows app together
 (the app updates itself the next time you open it).
 
+v1.0.32  -  25 Sep 2026
+Controller Start opens the pause screen (all games)
+---------------------------------------------------
+- Start on a controller now opens the pause screen in every game, including
+  Blockcraft, and presses again to close it. (Kart Circuit keeps its own pause
+  on the same button - checked, it works through the controller bridge.)
+- Start does nothing on the "ready?" card before a game begins and after the
+  results appear, so it can't kick you out by accident.
+- Android app: controllers that send Start as a "Menu" key are handled too.
+
 v1.0.31  -  25 Sep 2026
 Scroll the game list with a controller
 --------------------------------------

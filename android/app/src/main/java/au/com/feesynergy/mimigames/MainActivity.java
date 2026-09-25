@@ -67,7 +67,8 @@ public class MainActivity extends BridgeActivity {
             case KeyEvent.KEYCODE_BUTTON_L2: return BTN_LT;
             case KeyEvent.KEYCODE_BUTTON_R2: return BTN_RT;
             case KeyEvent.KEYCODE_BUTTON_SELECT: return 8;
-            case KeyEvent.KEYCODE_BUTTON_START: return 9;
+            case KeyEvent.KEYCODE_BUTTON_START:
+            case KeyEvent.KEYCODE_MENU: return 9;   // some controllers send their Start button as Menu
             case KeyEvent.KEYCODE_BUTTON_THUMBL: return 10;
             case KeyEvent.KEYCODE_BUTTON_THUMBR: return 11;
             case KeyEvent.KEYCODE_DPAD_UP: return BTN_UP;

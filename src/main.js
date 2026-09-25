@@ -158,11 +158,13 @@ function route() {
   else if (id !== current) play(id);
 }
 
-// A controller's Start button pauses, like Escape does on a keyboard (a TV has no keyboard).
+// A controller's Start button opens (and closes) the pause screen, like Escape does on a keyboard (a TV has no keyboard).
 let startHeld = false;
 setInterval(() => {
   const down = engine.input.gpButton(9);
-  if (down && !startHeld && current && !currentEntry?.customStart) togglePause();   // (Kart Circuit and Blockcraft have their own)
+  // Only mid-run (or to resume): on the Start card, or once the results are up, it does nothing. Kart Circuit has its own
+  // pause on the same button, inside its frame.
+  if (down && !startHeld && current && currentEntry?.id !== 'kart-circuit' && (engine.running || paused)) togglePause();
   startHeld = down;
 }, 50);
 
