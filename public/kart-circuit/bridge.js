@@ -33,3 +33,16 @@ addEventListener('keydown', (e) => {
     window.parent.postMessage({ source: 'kart-circuit', type: 'admin' }, '*');
   }
 });
+
+// Inside the arcade's Android app the controller is provided by the page around us (see src/engine/NativePad.js),
+// not by this frame's own navigator, so fall back to the parent's pads when this frame has none.
+try {
+  if (window.parent !== window && window.parent.navigator && window.parent.navigator.getGamepads) {
+    const own = navigator.getGamepads ? navigator.getGamepads.bind(navigator) : null;
+    navigator.getGamepads = () => {
+      const mine = own ? own() : [];
+      for (const p of mine || []) if (p) return mine;
+      return window.parent.navigator.getGamepads();
+    };
+  }
+} catch (e) { /* cross-origin parent: nothing to borrow */ }

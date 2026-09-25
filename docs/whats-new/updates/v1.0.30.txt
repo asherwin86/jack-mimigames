@@ -1,0 +1,11 @@
+v1.0.30  -  25 Sep 2026
+Android app: controllers now work (fix for the Shield TV)
+---------------------------------------------------------
+- Fixed the game controller doing nothing in the Android app on the Shield TV.
+  Android's built-in web view doesn't reliably offer the browser's controller
+  support, so the app now reads the controller itself (sticks, triggers, buttons
+  and D-pad) and hands it to the games. Kart Circuit gets it too.
+- The controller's B button no longer closes the app by mistake.
+- Start on a controller now pauses any game (like Escape on a keyboard) - handy
+  on a TV with no keyboard. Kart Circuit and Blockcraft keep their own pause.
+- Still to confirm on the Shield: I could not test this on the device itself.

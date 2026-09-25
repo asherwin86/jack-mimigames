@@ -1,3 +1,4 @@
+import './engine/NativePad.js';   // controllers in the Android app (see the file)
 import { Engine } from './engine/Engine.js';
 import { Menu } from './ui/Menu.js';
 import { showResults, showError } from './ui/Results.js';
@@ -156,6 +157,14 @@ function route() {
   if (!id) toMenu();
   else if (id !== current) play(id);
 }
+
+// A controller's Start button pauses, like Escape does on a keyboard (a TV has no keyboard).
+let startHeld = false;
+setInterval(() => {
+  const down = engine.input.gpButton(9);
+  if (down && !startHeld && current && !currentEntry?.customStart) togglePause();   // (Kart Circuit and Blockcraft have their own)
+  startHeld = down;
+}, 50);
 
 addEventListener('hashchange', route);
 addEventListener('keydown', (e) => {
