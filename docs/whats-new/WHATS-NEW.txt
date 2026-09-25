@@ -5,6 +5,21 @@ Newest update first. Every update is also in its own file in the "updates"
 folder. Each one is released to the website and the Windows app together
 (the app updates itself the next time you open it).
 
+v1.0.35  -  25 Sep 2026
+Website: a "Get the app" button
+-------------------------------
+- The website's menu now has a green "Get the app" button (it is hidden inside
+  the Windows app, the Android app and installed web apps). It opens a window with:
+    * Download for Windows - the installer
+    * Download APK - the Android app (with a note about allowing "install unknown apps")
+    * Install from the browser - the browser's own install prompt where it has
+      one (Chrome / Edge / Android), or instructions for iPhone/iPad
+  The choice that fits your device is shown first and marked "for this device".
+- The website can now be installed as an app itself and works offline: the first
+  time it is opened it saves the whole arcade, and each new release replaces the
+  saved copy. (Videos are not saved.)
+- The download links always point at the newest release, so they never go stale.
+
 v1.0.34  -  25 Sep 2026
 Blockcraft: virtual mouse for controllers on the start and pause screens
 ------------------------------------------------------------------------

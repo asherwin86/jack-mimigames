@@ -116,6 +116,15 @@ git tag v1.0.1 && git push origin v1.0.1
 
 Or build and publish by hand with `npm run release:win` (needs `GH_TOKEN`), or just build locally with `npm run dist:win` (output in `release/`).
 
+## Installing from the website
+
+The menu has a **Get the app** button (website only — hidden inside the desktop app, the Android app and installed web apps).
+It opens `src/ui/InstallDialog.js`: download links to the latest Windows installer and Android APK (GitHub release assets with fixed
+names, so the links never change) and, where the browser allows it, its own "Install app" prompt. The site is also an installable
+PWA: `public/manifest.webmanifest`, icons in `public/icons/`, and `public/sw.js`, which saves the whole arcade for offline use the
+first time it is opened (the build writes `dist/precache.json` and stamps the worker with a build id — see `vite.config.js`). The
+service worker is only registered on real http(s) origins, never in the dev server, the desktop app or the Android app.
+
 ## Android app (works offline)
 
 `android/` is a Capacitor project that wraps the built arcade (`dist/`) inside an APK, so all 31 games run with no internet.

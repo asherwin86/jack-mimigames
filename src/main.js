@@ -11,6 +11,7 @@ import { runFinished, onEarned, minutesPlayed } from './engine/challenges.js';
 import { createAdmin, notifyEarned } from './ui/AdminPanel.js';
 import { startRocoinSync } from './engine/RocoinSync.js';
 import { TouchControls } from './ui/TouchControls.js';
+import './engine/Install.js';   // catches the browser's install prompt and registers the service worker (website only)
 
 const canvas = document.getElementById('stage');
 const hudRoot = document.getElementById('hud');

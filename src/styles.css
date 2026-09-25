@@ -503,3 +503,20 @@ html, body {
 .overlay.clear .card { pointer-events: auto; }
 /* The element a controller cursor is over. */
 .gp-over { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ---------- "Get the app" (website only; see ui/InstallDialog.js) ---------- */
+.menu-tools .install-btn {
+  display: inline-flex; align-items: center; gap: 7px; cursor: pointer;
+  background: rgba(123,255,176,.12); border: 1px solid rgba(123,255,176,.5); color: var(--text);
+  border-radius: 999px; padding: 9px 16px; font: 700 13px var(--font);
+  transition: border-color .15s ease, background .15s ease;
+}
+.menu-tools .install-btn:hover, .install-btn.gp-hover { border-color: var(--good); background: rgba(123,255,176,.2); }
+.inst { width: min(520px, 100%); }
+.inst-card { margin: 0 0 10px; padding: 14px 16px; border-radius: 14px; border: 1px solid rgba(255,255,255,.12); background: rgba(255,255,255,.04); }
+.inst-card.best { border-color: rgba(123,255,176,.55); background: rgba(123,255,176,.08); }
+.inst-card h3 { margin: 0 0 6px; font-size: 15px; }
+.inst-card h3 em { font: 700 10px var(--font); font-style: normal; letter-spacing: .06em; text-transform: uppercase; color: var(--good); margin-left: 6px; }
+.inst-card p { margin: 0 0 12px; font-size: 13px; line-height: 1.5; color: rgba(255,255,255,.7); }
+.inst-row { display: flex; gap: 8px; }
+.inst-row .acct-btn { text-decoration: none; display: inline-block; }

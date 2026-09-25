@@ -1,4 +1,6 @@
 import { Rocoins } from '../engine/Rocoins.js';
+import { isInstalledCopy } from '../engine/Install.js';
+import { openInstallDialog } from './InstallDialog.js';
 import { CATALOG, ALL_TAGS, TARGET } from '../games/catalog.js';
 import { isImplemented } from '../games/index.js';
 import { Scores } from '../engine/Storage.js';
@@ -59,6 +61,9 @@ export class Menu {
             <button class="coins-btn" type="button" aria-haspopup="dialog" title="Rocoins, powers and challenges (\`)">
               <span class="rc-coin" aria-hidden="true"></span><span class="coins-n">0</span>
             </button>
+            ${isInstalledCopy() ? '' : `<button class="install-btn" type="button" aria-haspopup="dialog" title="Install 100 Mimi Games as an app, or download the Windows / Android app">
+              <span aria-hidden="true">&#11015;</span><span>Get the app</span>
+            </button>`}
             <button class="account-btn" type="button" aria-haspopup="dialog">
               <span class="acct-icon" aria-hidden="true">&#128100;</span><span class="acct-label">Sign in</span>
             </button>
@@ -113,6 +118,7 @@ export class Menu {
     this.root.querySelector('.menu-tools').addEventListener('click', (e) => {
       if (e.target.closest('.account-btn')) { openAccountDialog(); return; }
       if (e.target.closest('.coins-btn')) { this.onAdmin?.(); return; }
+      if (e.target.closest('.install-btn')) { openInstallDialog(); return; }
       const opener = e.target.closest('.settings-btn');
       if (opener) {
         const box = this.root.querySelector('.settings-box');
@@ -272,7 +278,7 @@ export class Menu {
    *  thing to a real `:hover` a script can drive — CSS :hover only follows
    *  the actual mouse, never something moved by JS. */
   _setHover(el) {
-    const target = el?.closest?.('.tile, .toggle, .chip, .settings-btn, .account-btn, .coins-btn') ?? null;
+    const target = el?.closest?.('.tile, .toggle, .chip, .settings-btn, .account-btn, .coins-btn, .install-btn') ?? null;
     if (target === this._hoverEl) return;
     this._hoverEl?.classList.remove('gp-hover');
     this._hoverEl = target;
