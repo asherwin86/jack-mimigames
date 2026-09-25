@@ -5,6 +5,16 @@ Newest update first. Every update is also in its own file in the "updates"
 folder. Each one is released to the website and the Windows app together
 (the app updates itself the next time you open it).
 
+v1.0.31  -  25 Sep 2026
+Scroll the game list with a controller
+--------------------------------------
+- Fixed: with a controller you could not scroll down the list of games. Now the
+  right stick scrolls it, and so do the D-pad up/down and the two bumpers
+  (LB/RB). Pushing the left-stick cursor to the top or bottom edge of the screen
+  also keeps scrolling that way.
+- Works in the desktop app and the website with a controller too, and in the
+  Android app on the Shield TV.
+
 v1.0.30  -  25 Sep 2026
 Android app: controllers now work (fix for the Shield TV)
 ---------------------------------------------------------

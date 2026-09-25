@@ -227,14 +227,36 @@ export class Menu {
     this._clearHover();
   }
 
+  /** Scrolls the game list from a controller: right stick, D-pad up/down and the bumpers (a TV has no wheel), and
+   *  the left-stick cursor pushed against the top or bottom edge. */
+  _scrollWithPad(dt, cursorY) {
+    const menu = this.root.querySelector('.menu');
+    if (!menu) return;
+    let v = this.input.gpAxis(3);                                   // right stick, up/down
+    if (this.input.gpButton(13) || this.input.gpButton(5)) v = Math.max(v, 0.7);    // D-pad down / right bumper
+    if (this.input.gpButton(12) || this.input.gpButton(4)) v = Math.min(v, -0.7);   // D-pad up / left bumper
+    if (!v && cursorY !== null) {   // the cursor at the edge of the screen keeps scrolling that way
+      if (cursorY > innerHeight * 0.92) v = 0.6;
+      else if (cursorY < innerHeight * 0.08) v = -0.6;
+    }
+    if (v) menu.scrollTop += v * 900 * dt;
+  }
+
   _pollGamepadNav() {
-    if (!this.input.usingGamepadPointer) { this._clearHover(); this._gpAHeld = false; return; }
+    const now = performance.now();
+    const dt = Math.min(0.05, (now - (this._navT ?? now)) / 1000);
+    this._navT = now;
+    if (!this.input.usingGamepadPointer) {
+      this._scrollWithPad(dt, null);
+      this._clearHover(); this._gpAHeld = false; return;
+    }
 
     const p = this.input.gpPointer;
     const x = (p.x * 0.5 + 0.5) * innerWidth;
     const y = (1 - (p.y * 0.5 + 0.5)) * innerHeight;
     const el = document.elementFromPoint(x, y);
     this._setHover(el);
+    this._scrollWithPad(dt, y);
 
     // Not this.input.gpHit(0): that edge is tracked once per Engine frame,
     // reset by input.endFrame() — which, since Engine's own rAF callback was
