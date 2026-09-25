@@ -493,3 +493,7 @@ html, body {
   background: rgba(110,231,255,.16); color: var(--text); font: 800 26px var(--font);
 }
 .tc-lane.on { background: rgba(110,231,255,.5); }
+
+/* Controller: which card button is highlighted, and the little "A: … · B: …" line under the buttons. */
+.card .btn.gp-hover { outline: 3px solid var(--accent); outline-offset: 3px; }
+.pad-hint { margin: 14px 0 0; font-size: 12px; color: var(--muted); letter-spacing: .02em; }

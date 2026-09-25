@@ -1,0 +1,11 @@
+v1.0.33  -  25 Sep 2026
+Controller: reach "Quit to menu" from the pause screen
+------------------------------------------------------
+- Fixed: with a controller you could pause and resume but not get back to the
+  menu. The pause card (and the results card) now highlight a button; the D-pad or
+  left stick moves the highlight between Resume / Quit to menu (Play again / All
+  games), and A presses the highlighted one. B and Select still jump straight to
+  the second button.
+- A small line under the buttons shows what each controller button does
+  ("A: Resume · B: Quit to menu · D-pad to choose") once a controller is in use.
+- This way it works even if a controller's B button doesn't reach the game.

@@ -52,28 +52,46 @@ setInterval(() => {
   if (currentEntry?.sandbox && engine.running && !document.hidden) minutesPlayed(currentEntry, 10 / 60);
 }, 10000);
 
-/** Lets a gamepad "click" whichever card is up (Start, Pause, Results,
- *  Error) — A for the primary button, B for the secondary one, if there is
- *  one. Polls on its own rAF, edge-detecting locally rather than via
- *  input.gpHit(): that edge is tracked once per Engine frame and cleared by
- *  input.endFrame(), which — since Engine's own rAF callback is registered
- *  first — always runs before any later-registered loop's poll in a shared
- *  tick, so a later loop would never see it "freshly" pressed. Stops itself
- *  once the primary button is gone from the DOM (the card was dismissed). */
+/** Lets a gamepad drive whichever card is up (Start, Pause, Results, Error). A presses the highlighted button (the
+ *  primary one to begin with), the D-pad or left stick moves the highlight between the primary and the secondary button
+ *  (left/up = primary, right/down = secondary), and B or Select presses the secondary one straight away. So even a
+ *  controller whose B button never arrives (some TV setups) can still reach "Quit to menu" with D-pad + A.
+ *  Polls on its own rAF, edge-detecting locally rather than via input.gpHit(): that edge is tracked once per Engine
+ *  frame and cleared by input.endFrame(), which — since Engine's own rAF callback is registered first — always runs
+ *  before any later-registered loop's poll in a shared tick, so a later loop would never see it "freshly" pressed.
+ *  Stops itself once the primary button is gone from the DOM (the card was dismissed). */
 function gamepadConfirm(primarySelector, secondarySelector) {
-  let aHeld = false;
-  let bHeld = false;
+  const held = new Set();
+  const edge = (name, now) => { const was = held.has(name); if (now) held.add(name); else held.delete(name); return now && !was; };
+  let sel = 0;
+  let hinted = false;
   const tick = () => {
     const primary = uiRoot.querySelector(primarySelector);
     if (!primary) return;   // card dismissed — let the loop end
-    const aNow = engine.input.gpButton(0);
-    if (aNow && !aHeld) primary.click();
-    aHeld = aNow;
-    if (secondarySelector) {
-      const bNow = engine.input.gpButton(1);
-      if (bNow && !bHeld) uiRoot.querySelector(secondarySelector)?.click();
-      bHeld = bNow;
+    const secondary = secondarySelector ? uiRoot.querySelector(secondarySelector) : null;
+    const btns = [primary, secondary].filter(Boolean);
+    const inp = engine.input;
+    const padOn = inp.gamepadIndex !== null || inp.gpButton(0) || inp.gpButton(12) || inp.gpButton(13);
+
+    if (padOn && !hinted) {   // say which buttons do what, once a controller is in use
+      hinted = true;
+      const row = primary.parentElement;
+      const hint = document.createElement('p');
+      hint.className = 'pad-hint';
+      hint.textContent = secondary
+        ? `A: ${primary.textContent.trim()}  ·  B: ${secondary.textContent.trim()}  ·  D-pad to choose`
+        : `A: ${primary.textContent.trim()}`;
+      row?.after(hint);
     }
+
+    if (secondary) {
+      const dir = (inp.gpButton(14) || inp.gpButton(12) || inp.gpAxis(0) < -0.5 || inp.gpAxis(1) < -0.5) ? -1
+        : (inp.gpButton(15) || inp.gpButton(13) || inp.gpAxis(0) > 0.5 || inp.gpAxis(1) > 0.5) ? 1 : 0;
+      if (edge('nav', dir !== 0)) sel = dir < 0 ? 0 : 1;
+      if (edge('b', inp.gpButton(1)) || edge('select', inp.gpButton(8))) { secondary.click(); return; }
+    }
+    if (edge('a', inp.gpButton(0))) { btns[Math.min(sel, btns.length - 1)].click(); return; }
+    if (padOn) btns.forEach((b, i) => b.classList.toggle('gp-hover', i === Math.min(sel, btns.length - 1)));
     requestAnimationFrame(tick);
   };
   requestAnimationFrame(tick);
