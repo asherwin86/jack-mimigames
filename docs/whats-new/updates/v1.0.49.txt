@@ -1,0 +1,5 @@
+v1.0.49  -  26 Sep 2026
+Days-left counter for the school holidays
+-----------------------------------------
+During the school holidays a small tag next to the FPS counter (bottom right, on the menu and inside every game) shows how many days of the holidays are left, for example "Holidays: 9 days left". It counts down each day, says "Holidays: last day!" on the final day, and disappears when the holidays end.
+The "Holiday colours" switch in Settings hides it along with the flashing colours. Add ?season=holidays to the address to preview it on any day.

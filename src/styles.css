@@ -55,6 +55,24 @@ html, body {
 #fps[data-rate="ok"] { color: #ffd98a; }
 #fps[data-rate="low"] { color: #ff9a9a; }
 
+/* The school holidays counter sits just left of the FPS number, styled to match. */
+#event-days {
+  position: fixed;
+  right: 84px;
+  bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+  z-index: 50;
+  pointer-events: none;
+  font: 700 11px/1 ui-monospace, Menlo, Consolas, monospace;
+  letter-spacing: .5px;
+  padding: 5px 8px;
+  border-radius: 7px;
+  color: #ffe27a;
+  background: rgba(8, 12, 20, .55);
+  border: 1px solid rgba(255, 226, 122, .35);
+  backdrop-filter: blur(3px);
+}
+#event-days[hidden] { display: none; }
+
 /* ---------- Gamepad cursor ---------- */
 /* A stand-in mouse pointer for aim-with-the-mouse games, drawn wherever the
    left stick has steered it — see Engine._updateCursor(). Fixed positioning

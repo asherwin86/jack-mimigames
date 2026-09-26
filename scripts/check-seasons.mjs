@@ -1,5 +1,5 @@
 /** School holidays and their random menu colours.   node scripts/check-seasons.mjs */
-import { isSchoolHoliday, themeFor, randomPalette, flashColour, ARCADE_COLOURS, SCHOOL_HOLIDAYS } from '../src/engine/Seasons.js';
+import { isSchoolHoliday, holidayDaysLeft, eventLabel, themeFor, randomPalette, flashColour, ARCADE_COLOURS, SCHOOL_HOLIDAYS } from '../src/engine/Seasons.js';
 
 let failed = 0;
 const ok = (c, m) => { if (!c) { failed++; console.log(`\x1b[31mFAIL\x1b[0m ${m}`); } else console.log(`\x1b[32mok\x1b[0m   ${m}`); };
@@ -33,5 +33,9 @@ ok(maxRate <= 2, 'never more than two colour changes a second (safe flashing rat
 let changes = 0; let prev = flashColour(pal, 0);
 for (let ms = 10; ms < 3000; ms += 10) { const c = flashColour(pal, ms / 1000); if (c !== prev) { changes++; prev = c; } }
 ok(changes > 0, 'the colour does change over time');
+ok(holidayDaysLeft(d(2026, 9, 26)) === 9 && holidayDaysLeft(d(2026, 10, 4)) === 1 && holidayDaysLeft(d(2026, 9, 19)) === 16 && holidayDaysLeft(d(2026, 10, 5)) === null, 'days left counts today: 9 on 26 Sep, 1 on the last day (4 Oct), none after');
+ok(holidayDaysLeft(d(2026, 12, 25)) === 33 && holidayDaysLeft(d(2027, 1, 26)) === 1, 'the summer holidays count across the new year');
+ok(eventLabel(d(2026, 9, 26)) === 'Holidays: 9 days left' && eventLabel(d(2026, 10, 4)) === 'Holidays: last day!' && eventLabel(d(2026, 8, 12)) === null, 'the counter text reads right');
+ok(eventLabel(d(2026, 8, 12), 'holidays') === 'Holidays (preview)' && eventLabel(d(2026, 9, 26), 'off') === null, 'the ?season= override previews or hides it');
 console.log(failed ? `\n\x1b[31m${failed} check(s) failed.\x1b[0m` : '\n\x1b[32mAll season checks passed.\x1b[0m');
 process.exit(failed ? 1 : 0);

@@ -2,6 +2,10 @@
  *  menu, under the trailer. Keep entries brief; this isn't a commit log. */
 export const CHANGELOG = [
   {
+    title: 'Holidays days-left counter',
+    detail: 'During the school holidays a small "Holidays: 9 days left" tag sits next to the FPS counter, on the menu and inside every game. It counts down each day, says "last day!" on the final day, and disappears when the holidays end. The Holiday colours switch in Settings hides it.',
+  },
+  {
     title: 'School holiday colours',
     detail: 'During the school holidays the menu background flashes through every colour in the arcade palette, one flat colour at a time, in a new random order each time you open it, with a small greeting under the title. It changes twice a second with a quick fade, so it is fast and lively but stays under the safe flashing limit. Turn it off any time with the Holiday colours switch in Settings. (Victorian school holiday dates.)',
   },

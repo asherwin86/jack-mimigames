@@ -5,6 +5,7 @@ import { showResults, showError } from './ui/Results.js';
 import { showStart, showPause } from './ui/Overlay.js';
 import { loadGame } from './games/index.js';
 import { buildBackdrop } from './ui/Backdrop.js';
+import { mountEventCounter } from './ui/EventCounter.js';
 import { Settings } from './engine/Settings.js';
 import { Rocoins } from './engine/Rocoins.js';
 import { runFinished, onEarned, minutesPlayed } from './engine/challenges.js';
@@ -25,7 +26,8 @@ const menu = new Menu(uiRoot, (id) => { location.hash = `#/${id}`; }, engine.inp
 menu.onProps = (on) => engine.idleScene?.setProps?.(on);
 menu.onBlackSky = (on) => engine.idleScene?.setBlack?.(on);
 menu.onMusic = (on) => engine.idleScene?.setMusic?.(on);
-menu.onSeasonal = (on) => engine.idleScene?.setSeasonal?.(on);
+const eventCounter = mountEventCounter();
+menu.onSeasonal = (on) => { engine.idleScene?.setSeasonal?.(on); eventCounter.refresh(); };
 
 let current = null;
 let currentEntry = null;

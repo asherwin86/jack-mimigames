@@ -26,6 +26,25 @@ const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0
 
 export const isSchoolHoliday = (date) => { const day = iso(date); return SCHOOL_HOLIDAYS.some(([a, b]) => day >= a && day <= b); };
 
+/** Days left of the school holidays, counting today (1 on the last day), or null when it is not the holidays. */
+export function holidayDaysLeft(date = new Date()) {
+  const day = iso(date);
+  const range = SCHOOL_HOLIDAYS.find(([a, b]) => day >= a && day <= b);
+  if (!range) return null;
+  const [y, m, d] = range[1].split('-').map(Number);
+  const end = Date.UTC(y, m - 1, d);
+  const today = Date.UTC(date.getFullYear(), date.getMonth(), date.getDate());
+  return Math.round((end - today) / 86400000) + 1;
+}
+
+/** Text for the counter next to the FPS number: "Holidays: 9 days left", "Holidays: last day!" ... or null. */
+export function eventLabel(date = new Date(), override = null) {
+  if (override === 'off') return null;
+  const n = holidayDaysLeft(date);
+  if (n === null) return override === 'holidays' ? 'Holidays (preview)' : null;
+  return n === 1 ? 'Holidays: last day!' : `Holidays: ${n} days left`;
+}
+
 /** The arcade's own colours (the same ones as PALETTE in utils.js): cyan, pink, lime, amber, violet, blue, red. */
 export const ARCADE_COLOURS = ['#6ee7ff', '#ff6ea9', '#7bffb0', '#ffc861', '#b08cff', '#5b8cff', '#ff5f6d'];
 
