@@ -20,6 +20,7 @@
     "check:extras": "node scripts/check-extras.mjs",
     "check:newgames": "node scripts/check-newgames.mjs",
     "check:moregames": "node scripts/check-more-games.mjs",
+    "check:seasons": "node scripts/check-seasons.mjs",
     "check:nativepad": "node scripts/check-nativepad.mjs",
     "server:hub": "node hub-server/server.js",
     "electron": "npm run build && electron .",

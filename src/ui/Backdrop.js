@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { box, lights, glow, rand, Burst, TAU, COLORS } from '../engine/utils.js';
 import { buildFlock } from './flyers.js';
 import { Settings } from '../engine/Settings.js';
+import { themeFor, seasonOverride } from '../engine/Seasons.js';
 
 const GRAD_H = 256;
 const STOPS = 12;
@@ -15,6 +16,26 @@ function paintRainbow(ctx, shift) {
     // Held back from full saturation so the menu text stays readable on top.
     const light = 34 + Math.sin(t * Math.PI) * 16;
     grad.addColorStop(t, `hsl(${hue.toFixed(1)}, 64%, ${light.toFixed(1)}%)`);
+  }
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, 2, GRAD_H);
+}
+
+/** Paints the sky from a special day's (or the school holidays') colours instead: the palette blended top to bottom, slowly drifting. */
+function paintTheme(ctx, palette, shift) {
+  const n = palette.length;
+  const cols = palette.map((h) => new THREE.Color(h));
+  const grad = ctx.createLinearGradient(0, 0, 0, GRAD_H);
+  const hsl = {};
+  for (let i = 0; i <= STOPS; i++) {
+    const t = i / STOPS;
+    const pos = (((t * n * 0.8 + (shift / 360) * n) % n) + n) % n;
+    const i0 = Math.floor(pos);
+    const c = cols[i0].clone().lerp(cols[(i0 + 1) % n], pos - i0);
+    c.getHSL(hsl);
+    // Kept dark enough that the menu text stays readable, whatever the palette.
+    const light = Math.min(0.3, Math.max(0.16, hsl.l)) + Math.sin(t * Math.PI) * 0.1;
+    grad.addColorStop(t, `hsl(${(hsl.h * 360).toFixed(1)}, ${(Math.min(0.85, hsl.s) * 100).toFixed(1)}%, ${(light * 100).toFixed(1)}%)`);
   }
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, 2, GRAD_H);
@@ -241,7 +262,9 @@ export function buildBackdrop(size, audio) {
   canvas.width = 2;
   canvas.height = GRAD_H;
   const ctx = canvas.getContext('2d');
-  paintRainbow(ctx, 0);
+  let theme = Settings.get('seasonal', true) ? themeFor(new Date(), seasonOverride()) : null;
+  const paintSky = (shift) => (theme ? paintTheme(ctx, theme.palette, shift * 0.5) : paintRainbow(ctx, shift));
+  paintSky(0);
 
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
@@ -490,9 +513,10 @@ export function buildBackdrop(size, audio) {
       if (blackSky) {
         scene.fog.color.setHex(0x05060a);
       } else {
-        paintRainbow(ctx, shift);
+        paintSky(shift);
         tex.needsUpdate = true;
-        scene.fog.color.setHSL(((shift + 180) % 360) / 360, 0.35, 0.16);
+        if (theme) scene.fog.color.set(theme.palette[Math.floor(shift / 90) % theme.palette.length]).multiplyScalar(0.25);
+        else scene.fog.color.setHSL(((shift + 180) % 360) / 360, 0.35, 0.16);
       }
     }
 
@@ -609,6 +633,8 @@ export function buildBackdrop(size, audio) {
   setBlack(Settings.get('bgBlack', false));
   const setMusic = (on) => { musicOn = !!on; };
   setMusic(Settings.get('music', true));
+  /** Turns the special day / school holiday colours on or off (the "Holiday colours" toggle). */
+  const setSeasonal = (on) => { theme = on ? themeFor(new Date(), seasonOverride()) : null; paintSky(shift); tex.needsUpdate = true; };
 
-  return { scene, camera, update, dispose, setProps, setBlack, setMusic, shootingStars: shooting.stars };
+  return { scene, camera, update, dispose, setProps, setBlack, setMusic, setSeasonal, theme: () => theme, shootingStars: shooting.stars };
 }

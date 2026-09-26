@@ -2,6 +2,10 @@
  *  menu, under the trailer. Keep entries brief; this isn't a commit log. */
 export const CHANGELOG = [
   {
+    title: 'School holiday colours',
+    detail: 'During the school holidays the menu sky gets a brand new random set of colours every time you open it, with a small greeting under the title. Turn it off any time with the Holiday colours switch in Settings. (Victorian school holiday dates.)',
+  },
+  {
     title: 'Easier to find on Google and other search engines',
     detail: 'The website now has a proper page title and description, share previews (the picture and text you see when the link is posted in chats), a sitemap, a robots file and structured data listing all 100 games, so search engines can understand and list it.',
   },

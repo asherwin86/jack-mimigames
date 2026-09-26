@@ -25,6 +25,7 @@ const menu = new Menu(uiRoot, (id) => { location.hash = `#/${id}`; }, engine.inp
 menu.onProps = (on) => engine.idleScene?.setProps?.(on);
 menu.onBlackSky = (on) => engine.idleScene?.setBlack?.(on);
 menu.onMusic = (on) => engine.idleScene?.setMusic?.(on);
+menu.onSeasonal = (on) => engine.idleScene?.setSeasonal?.(on);
 
 let current = null;
 let currentEntry = null;

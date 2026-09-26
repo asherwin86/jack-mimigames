@@ -1,0 +1,7 @@
+v1.0.45  -  26 Sep 2026
+School holiday colours on the menu
+----------------------------------
+During the school holidays the menu's background sky now gets a new random set of colours every time you open it, and a small "School holidays" greeting appears under the title.
+There is a new "Holiday colours" switch in Settings to turn it off (then you get the normal rainbow sky). "Black sky" still overrides it.
+The dates used are the Victorian school holidays for 2026 and 2027 (listed in one file, src/engine/Seasons.js, so they are easy to change or extend). To preview it on any day, add ?season=holidays to the address.
+Only the menu changes. The games themselves look the same.

@@ -5,6 +5,7 @@ import { CATALOG, ALL_TAGS, TARGET } from '../games/catalog.js';
 import { isImplemented } from '../games/index.js';
 import { Scores } from '../engine/Storage.js';
 import { Settings } from '../engine/Settings.js';
+import { themeFor, seasonOverride } from '../engine/Seasons.js';
 import { Account } from '../engine/Account.js';
 import { openAccountDialog } from './AccountDialog.js';
 import { CHANGELOG } from '../changelog.js';
@@ -16,6 +17,7 @@ export class Menu {
     this.input = input;   // the app's shared Input instance — drives the gamepad cursor here too
     this.query = '';
     this.tag = null;
+    this.onSeasonal = null;   // (on) => void: the holiday colours toggle
     this.onProps = null;   // (on) => void, so the backdrop can follow the toggle
     this._navRaf = null;
     this._gpAHeld = false;
@@ -38,7 +40,7 @@ export class Menu {
       <div class="menu${prefClasses}">
         <div class="menu-head">
           <h1><span class="red">100</span> <span class="blue">Mimi</span> <span class="red">Games</span></h1>
-          <p>${CATALOG.length} of ${TARGET} built &middot; every one rendered in 3D</p>
+          <p>${this._tagline(Settings.get('seasonal', true))}</p>
 
           <div class="showcase">
             <video class="trailer" controls preload="metadata" poster="trailer-poster.jpg">
@@ -78,6 +80,9 @@ export class Menu {
               </button>
               <button class="toggle" data-setting="bgBlack" data-default="0" aria-pressed="${Settings.get('bgBlack', false)}">
                 <span class="dot"></span>Black sky
+              </button>
+              <button class="toggle" data-setting="seasonal" data-default="1" aria-pressed="${Settings.get('seasonal', true)}">
+                <span class="dot"></span>Holiday colours
               </button>
               <button class="toggle" data-setting="noSpin" data-default="0" aria-pressed="${prefs['no-spin']}">
                 <span class="dot"></span>Stop spinning
@@ -163,6 +168,12 @@ export class Menu {
     btn.title = who ? `Signed in as ${who} — click to manage your account` : 'Sign in to keep your worlds on your account';
   }
 
+  /** The line under the title, with the special day / school holiday greeting when there is one. */
+  _tagline(seasonal) {
+    const theme = seasonal ? themeFor(new Date(), seasonOverride()) : null;
+    return `${CATALOG.length} of ${TARGET} built &middot; every one rendered in 3D${theme ? ` &middot; <span class="season-tag">${theme.label}</span>` : ''}`;
+  }
+
   /** Reflects the props setting on the button, for when Shift flips it. */
   syncProps(on) {
     this.root.querySelector('[data-setting="bgProps"]')?.setAttribute('aria-pressed', String(on));
@@ -175,6 +186,7 @@ export class Menu {
     if (key === 'bgProps') this.onProps?.(on);
     else if (key === 'music') this.onMusic?.(on);
     else if (key === 'bgBlack') this.onBlackSky?.(on);
+    else if (key === 'seasonal') { this.onSeasonal?.(on); const p = this.root.querySelector('.menu-head > p'); if (p) p.innerHTML = this._tagline(on); }
     else if (key === 'noSpin') menuEl?.classList.toggle('no-spin', on);
     else if (key === 'highContrast') menuEl?.classList.toggle('high-contrast', on);
     else if (key === 'compact') menuEl?.classList.toggle('compact', on);
