@@ -1,0 +1,4 @@
+v1.0.42  -  26 Sep 2026
+Google Search Console ownership tag
+-----------------------------------
+Added the ownership tag Google Search Console asks for to the website's home page, so the site can be verified and its sitemap submitted to Google. Nothing changes in the games.

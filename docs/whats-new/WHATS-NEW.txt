@@ -5,6 +5,11 @@ Newest update first. Every update is also in its own file in the "updates"
 folder. Each one is released to the website and the Windows app together
 (the app updates itself the next time you open it).
 
+v1.0.42  -  26 Sep 2026
+Google Search Console ownership tag
+-----------------------------------
+Added the ownership tag Google Search Console asks for to the website's home page, so the site can be verified and its sitemap submitted to Google. Nothing changes in the games.
+
 v1.0.41  -  26 Sep 2026
 Search engine setup for the website
 -----------------------------------
