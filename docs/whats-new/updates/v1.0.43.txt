@@ -1,0 +1,4 @@
+v1.0.43  -  26 Sep 2026
+Google Search Console ownership file
+------------------------------------
+Added the ownership file Google Search Console asks for to the website, as a second way to verify the site. Nothing changes in the games.
