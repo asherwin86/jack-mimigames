@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { box, lights, glow, rand, Burst, TAU, COLORS } from '../engine/utils.js';
 import { buildFlock } from './flyers.js';
 import { Settings } from '../engine/Settings.js';
-import { themeFor, seasonOverride } from '../engine/Seasons.js';
+import { themeFor, seasonOverride, flashColour } from '../engine/Seasons.js';
 
 const GRAD_H = 256;
 const STOPS = 12;
@@ -21,24 +21,14 @@ function paintRainbow(ctx, shift) {
   ctx.fillRect(0, 0, 2, GRAD_H);
 }
 
-/** Paints the sky from a special day's (or the school holidays') colours instead: the palette blended top to bottom, slowly drifting. */
-function paintTheme(ctx, palette, shift) {
-  const n = palette.length;
-  const cols = palette.map((h) => new THREE.Color(h));
-  const grad = ctx.createLinearGradient(0, 0, 0, GRAD_H);
+/** The school holiday sky: one flat colour at a time, flashing through the palette. Returns the colour shown (kept dark enough for the menu text). */
+function paintTheme(ctx, palette, time) {
+  const c = new THREE.Color(flashColour(palette, time));
   const hsl = {};
-  for (let i = 0; i <= STOPS; i++) {
-    const t = i / STOPS;
-    const pos = (((t * n * 0.8 + (shift / 360) * n) % n) + n) % n;
-    const i0 = Math.floor(pos);
-    const c = cols[i0].clone().lerp(cols[(i0 + 1) % n], pos - i0);
-    c.getHSL(hsl);
-    // Kept dark enough that the menu text stays readable, whatever the palette.
-    const light = Math.min(0.3, Math.max(0.16, hsl.l)) + Math.sin(t * Math.PI) * 0.1;
-    grad.addColorStop(t, `hsl(${(hsl.h * 360).toFixed(1)}, ${(Math.min(0.85, hsl.s) * 100).toFixed(1)}%, ${(light * 100).toFixed(1)}%)`);
-  }
-  ctx.fillStyle = grad;
+  c.getHSL(hsl);
+  ctx.fillStyle = `hsl(${(hsl.h * 360).toFixed(1)}, ${(Math.min(0.85, hsl.s) * 100).toFixed(1)}%, 36%)`;
   ctx.fillRect(0, 0, 2, GRAD_H);
+  return c;
 }
 
 /** 16x16 of mottled creeper green, drawn once and shared by every creeper. */
@@ -263,7 +253,8 @@ export function buildBackdrop(size, audio) {
   canvas.height = GRAD_H;
   const ctx = canvas.getContext('2d');
   let theme = Settings.get('seasonal', true) ? themeFor(new Date(), seasonOverride()) : null;
-  const paintSky = (shift) => (theme ? paintTheme(ctx, theme.palette, shift * 0.5) : paintRainbow(ctx, shift));
+  let skyTime = 0;   // seconds the menu has been open, for the flashing holiday colours
+  const paintSky = (shift) => (theme ? paintTheme(ctx, theme.palette, skyTime) : paintRainbow(ctx, shift));
   paintSky(0);
 
   const tex = new THREE.CanvasTexture(canvas);
@@ -502,6 +493,7 @@ export function buildBackdrop(size, audio) {
 
   const update = (dt) => {
     t += dt;
+    skyTime = t;
 
     // Cycle the hue. The gradient canvas is 2x256, so redrawing is cheap, but
     // there is no point doing it more often than the eye can tell — or at
@@ -515,7 +507,7 @@ export function buildBackdrop(size, audio) {
       } else {
         paintSky(shift);
         tex.needsUpdate = true;
-        if (theme) scene.fog.color.set(theme.palette[Math.floor(shift / 90) % theme.palette.length]).multiplyScalar(0.25);
+        if (theme) scene.fog.color.set(flashColour(theme.palette, skyTime)).multiplyScalar(0.25);
         else scene.fog.color.setHSL(((shift + 180) % 360) / 360, 0.35, 0.16);
       }
     }

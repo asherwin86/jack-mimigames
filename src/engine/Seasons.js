@@ -2,7 +2,7 @@
  * School holidays and the menu colours that go with them.
  *
  * The menu's sky normally cycles through a rainbow. During the school holidays
- * it uses a fresh random set of colours each time the menu opens.
+ * it flashes through every colour in the arcade's palette, one flat colour at a time, in a new random order each time the menu opens.
  *
  * The dates are Victoria's (Australia). They are just a list of date ranges
  * below, so it is easy to add another year or change the state. To preview it
@@ -26,17 +26,30 @@ const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0
 
 export const isSchoolHoliday = (date) => { const day = iso(date); return SCHOOL_HOLIDAYS.some(([a, b]) => day >= a && day <= b); };
 
-/** A fresh, harmonious random palette of hex colours. */
+/** The arcade's own colours (the same ones as PALETTE in utils.js): cyan, pink, lime, amber, violet, blue, red. */
+export const ARCADE_COLOURS = ['#6ee7ff', '#ff6ea9', '#7bffb0', '#ffc861', '#b08cff', '#5b8cff', '#ff5f6d'];
+
+/** Every arcade colour, in a fresh random order (so each visit blends them differently). */
 export function randomPalette(rng = Math.random) {
-  const base = rng() * 360;
-  const scheme = [[0, 40, 80, 120], [0, 120, 240, 300], [0, 180, 30, 210], [0, 60, 180, 240]][Math.floor(rng() * 4)];
-  return scheme.map((off) => hsl((base + off) % 360, 0.62 + rng() * 0.2, 0.38 + rng() * 0.08));
+  const out = ARCADE_COLOURS.slice();
+  for (let i = out.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); [out[i], out[j]] = [out[j], out[i]]; }
+  return out;
 }
 
-function hsl(h, s, l) {
-  const a = s * Math.min(l, 1 - l);
-  const f = (n) => { const k = (n + h / 30) % 12; return l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1)); };
-  return `#${[f(0), f(8), f(4)].map((x) => Math.round(x * 255).toString(16).padStart(2, '0')).join('')}`;
+const hexToRgb = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+const rgbToHex = (c) => `#${c.map((x) => Math.round(x).toString(16).padStart(2, '0')).join('')}`;
+
+/**
+ * The single colour on screen `time` seconds in: each palette colour holds for `step` seconds, fading in over `fade`
+ * seconds. Gentle on purpose: one change a second, never a strobe.
+ */
+export function flashColour(palette, time, step = 1, fade = 0.3) {
+  const n = palette.length;
+  const k = Math.floor(time / step);
+  const f = Math.min(1, Math.max(0, (time - k * step) / fade));
+  const from = hexToRgb(palette[(((k - 1) % n) + n) % n]);
+  const to = hexToRgb(palette[((k % n) + n) % n]);
+  return rgbToHex(from.map((v, i) => v + (to[i] - v) * f));
 }
 
 /**

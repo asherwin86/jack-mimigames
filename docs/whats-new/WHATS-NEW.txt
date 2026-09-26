@@ -5,6 +5,13 @@ Newest update first. Every update is also in its own file in the "updates"
 folder. Each one is released to the website and the Windows app together
 (the app updates itself the next time you open it).
 
+v1.0.46  -  26 Sep 2026
+School holiday colours now flash through the whole palette
+----------------------------------------------------------
+During the school holidays the menu background is now one flat colour at a time that flashes through every colour in the arcade's palette (cyan, pink, lime, amber, violet, blue and red), in a new random order each time the menu opens.
+It changes once a second with a quick fade, so it is lively but not a strobe. The "Holiday colours" switch in Settings turns it off, and "Black sky" still overrides it.
+Only the menu changes. Add ?season=holidays to the address to preview it on any day.
+
 v1.0.45  -  26 Sep 2026
 School holiday colours on the menu
 ----------------------------------
