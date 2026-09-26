@@ -22,12 +22,14 @@ ok(orders.size > 50, 'the colours come in a different order almost every time', 
 ok(ARCADE_COLOURS.length === 7 && ARCADE_COLOURS.every((c) => /^#[0-9a-f]{6}$/i.test(c)), 'the arcade colours are valid hex');
 ok(themeFor(d(2026, 9, 26)).palette.length === 7, 'the holiday theme uses all seven colours');
 const pal = ['#ff0000', '#00ff00', '#0000ff'];
-ok(flashColour(pal, 0.95) === '#ff0000' && flashColour(pal, 1.95) === '#00ff00' && flashColour(pal, 2.95) === '#0000ff' && flashColour(pal, 3.95) === '#ff0000', 'each colour holds solid, one after another, and it loops');
+ok(flashColour(pal, 0.45) === '#ff0000' && flashColour(pal, 0.95) === '#00ff00' && flashColour(pal, 1.45) === '#0000ff' && flashColour(pal, 1.95) === '#ff0000', 'each colour holds solid, one after another, and it loops');
 const seen = new Set();
-for (let k = 0; k < 7; k++) seen.add(flashColour(ARCADE_COLOURS, k + 0.9));
-ok(seen.size === 7, 'over seven seconds it shows all seven colours');
-const mid = flashColour(pal, 1.15);
-ok(mid !== '#00ff00' && mid !== '#ff0000' && flashColour(pal, 1.4) === '#00ff00', 'colours fade in over 0.3 s, then hold');
+for (let k = 0; k < 7; k++) seen.add(flashColour(ARCADE_COLOURS, k * 0.5 + 0.45));
+ok(seen.size === 7, 'in 3.5 seconds it shows all seven colours');
+const mid = flashColour(pal, 0.575);
+ok(mid !== '#00ff00' && mid !== '#ff0000' && flashColour(pal, 0.7) === '#00ff00', 'colours fade in over 0.15 s, then hold');
+let maxRate = 0; for (let k = 0; k < 10; k++) { let flips = 0; let last = flashColour(pal, k); for (let ms = 5; ms <= 1000; ms += 5) { const c = flashColour(pal, k + ms / 1000); if (c !== last && (ms % 500 === 5)) flips++; last = c; } maxRate = Math.max(maxRate, flips); }
+ok(maxRate <= 2, 'never more than two colour changes a second (safe flashing rate)');
 let changes = 0; let prev = flashColour(pal, 0);
 for (let ms = 10; ms < 3000; ms += 10) { const c = flashColour(pal, ms / 1000); if (c !== prev) { changes++; prev = c; } }
 ok(changes > 0, 'the colour does change over time');

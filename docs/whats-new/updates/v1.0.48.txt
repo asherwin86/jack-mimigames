@@ -1,0 +1,5 @@
+v1.0.48  -  26 Sep 2026
+Faster school holiday colours
+-----------------------------
+The flashing menu colours during the school holidays now change twice a second instead of once (each colour holds for half a second with a very quick fade). It is deliberately kept under three changes a second, which is the usual limit for safe flashing.
+Everything else is the same: every palette colour, one flat colour at a time, random order each visit, and the "Holiday colours" switch in Settings turns it off.

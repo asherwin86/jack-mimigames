@@ -41,9 +41,9 @@ const rgbToHex = (c) => `#${c.map((x) => Math.round(x).toString(16).padStart(2, 
 
 /**
  * The single colour on screen `time` seconds in: each palette colour holds for `step` seconds, fading in over `fade`
- * seconds. Gentle on purpose: one change a second, never a strobe.
+ * seconds. Two changes a second: quick and lively, but kept under three flashes a second, the usual limit for safe flashing.
  */
-export function flashColour(palette, time, step = 1, fade = 0.3) {
+export function flashColour(palette, time, step = 0.5, fade = 0.15) {
   const n = palette.length;
   const k = Math.floor(time / step);
   const f = Math.min(1, Math.max(0, (time - k * step) / fade));
