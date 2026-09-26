@@ -5,6 +5,11 @@ Newest update first. Every update is also in its own file in the "updates"
 folder. Each one is released to the website and the Windows app together
 (the app updates itself the next time you open it).
 
+v1.0.44  -  26 Sep 2026
+Bing Webmaster ownership file
+-----------------------------
+Added the ownership file Bing Webmaster Tools asks for to the website, so the site can be verified there. Nothing changes in the games.
+
 v1.0.43  -  26 Sep 2026
 Google Search Console ownership file
 ------------------------------------
