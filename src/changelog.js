@@ -3,7 +3,7 @@
 export const CHANGELOG = [
   {
     title: 'School holiday colours',
-    detail: 'During the school holidays the menu background flashes through every colour in the arcade's palette, one flat colour at a time, in a new random order each time you open it, with a small greeting under the title. It changes once a second with a quick fade, so it is lively without being a strobe. Turn it off any time with the Holiday colours switch in Settings. (Victorian school holiday dates.)',
+    detail: 'During the school holidays the menu background flashes through every colour in the arcade palette, one flat colour at a time, in a new random order each time you open it, with a small greeting under the title. It changes once a second with a quick fade, so it is lively without being a strobe. Turn it off any time with the Holiday colours switch in Settings. (Victorian school holiday dates.)',
   },
   {
     title: 'Easier to find on Google and other search engines',

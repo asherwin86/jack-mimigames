@@ -1,0 +1,4 @@
+v1.0.47  -  26 Sep 2026
+Fix: the flashing school holiday colours now build properly
+-----------------------------------------------------------
+The previous update (v1.0.46) had a typo in the "What's new" text that stopped the website and the apps from building, so it never went live. This release fixes that and includes the same change: during the school holidays the menu background flashes through every palette colour, one flat colour at a time, in a random order each visit. The "Holiday colours" switch in Settings turns it off.
