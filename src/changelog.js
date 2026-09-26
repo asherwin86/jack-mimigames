@@ -2,6 +2,10 @@
  *  menu, under the trailer. Keep entries brief; this isn't a commit log. */
 export const CHANGELOG = [
   {
+    title: 'Easier to find on Google and other search engines',
+    detail: 'The website now has a proper page title and description, share previews (the picture and text you see when the link is posted in chats), a sitemap, a robots file and structured data listing all 100 games, so search engines can understand and list it.',
+  },
+  {
     title: 'Rocoin tools in your profile',
     detail: 'The account window has a new "Rocoin tools" tick-box. Ticking it asks for a password; with the right one you can give yourself Rocoins or switch on infinite Rocoins (powers cost nothing). The menu and admin panel show an infinity sign while it is on.',
   },

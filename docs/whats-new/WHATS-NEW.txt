@@ -5,6 +5,13 @@ Newest update first. Every update is also in its own file in the "updates"
 folder. Each one is released to the website and the Windows app together
 (the app updates itself the next time you open it).
 
+v1.0.41  -  26 Sep 2026
+Search engine setup for the website
+-----------------------------------
+The website now has what search engines need to find and list it: a proper page title and description, share previews (picture and text when the link is posted in chats and social apps), a sitemap.xml, a robots.txt, a canonical address, and structured data that lists all 100 games with their descriptions.
+The game list is also written into the page for crawlers that do not run JavaScript, and it is rebuilt automatically from the game list every release.
+No change to how anything plays.
+
 v1.0.40  -  25 Sep 2026
 Rocoin tools in your profile
 ----------------------------
