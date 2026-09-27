@@ -5,6 +5,15 @@ Newest update first. Every update is also in its own file in the "updates"
 folder. Each one is released to the website and the Windows app together
 (the app updates itself the next time you open it).
 
+v1.0.50  -  27 Sep 2026
+Bug reports from players
+------------------------
+There is a new "Report a bug" button on the menu (next to Sign in) and on the pause screen inside every game. Anyone can use it, signed in or not.
+Players choose bug, idea or something else, describe what happened, and tick whether to include the game and their device (build, device type, screen size). It is sent to the account server.
+Only the owner account (owen) can read the reports: sign in as owen, open Report a bug, and there is an Inbox tab listing them newest first, with who sent it, the game and the device. Press Done to clear one.
+Protection: at most 5 reports a minute from one place, 2000 characters each, and report text is always shown as plain text.
+This needs the account server to update too (it does that on its own after this release goes out).
+
 v1.0.49  -  26 Sep 2026
 Days-left counter for the school holidays
 -----------------------------------------

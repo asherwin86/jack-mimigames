@@ -154,6 +154,25 @@ async function upgradeLegacySession() {
 }
 
 export const Account = {
+  /**
+   * Sends a bug report / idea to the arcade owner. Works signed out too; signed in, it carries your name.
+   * `game` is the game you were in (optional); `includeInfo` adds build, device and screen size.
+   */
+  async reportBug({ category = 'bug', message, game = '', includeInfo = true }) {
+    const creds = session?.token ? { key: session.key, token: session.token } : {};
+    const context = { game: String(game || '') };
+    if (includeInfo) {
+      context.build = typeof __BUILD__ !== 'undefined' ? __BUILD__ : 'dev';
+      context.platform = deviceLabel();
+      try { context.screen = `${innerWidth}x${innerHeight}`; context.ua = navigator.userAgent; } catch { /* no window (tests) */ }
+    }
+    return api('reports', 'submit', { ...creds, category, message, context }, { timeoutMs: 60000 });
+  },
+
+  /** The report inbox: only the arcade owner's account gets it (others get { ok:false, notAdmin:true }). */
+  async reports() { return Account.call('reports', 'list'); },
+  async closeReport(id) { return Account.call('reports', 'close', { id }); },
+
   /** The signed-in profile ({ key, name, passwordHash, ... }) or null. */
   session() { return session; },
   isSignedIn() { return !!session; },

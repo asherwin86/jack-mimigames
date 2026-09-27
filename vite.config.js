@@ -70,6 +70,7 @@ function precacheList() {
 
 export default defineConfig({
   base: './',
+  define: { __BUILD__: JSON.stringify(new Date().toISOString().slice(0, 16).replace('T', ' ')) },
   plugins: [seo(), precacheList()],
   // host: true binds every interface, so the LAN URL works from a phone
   // or another machine, not just localhost.

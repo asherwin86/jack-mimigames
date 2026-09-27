@@ -2,6 +2,10 @@
  *  menu, under the trailer. Keep entries brief; this isn't a commit log. */
 export const CHANGELOG = [
   {
+    title: 'Bug reports from players',
+    detail: 'There is a new Report a bug button on the menu and on the pause screen. Anyone can use it, signed in or not: pick bug, idea or other, describe what happened, and it goes to the arcade owner along with the game and device. Signed in as owen, the same window has an Inbox tab to read and tick off reports.',
+  },
+  {
     title: 'Holidays days-left counter',
     detail: 'During the school holidays a small "Holidays: 9 days left" tag sits next to the FPS counter, on the menu and inside every game. It counts down each day, says "last day!" on the final day, and disappears when the holidays end. The Holiday colours switch in Settings hides it.',
   },

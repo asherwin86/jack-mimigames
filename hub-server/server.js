@@ -5,7 +5,7 @@
  * multiplayer relay Kart Circuit uses, Upstash persistence, rate limiting),
  * adopted as this project's backend. Changes made for the arcade, all marked
  * "(arcade)":
- *   - API-only mode (default): serves only /api/profiles, /api/worlds, /health
+ *   - API-only mode (default): serves only /api/profiles, /api/worlds, /api/reports, /health
  *     and the /mp WebSocket. The hub website, the private page viewer, feedback,
  *     cakes, videos, friends and messages endpoints are switched off.
  *     HUB_API_ONLY=0 restores the original everything-on behaviour.
@@ -15,6 +15,8 @@
  *     hash, so a leaked database alone can't be replayed as logins.
  *   - /api/worlds/*: Blockcraft worlds saved to a signed-in profile.
  *   - Dev accounts can't be created unless HUB_ALLOW_DEV=1.
+ *   - /api/reports/*: bug reports from players. Anyone can send; only the accounts
+ *     in HUB_REPORT_ADMINS (default "owen") can list or close them.
  */
 const http = require("http");
 const https = require("https");
@@ -1804,6 +1806,63 @@ async function handleCakesApi(req, res, action) {
   sendJson(res, 404, { ok: false, msg: "Unknown action." });
 }
 
+// ---------- Bug reports (arcade) ----------
+// Anyone can send one (signed in or not); only the accounts named in
+// HUB_REPORT_ADMINS (default "owen") can read or close them. They are kept in the
+// same durable list the older feedback inbox used (feedback.json / Upstash).
+const REPORT_ADMINS = new Set((process.env.HUB_REPORT_ADMINS || "owen").split(",").map((n) => n.trim().toLowerCase()).filter(Boolean));
+const RATE_LIMIT_REPORTS = { windowMs: 60_000, max: Number(process.env.RATE_LIMIT_REPORTS_MAX) || 5 };
+const shortText = (v, max) => (typeof v === "string" ? v.replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, max) : "");
+
+async function handleReportsApi(req, res, action) {
+  if (req.method !== "POST") { sendJson(res, 405, { ok: false, msg: "Method not allowed." }); return; }
+  if (action === "submit" && !checkRateLimit(req, res, "reports", RATE_LIMIT_REPORTS)) return;
+  let body;
+  try {
+    body = await readJsonBody(req, 8 * 1024);
+  } catch (e) {
+    sendJson(res, 400, { ok: false, msg: "That report was too big — keep it under 2000 characters." });
+    return;
+  }
+
+  if (action === "submit") {
+    const category = typeof body.category === "string" ? body.category : "";
+    const message = typeof body.message === "string" ? body.message.trim() : "";
+    if (!FEEDBACK_CATEGORIES.has(category)) { sendJson(res, 400, { ok: false, msg: "Pick what kind of report this is." }); return; }
+    if (message.length < 5) { sendJson(res, 400, { ok: false, msg: "Tell us a little more — at least a few words." }); return; }
+    if (message.length > 2000) { sendJson(res, 400, { ok: false, msg: "That's a bit long — 2000 characters max." }); return; }
+    const auth = authenticate(body);   // optional: a signed-in name is attached only if the session checks out
+    const c = body.context && typeof body.context === "object" ? body.context : {};
+    feedback.push({
+      id: crypto.randomUUID(),
+      name: auth ? auth.entry.name : "Guest",
+      category,
+      message,
+      context: { game: shortText(c.game, 60), build: shortText(c.build, 40), platform: shortText(c.platform, 80), screen: shortText(c.screen, 20), ua: shortText(c.ua, 200) },
+      createdAt: Date.now(),
+    });
+    if (feedback.length > MAX_STORED_FEEDBACK) feedback.splice(0, feedback.length - MAX_STORED_FEEDBACK);
+    saveFeedbackToDisk();
+    sendJson(res, 200, { ok: true });
+    return;
+  }
+
+  if (action === "list" || action === "close") {
+    const auth = authenticate(body);
+    if (!auth) { sendJson(res, 200, { ok: false, authFailed: true, msg: "Sign in again." }); return; }
+    if (!REPORT_ADMINS.has(auth.key)) { sendJson(res, 200, { ok: false, notAdmin: true, msg: "Only the arcade owner can read reports." }); return; }
+    if (action === "close") {
+      const id = typeof body.id === "string" ? body.id : "";
+      const i = feedback.findIndex((f) => f.id === id);
+      if (i >= 0) { feedback.splice(i, 1); saveFeedbackToDisk(); }
+    }
+    sendJson(res, 200, { ok: true, reports: feedback.slice().reverse() });
+    return;
+  }
+
+  sendJson(res, 404, { ok: false, msg: "Unknown action." });
+}
+
 async function handleFeedbackApi(req, res, action) {
   if (req.method !== "POST") { sendJson(res, 405, { ok: false, msg: "Method not allowed." }); return; }
   let body;
@@ -2606,10 +2665,17 @@ function requestHandler(req, res) {
       sendJson(res, 200, { ok: true, service: "mimi-arcade-hub", profiles: Object.keys(profiles).length, rooms: rooms.size, uptime: Math.round(process.uptime()) });
       return;
     }
-    if (!urlPath.startsWith("/api/profiles/") && !urlPath.startsWith("/api/worlds/")) {
+    if (!urlPath.startsWith("/api/profiles/") && !urlPath.startsWith("/api/worlds/") && !urlPath.startsWith("/api/reports/")) {
       sendJson(res, 404, { ok: false, msg: "Not found." });
       return;
     }
+  }
+  const reportsMatch = urlPath.match(/^\/api\/reports\/([a-z-]+)$/);
+  if (reportsMatch) {
+    handleReportsApi(req, res, reportsMatch[1]).catch(() => {
+      sendJson(res, 500, { ok: false, msg: "Server error." });
+    });
+    return;
   }
   const worldsMatch = urlPath.match(/^\/api\/worlds\/([a-z-]+)$/);
   if (worldsMatch) {

@@ -28,7 +28,7 @@ const post = async (p, body) => { const r = await fetch(base + p, { method: 'POS
 
 const server = spawn(process.execPath, ['hub-server/server.js'], {
   cwd: new URL('..', import.meta.url).pathname,
-  env: { ...process.env, PORT: String(PORT), MIMI_DATA_DIR: DATA, HASH_PEPPER: 'test-pepper', RATE_LIMIT_STRICT_MAX: '1000', UPSTASH_REDIS_REST_URL: '', UPSTASH_REDIS_REST_TOKEN: '' },
+  env: { ...process.env, PORT: String(PORT), MIMI_DATA_DIR: DATA, HASH_PEPPER: 'test-pepper', RATE_LIMIT_STRICT_MAX: '1000', RATE_LIMIT_REPORTS_MAX: '8', UPSTASH_REDIS_REST_URL: '', UPSTASH_REDIS_REST_TOKEN: '' },
   stdio: ['ignore', 'pipe', 'pipe'],
 });
 let log = '';
@@ -106,6 +106,38 @@ try {
     if (r.status !== 404) ok(`${p} is switched off`, false, `status ${r.status}`);
   }
   ok('the hub-only endpoints and static files are switched off', true);
+
+  // ---- bug reports
+  const tokOwner = (await post('/api/profiles/login', { key, passwordHash: h, device: { label: 'Reports test' } })).json.token;
+  await post('/api/profiles/create', { key: 'kid', name: 'Kid', passwordHash: hashPw('kid', 'pw12') });
+  const kidTok = (await post('/api/profiles/login', { key: 'kid', passwordHash: hashPw('kid', 'pw12'), device: { label: 'Kid phone' } })).json.token;
+  const ctx = { game: 'tetra-drop', build: '2026-09-27 10:00', platform: 'Android app', screen: '1280x720', ua: 'Mozilla/5.0 test' };
+  const guest = await post('/api/reports/submit', { category: 'bug', message: 'The pieces stop falling after level 3', context: ctx });
+  ok('anyone can send a bug report, no account needed', guest.json?.ok === true && guest.headers.get('access-control-allow-origin') === '*');
+  const signed = await post('/api/reports/submit', { category: 'suggestion', message: 'Please add a night mode', key: 'kid', token: kidTok, context: ctx });
+  ok('a signed-in player can send one too', signed.json?.ok === true);
+  ok('a report needs a real message', (await post('/api/reports/submit', { category: 'bug', message: 'hi' })).json?.ok === false);
+  ok('...and a known category', (await post('/api/reports/submit', { category: 'hax', message: 'this is fine text' })).json?.ok === false);
+  ok('...and is limited to 2000 characters', (await post('/api/reports/submit', { category: 'bug', message: 'x'.repeat(2001) })).json?.ok === false);
+  const nolist = await post('/api/reports/list', {});
+  ok('reading reports needs a sign-in', nolist.json?.ok === false);
+  const kidList = await post('/api/reports/list', { key: 'kid', token: kidTok });
+  ok('an ordinary player cannot read reports', kidList.json?.ok === false && kidList.json?.notAdmin === true && !JSON.stringify(kidList.json).includes('night mode'));
+  ok('a forged token cannot read them either', (await post('/api/reports/list', { key, token: 'x'.repeat(43) })).json?.ok === false);
+  const list = await post('/api/reports/list', { key, token: tokOwner });
+  ok('the owner account can read every report, newest first', list.json?.ok === true && list.json.reports.length === 2 && list.json.reports[0].message.includes('night mode'), JSON.stringify(list.json?.reports?.map((r) => r.name)));
+  ok('a report remembers who sent it (or Guest) and the game info', list.json.reports[0].name === 'Kid' && list.json.reports[1].name === 'Guest' && list.json.reports[1].context.game === 'tetra-drop' && list.json.reports[1].context.platform === 'Android app');
+  ok('a claimed name without a valid session is only ever Guest', (await post('/api/reports/submit', { category: 'bug', message: 'I am pretending to be someone', key: 'kid', token: 'y'.repeat(43) })).json?.ok === true && (await post('/api/reports/list', { key, token: tokOwner })).json.reports[0].name === 'Guest');
+  const closed = await post('/api/reports/close', { key, token: tokOwner, id: list.json.reports[1].id });
+  ok('the owner can close a report', closed.json?.ok === true && closed.json.reports.every((r) => r.id !== list.json.reports[1].id));
+  ok('an ordinary player cannot close one', (await post('/api/reports/close', { key: 'kid', token: kidTok, id: list.json.reports[0].id })).json?.ok === false);
+  await sleep(300);
+  ok('reports are saved to disk', fs.existsSync(path.join(DATA, 'data', 'feedback.json')) && /night mode/.test(fs.readFileSync(path.join(DATA, 'data', 'feedback.json'), 'utf8')));
+  let floodLimited = false;
+  for (let i = 0; i < 20 && !floodLimited; i++) floodLimited = (await post('/api/reports/submit', { category: 'bug', message: `flooding the inbox ${i}` })).status === 429;
+  ok('flooding the inbox hits the rate limit', floodLimited);
+  const big = await fetch(base + '/api/reports/submit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ category: 'bug', message: 'z'.repeat(20000) }) }).then((r) => r.status).catch(() => 'closed');
+  ok('an oversized request is refused', big === 400 || big === 429 || big === 'closed');
 
   // ---- worlds
   const auth = { key, passwordHash: h };

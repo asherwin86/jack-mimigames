@@ -546,3 +546,16 @@ html, body {
 .inst-row .acct-btn { text-decoration: none; display: inline-block; }
 
 .season-tag { color: #ffe27a; font-weight: 700; }
+
+/* ---------- Bug reports ---------- */
+.bug-btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,.16); background: rgba(255,255,255,.06); color: inherit; cursor: pointer; font: 600 13px inherit; }
+.bug-btn:hover, .bug-btn.pad-focus { border-color: var(--accent, #6ee7ff); }
+.bug-card { max-width: 520px; width: min(520px, 94vw); }
+.bug-card textarea { width: 100%; box-sizing: border-box; min-height: 110px; resize: vertical; padding: 10px 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,.18); background: rgba(255,255,255,.06); color: inherit; font: 14px/1.4 inherit; }
+.bug-card textarea:focus { outline: none; border-color: var(--accent, #6ee7ff); }
+.bug-cats { display: flex; flex-wrap: wrap; gap: 6px 14px; }
+.bug-list { display: flex; flex-direction: column; gap: 10px; max-height: 55vh; overflow: auto; }
+.bug-item { padding: 10px 12px; border-radius: 10px; background: rgba(255,255,255,.06); display: flex; flex-direction: column; gap: 6px; }
+.bug-item p { margin: 0; font-size: 14px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; }
+.bug-meta { font-size: 12px; color: rgba(255,255,255,.65); }
+.bug-item small { color: rgba(255,255,255,.45); font-size: 11px; }

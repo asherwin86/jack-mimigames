@@ -1,6 +1,7 @@
 import { Rocoins } from '../engine/Rocoins.js';
 import { isInstalledCopy } from '../engine/Install.js';
 import { openInstallDialog } from './InstallDialog.js';
+import { openBugReport } from './BugReportDialog.js';
 import { CATALOG, ALL_TAGS, TARGET } from '../games/catalog.js';
 import { isImplemented } from '../games/index.js';
 import { Scores } from '../engine/Storage.js';
@@ -66,6 +67,9 @@ export class Menu {
             ${isInstalledCopy() ? '' : `<button class="install-btn" type="button" aria-haspopup="dialog" title="Install 100 Mimi Games as an app, or download the Windows / Android app">
               <span aria-hidden="true">&#11015;</span><span>Get the app</span>
             </button>`}
+            <button class="bug-btn" type="button" aria-haspopup="dialog" title="Report a bug or send an idea">
+              <span aria-hidden="true">&#128030;</span><span>Report a bug</span>
+            </button>
             <button class="account-btn" type="button" aria-haspopup="dialog">
               <span class="acct-icon" aria-hidden="true">&#128100;</span><span class="acct-label">Sign in</span>
             </button>
@@ -124,6 +128,7 @@ export class Menu {
       if (e.target.closest('.account-btn')) { openAccountDialog(); return; }
       if (e.target.closest('.coins-btn')) { this.onAdmin?.(); return; }
       if (e.target.closest('.install-btn')) { openInstallDialog(); return; }
+      if (e.target.closest('.bug-btn')) { openBugReport(); return; }
       const opener = e.target.closest('.settings-btn');
       if (opener) {
         const box = this.root.querySelector('.settings-box');
@@ -290,7 +295,7 @@ export class Menu {
    *  thing to a real `:hover` a script can drive — CSS :hover only follows
    *  the actual mouse, never something moved by JS. */
   _setHover(el) {
-    const target = el?.closest?.('.tile, .toggle, .chip, .settings-btn, .account-btn, .coins-btn, .install-btn') ?? null;
+    const target = el?.closest?.('.tile, .toggle, .chip, .settings-btn, .account-btn, .coins-btn, .install-btn, .bug-btn') ?? null;
     if (target === this._hoverEl) return;
     this._hoverEl?.classList.remove('gp-hover');
     this._hoverEl = target;
