@@ -2,6 +2,10 @@
  *  menu, under the trailer. Keep entries brief; this isn't a commit log. */
 export const CHANGELOG = [
   {
+    title: 'Account tools for the arcade owner',
+    detail: 'The account server has a new operator command, scripts/hub-admin.mjs, to rename an account, set its password and choose who can read the bug report inbox. It only works when the server owner sets a secret admin token.',
+  },
+  {
     title: 'Bug reports from players',
     detail: 'There is a new Report a bug button on the menu and on the pause screen. Anyone can use it, signed in or not: pick bug, idea or other, describe what happened, and it goes to the arcade owner along with the game and device. Signed in as owen, the same window has an Inbox tab to read and tick off reports.',
   },

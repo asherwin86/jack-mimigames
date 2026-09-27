@@ -16,7 +16,10 @@
  *   - /api/worlds/*: Blockcraft worlds saved to a signed-in profile.
  *   - Dev accounts can't be created unless HUB_ALLOW_DEV=1.
  *   - /api/reports/*: bug reports from players. Anyone can send; only the accounts
- *     in HUB_REPORT_ADMINS (default "owen") can list or close them.
+ *     with the admin flag (or named in HUB_REPORT_ADMINS) can list or close them.
+ *   - /api/admin/*: operator tools (rename an account, set a password, grant the
+ *     report inbox), driven by scripts/hub-admin.mjs. Switched off unless the
+ *     HUB_ADMIN_TOKEN environment variable is set (16+ characters).
  */
 const http = require("http");
 const https = require("https");
@@ -1806,11 +1809,99 @@ async function handleCakesApi(req, res, action) {
   sendJson(res, 404, { ok: false, msg: "Unknown action." });
 }
 
+// ---------- Operator tools (arcade) ----------
+// Driven by scripts/hub-admin.mjs. Off (404) unless HUB_ADMIN_TOKEN is set on the server. Every call must carry
+// that token; wrong guesses are rate limited hard. The changes are made inside this running server (so it can
+// never overwrite them from a stale copy) and saved like any other profile change.
+const ADMIN_TOKEN = process.env.HUB_ADMIN_TOKEN || "";
+const RATE_LIMIT_ADMIN = { windowMs: 60_000, max: Number(process.env.RATE_LIMIT_ADMIN_MAX) || 10 };
+const tokenOk = (given) => {
+  if (ADMIN_TOKEN.length < 16 || typeof given !== "string") return false;
+  const a = crypto.createHash("sha256").update(given).digest();
+  const b = crypto.createHash("sha256").update(ADMIN_TOKEN).digest();
+  return crypto.timingSafeEqual(a, b);
+};
+const clientHash = (key, password) => crypto.createHash("sha256").update(`mimiProfile:${key}:${password}`).digest("hex");   // what the game sends
+const nameProblem = (n) => (typeof n !== "string" || n.trim().length < 2 || n.trim().length > 24 || !/^[\p{L}\p{N} _.-]+$/u.test(n.trim()) ? "Names are 2-24 letters, numbers, spaces, dots, dashes or underscores." : null);
+
+async function moveWorlds(fromKey, toKey) {
+  const index = await loadWorldIndex(fromKey);
+  const ids = Object.keys(index);
+  for (const id of ids) {
+    const data = await readWorldData(fromKey, id);
+    if (typeof data === "string") await writeWorldData(toKey, id, data);
+  }
+  if (ids.length) await saveWorldIndex(toKey, index);
+  await deleteAllWorlds(fromKey);
+  return ids.length;
+}
+
+async function handleAdminApi(req, res, action) {
+  if (ADMIN_TOKEN.length < 16) { sendJson(res, 404, { ok: false, msg: "Not found." }); return; }   // switched off
+  if (req.method !== "POST") { sendJson(res, 405, { ok: false, msg: "Method not allowed." }); return; }
+  let body;
+  try { body = await readJsonBody(req, 4 * 1024); } catch (e) { sendJson(res, 400, { ok: false, msg: "Bad request." }); return; }
+  if (!tokenOk(body.adminToken)) {
+    if (!checkRateLimit(req, res, "admin", RATE_LIMIT_ADMIN)) return;
+    sendJson(res, 200, { ok: false, msg: "Wrong admin token." });
+    return;
+  }
+  const keyOf = (n) => String(n ?? "").trim().toLowerCase();
+
+  if (action === "accounts") {
+    sendJson(res, 200, { ok: true, accounts: Object.entries(profiles).map(([k, e]) => ({ key: k, name: e.name, admin: e.admin === true, devices: Object.keys(e.sessions || {}).length })) });
+    return;
+  }
+
+  if (action === "set-password" || action === "rename" || action === "set-admin") {
+    const from = keyOf(body.name ?? body.from);
+    const entry = profiles[from];
+    if (!entry) { sendJson(res, 200, { ok: false, msg: `No account named "${from}".` }); return; }
+
+    if (action === "set-admin") {
+      entry.admin = body.admin !== false;
+      entry.updatedAt = Date.now();
+      saveProfilesToDisk();
+      sendJson(res, 200, { ok: true, msg: `${entry.name} ${entry.admin ? "can now read" : "can no longer read"} the bug report inbox.` });
+      return;
+    }
+
+    const password = typeof body.password === "string" ? body.password : "";
+    if (!password || password.length > 200) { sendJson(res, 200, { ok: false, msg: "Give a password." }); return; }
+
+    if (action === "set-password") {
+      entry.passwordHash = pepperHash(clientHash(from, password));
+      entry.sessions = {};
+      entry.updatedAt = Date.now();
+      saveProfilesToDisk();
+      sendJson(res, 200, { ok: true, msg: `Password changed for ${entry.name}. Every device was signed out.` });
+      return;
+    }
+
+    // rename: the stored password hash includes the name, so a new password is set at the same time
+    const display = typeof body.to === "string" ? body.to.trim() : "";
+    const to = keyOf(display);
+    const bad = nameProblem(display);
+    if (bad) { sendJson(res, 200, { ok: false, msg: bad }); return; }
+    if (to === from) { sendJson(res, 200, { ok: false, msg: "That is already its name." }); return; }
+    if (profiles[to]) { sendJson(res, 200, { ok: false, msg: `The name "${display}" is already taken.` }); return; }
+    const moved = { ...entry, name: display, passwordHash: pepperHash(clientHash(to, password)), sessions: {}, updatedAt: Date.now() };
+    const worlds = await moveWorlds(from, to);
+    profiles[to] = moved;
+    delete profiles[from];
+    await saveProfilesToDisk();
+    sendJson(res, 200, { ok: true, msg: `Renamed ${entry.name} to ${display} (${worlds} world${worlds === 1 ? "" : "s"} moved) and set the new password. Every device was signed out.` });
+    return;
+  }
+
+  sendJson(res, 404, { ok: false, msg: "Unknown action." });
+}
+
 // ---------- Bug reports (arcade) ----------
 // Anyone can send one (signed in or not); only the accounts named in
-// HUB_REPORT_ADMINS (default "owen") can read or close them. They are kept in the
+// an account with the admin flag (set by scripts/hub-admin.mjs) or named in HUB_REPORT_ADMINS can read or close them. They are kept in the
 // same durable list the older feedback inbox used (feedback.json / Upstash).
-const REPORT_ADMINS = new Set((process.env.HUB_REPORT_ADMINS || "owen").split(",").map((n) => n.trim().toLowerCase()).filter(Boolean));
+const REPORT_ADMINS = new Set((process.env.HUB_REPORT_ADMINS || "").split(",").map((n) => n.trim().toLowerCase()).filter(Boolean));   // optional; the usual way is scripts/hub-admin.mjs make-admin
 const RATE_LIMIT_REPORTS = { windowMs: 60_000, max: Number(process.env.RATE_LIMIT_REPORTS_MAX) || 5 };
 const shortText = (v, max) => (typeof v === "string" ? v.replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, max) : "");
 
@@ -1850,7 +1941,7 @@ async function handleReportsApi(req, res, action) {
   if (action === "list" || action === "close") {
     const auth = authenticate(body);
     if (!auth) { sendJson(res, 200, { ok: false, authFailed: true, msg: "Sign in again." }); return; }
-    if (!REPORT_ADMINS.has(auth.key)) { sendJson(res, 200, { ok: false, notAdmin: true, msg: "Only the arcade owner can read reports." }); return; }
+    if (auth.entry.admin !== true && !REPORT_ADMINS.has(auth.key)) { sendJson(res, 200, { ok: false, notAdmin: true, msg: "Only the arcade owner can read reports." }); return; }
     if (action === "close") {
       const id = typeof body.id === "string" ? body.id : "";
       const i = feedback.findIndex((f) => f.id === id);
@@ -2665,10 +2756,17 @@ function requestHandler(req, res) {
       sendJson(res, 200, { ok: true, service: "mimi-arcade-hub", profiles: Object.keys(profiles).length, rooms: rooms.size, uptime: Math.round(process.uptime()) });
       return;
     }
-    if (!urlPath.startsWith("/api/profiles/") && !urlPath.startsWith("/api/worlds/") && !urlPath.startsWith("/api/reports/")) {
+    if (!urlPath.startsWith("/api/profiles/") && !urlPath.startsWith("/api/worlds/") && !urlPath.startsWith("/api/reports/") && !urlPath.startsWith("/api/admin/")) {
       sendJson(res, 404, { ok: false, msg: "Not found." });
       return;
     }
+  }
+  const adminMatch = urlPath.match(/^\/api\/admin\/([a-z-]+)$/);
+  if (adminMatch) {
+    handleAdminApi(req, res, adminMatch[1]).catch(() => {
+      sendJson(res, 500, { ok: false, msg: "Server error." });
+    });
+    return;
   }
   const reportsMatch = urlPath.match(/^\/api\/reports\/([a-z-]+)$/);
   if (reportsMatch) {

@@ -21,6 +21,8 @@
     "check:newgames": "node scripts/check-newgames.mjs",
     "check:moregames": "node scripts/check-more-games.mjs",
     "check:seasons": "node scripts/check-seasons.mjs",
+    "check:admin": "node scripts/check-admin-cli.mjs",
+    "hub:admin": "node scripts/hub-admin.mjs",
     "check:nativepad": "node scripts/check-nativepad.mjs",
     "server:hub": "node hub-server/server.js",
     "electron": "npm run build && electron .",

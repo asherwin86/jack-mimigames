@@ -5,6 +5,13 @@ Newest update first. Every update is also in its own file in the "updates"
 folder. Each one is released to the website and the Windows app together
 (the app updates itself the next time you open it).
 
+v1.0.51  -  27 Sep 2026
+Owner tools for the account server
+----------------------------------
+New command-line tool (scripts/hub-admin.mjs) for the person running the arcade: rename an account (its worlds and Rocoin backup move with it), set a password, and choose which account can read the bug report inbox.
+It only works when a secret HUB_ADMIN_TOKEN (16+ characters) is set on the account server; without it the tools are switched off. Wrong tokens are rate limited.
+The bug report inbox is now given to an account by the tool instead of being tied to the name "owen".
+
 v1.0.50  -  27 Sep 2026
 Bug reports from players
 ------------------------

@@ -28,7 +28,7 @@ const post = async (p, body) => { const r = await fetch(base + p, { method: 'POS
 
 const server = spawn(process.execPath, ['hub-server/server.js'], {
   cwd: new URL('..', import.meta.url).pathname,
-  env: { ...process.env, PORT: String(PORT), MIMI_DATA_DIR: DATA, HASH_PEPPER: 'test-pepper', RATE_LIMIT_STRICT_MAX: '1000', RATE_LIMIT_REPORTS_MAX: '8', UPSTASH_REDIS_REST_URL: '', UPSTASH_REDIS_REST_TOKEN: '' },
+  env: { ...process.env, PORT: String(PORT), MIMI_DATA_DIR: DATA, HASH_PEPPER: 'test-pepper', RATE_LIMIT_STRICT_MAX: '1000', RATE_LIMIT_REPORTS_MAX: '8', HUB_REPORT_ADMINS: 'owen', UPSTASH_REDIS_REST_URL: '', UPSTASH_REDIS_REST_TOKEN: '' },
   stdio: ['ignore', 'pipe', 'pipe'],
 });
 let log = '';
