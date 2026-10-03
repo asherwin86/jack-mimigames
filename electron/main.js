@@ -1,9 +1,13 @@
-import { app, BrowserWindow, dialog, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
+import { spawn } from 'node:child_process';
+import fs from 'node:fs';
+import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import electronUpdater from 'electron-updater';   // CommonJS package: no named exports under ESM
 
 const { autoUpdater } = electronUpdater;
+const { createOtherApp } = createRequire(import.meta.url)('./otherApp.cjs');   // CommonJS, shared with 51 Mimi Games
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const UPDATE_CHECK_EVERY_MS = 4 * 60 * 60 * 1000;
 
@@ -12,6 +16,24 @@ const UPDATE_CHECK_EVERY_MS = 4 * 60 * 60 * 1000;
 if (!app.requestSingleInstanceLock()) app.quit();
 
 let win = null;
+
+/** The Windows-only "Switch to 51 Mimi Games" button: pick that app's .exe once, then it starts it and closes this app. */
+function setUpOtherApp() {
+  // A source run (npm run electron) may pretend to be another platform, for testing. A packaged app never does.
+  const platform = (!app.isPackaged && process.env.MIMI_TEST_PLATFORM) || process.platform;
+  const otherApp = createOtherApp({
+    otherName: '51 Mimi Games', exeName: '51 Mimi Games.exe',
+    userDataDir: app.getPath('userData'), selfExe: process.execPath, platform, fs, spawn,
+    localAppData: process.env.LOCALAPPDATA,
+    showOpenDialog: (o) => dialog.showOpenDialog(win ?? undefined, o),
+    quit: () => app.quit(),
+  });
+  const fromOurWindow = (e) => !!win && e.sender === win.webContents;
+  ipcMain.on('other-app:info', (e) => { e.returnValue = fromOurWindow(e) ? otherApp.info() : { supported: false, name: '' }; });
+  ipcMain.handle('other-app:status', (e) => (fromOurWindow(e) ? otherApp.status() : null));
+  ipcMain.handle('other-app:choose', (e) => (fromOurWindow(e) ? otherApp.choose() : { ok: false }));
+  ipcMain.handle('other-app:launch', (e) => (fromOurWindow(e) ? otherApp.launch() : { ok: false }));
+}
 
 function createWindow() {
   win = new BrowserWindow({
@@ -23,7 +45,7 @@ function createWindow() {
     // Keep running at full speed when minimised or behind another window, so a
     // game hosted from this window keeps serving its players (a browser tab
     // would be throttled to a crawl in the background).
-    webPreferences: { contextIsolation: true, sandbox: true, backgroundThrottling: false },
+    webPreferences: { contextIsolation: true, sandbox: true, backgroundThrottling: false, preload: path.join(__dirname, 'preload.cjs') },
   });
   // The built app is a static bundle (base: './' in vite.config.js) so it
   // loads straight off disk — no server, no internet required to play.
@@ -72,6 +94,7 @@ app.on('second-instance', () => {
 });
 
 app.whenReady().then(() => {
+  setUpOtherApp();
   createWindow();
   setUpAutoUpdate();
 

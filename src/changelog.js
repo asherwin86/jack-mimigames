@@ -2,6 +2,10 @@
  *  menu, under the trailer. Keep entries brief; this isn't a commit log. */
 export const CHANGELOG = [
   {
+    title: 'Switch button opens your 51 app (Windows)',
+    detail: 'In the Windows app, Switch to 51 Mimi Games now starts your 51 Mimi Games app and closes this one. The first time it asks where that app is (a normal file picker) and remembers; right-click the button to choose a different one. The website and the other apps still open the 51 website.',
+  },
+  {
     title: 'Switch to 51 Mimi Games',
     detail: 'A new Switch to 51 Mimi Games button on the menu takes you to the sister arcade. On the website it opens in the same tab (Back returns here); in the desktop and Android apps it opens your browser.',
   },

@@ -1,0 +1,8 @@
+v1.0.53  -  3 Oct 2026
+Windows app: the Switch button now opens your 51 Mimi Games app
+---------------------------------------------------------------
+In the Windows desktop app, "Switch to 51 Mimi Games" now starts your copy of the 51 Mimi Games app and closes this one, instead of opening a web page.
+The first time you press it, a normal file picker opens so you can choose where the 51 Mimi Games app is (the .exe). It remembers your choice. Right-click the button any time to choose a different one. If the app has been moved or uninstalled it asks again.
+If 51 Mimi Games is already open, switching just brings that window to the front.
+Only the Windows app does this. The website, the Android app and the Mac and Linux apps still open the 51 Mimi Games website.
+The app never lets a web page choose which program to run: only a file you pick in the system file picker is used.
