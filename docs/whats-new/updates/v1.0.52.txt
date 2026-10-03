@@ -1,0 +1,7 @@
+v1.0.52  -  3 Oct 2026
+Switch to 51 Mimi Games
+-----------------------
+New "Switch to 51 Mimi Games" button on the menu (beside Get the app / Report a bug). It takes you to the sister arcade at https://mimi-games-bvpj.onrender.com/.
+On the website it opens in the same tab, so the browser Back button brings you back to 100 Mimi Games. In the Windows app, the Android app and the installed web app it opens your normal browser instead, because those windows only hold this arcade.
+It needs an internet connection. The button works with the controller cursor too. The Report a bug button was restyled to match the others.
+51 Mimi Games itself was not changed, so it has no button back yet.

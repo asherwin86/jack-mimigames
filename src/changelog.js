@@ -2,6 +2,10 @@
  *  menu, under the trailer. Keep entries brief; this isn't a commit log. */
 export const CHANGELOG = [
   {
+    title: 'Switch to 51 Mimi Games',
+    detail: 'A new Switch to 51 Mimi Games button on the menu takes you to the sister arcade. On the website it opens in the same tab (Back returns here); in the desktop and Android apps it opens your browser.',
+  },
+  {
     title: 'Account tools for the arcade owner',
     detail: 'The account server has a new operator command, scripts/hub-admin.mjs, to rename an account, set its password and choose who can read the bug report inbox. It only works when the server owner sets a secret admin token.',
   },

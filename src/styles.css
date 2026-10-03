@@ -559,3 +559,15 @@ html, body {
 .bug-item p { margin: 0; font-size: 14px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; }
 .bug-meta { font-size: 12px; color: rgba(255,255,255,.65); }
 .bug-item small { color: rgba(255,255,255,.45); font-size: 11px; }
+
+/* ---------- Switch to the sister arcade ---------- */
+.menu-tools .switch-btn {
+  display: inline-flex; align-items: center; gap: 7px; cursor: pointer;
+  background: rgba(255,200,97,.12); border: 1px solid rgba(255,200,97,.5); color: var(--text);
+  border-radius: 999px; padding: 9px 16px; font: 700 13px var(--font);
+  transition: border-color .15s ease, background .15s ease;
+}
+.menu-tools .switch-btn:hover, .switch-btn.gp-hover { border-color: #ffc861; background: rgba(255,200,97,.22); }
+
+.menu-tools .bug-btn { border-radius: 999px; padding: 9px 16px; font: 700 13px var(--font); background: rgba(255,255,255,.08); border-color: rgba(255,255,255,.28); }
+.menu-tools .bug-btn:hover, .bug-btn.gp-hover { border-color: var(--accent, #6ee7ff); background: rgba(255,255,255,.14); }
