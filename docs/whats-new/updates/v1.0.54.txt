@@ -1,0 +1,6 @@
+v1.0.54  -  3 Oct 2026
+Switching between the two arcades now goes fullscreen
+-----------------------------------------------------
+In a browser, pressing Switch now opens the other arcade fullscreen, with no address bar. Browsers only allow fullscreen after a tap, and that tap does not carry across to the new page, so the new page asks straight away and, if the browser says no, shows a small "Tap anywhere for fullscreen" hint and goes fullscreen on your first tap or key press.
+Works in both directions (100 to 51 and 51 to 100). Not used in the Windows app, the Android app or a Home Screen app, which have no bar to hide.
+iPhone Safari has no fullscreen for web pages at all, so there it only helps once the site is added to the Home Screen. 100 Mimi Games now has the same Home Screen settings 51 already had, so it also opens with no Safari bars when added.

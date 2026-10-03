@@ -6,6 +6,7 @@ import { showStart, showPause } from './ui/Overlay.js';
 import { loadGame } from './games/index.js';
 import { buildBackdrop } from './ui/Backdrop.js';
 import { mountEventCounter } from './ui/EventCounter.js';
+import { armFullscreenOnArrival } from './engine/OtherArcade.js';
 import { Settings } from './engine/Settings.js';
 import { Rocoins } from './engine/Rocoins.js';
 import { runFinished, onEarned, minutesPlayed } from './engine/challenges.js';
@@ -27,6 +28,7 @@ menu.onProps = (on) => engine.idleScene?.setProps?.(on);
 menu.onBlackSky = (on) => engine.idleScene?.setBlack?.(on);
 menu.onMusic = (on) => engine.idleScene?.setMusic?.(on);
 const eventCounter = mountEventCounter();
+armFullscreenOnArrival();   // arrived from 51 Mimi Games with ?fs=1: go fullscreen
 menu.onSeasonal = (on) => { engine.idleScene?.setSeasonal?.(on); eventCounter.refresh(); };
 
 let current = null;

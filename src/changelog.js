@@ -2,6 +2,10 @@
  *  menu, under the trailer. Keep entries brief; this isn't a commit log. */
 export const CHANGELOG = [
   {
+    title: 'Switching goes fullscreen',
+    detail: 'When you switch between 100 Mimi Games and 51 Mimi Games in a browser, the page you arrive at asks to go fullscreen so there is no address bar. Browsers only allow that after a tap, so if it is refused a small hint says Tap anywhere for fullscreen and your first tap does it. iPhone Safari has no fullscreen for web pages at all: add the site to your Home Screen (now set up to open with no bars) and it fills the screen.',
+  },
+  {
     title: 'Switch button opens your 51 app (Windows)',
     detail: 'In the Windows app, Switch to 51 Mimi Games now starts your 51 Mimi Games app and closes this one. The first time it asks where that app is (a normal file picker) and remembers; right-click the button to choose a different one. The website and the other apps still open the 51 website.',
   },
