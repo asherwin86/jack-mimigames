@@ -25,6 +25,7 @@
     "check:otherapp": "node scripts/check-otherapp.mjs",
     "check:linked": "node scripts/check-linked.mjs",
     "check:parental": "node scripts/check-parental.mjs",
+    "check:parental-server": "node scripts/check-parental-server.mjs",
     "hub:admin": "node scripts/hub-admin.mjs",
     "check:nativepad": "node scripts/check-nativepad.mjs",
     "server:hub": "node hub-server/server.js",

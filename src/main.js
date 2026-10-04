@@ -14,6 +14,7 @@ import { Rocoins } from './engine/Rocoins.js';
 import { runFinished, onEarned, minutesPlayed } from './engine/challenges.js';
 import { createAdmin, notifyEarned } from './ui/AdminPanel.js';
 import { startRocoinSync } from './engine/RocoinSync.js';
+import { startParentalSync } from './engine/ParentalSync.js';
 import { TouchControls } from './ui/TouchControls.js';
 import './engine/Install.js';   // catches the browser's install prompt and registers the service worker (website only)
 
@@ -55,6 +56,7 @@ const syncCoins = () => { engine.hud.coins(Rocoins.balance()); menu.setCoins?.(R
 Rocoins.onChange(syncCoins);
 syncCoins();
 onEarned(notifyEarned);
+startParentalSync();   // a child's parental controls saved on their account follow them between devices
 startRocoinSync();   // signed in: the wallet is backed up to the account and follows you between devices
 addEventListener('mimi:admin', () => admin.toggle());   // Kart Circuit forwards the key from inside its frame
 

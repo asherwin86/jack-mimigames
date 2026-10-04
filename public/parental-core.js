@@ -66,6 +66,7 @@
       bonus: { date: r.bonus && /^\d{4}-\d{2}-\d{2}$/.test(r.bonus.date) ? r.bonus.date : '', minutes: num(r.bonus && r.bonus.minutes, 0, 600, 0) },
       pass: { until: num(r.pass && r.pass.until, 0, 4e12, 0) },   // a parent let them play outside the allowed hours until this time
       lock: { fails: num(r.lock && r.lock.fails, 0, 100, 0), until: num(r.lock && r.lock.until, 0, 4e12, 0) },
+      t: num(r.t, 0, 4e12, 0),   // when a parent last changed the rules (the newer copy wins when it is synced with an account)
     };
   }
 
@@ -84,12 +85,16 @@
     });
     return out;
   }
-  function save(patch) {
-    var next = sanitize(assign(load(), patch));
+  function commit(next) {
     write(KEY, JSON.stringify(next));
     refresh();
     listeners.slice().forEach(function (fn) { try { fn(next); } catch (e) { /* a listener's bug must not break saving */ } });
     return next;
+  }
+  function save(patch) {
+    var merged = assign(load(), patch);
+    if (Object.keys(patch || {}).some(function (k) { return k !== 'lock'; })) merged.t = clock();   // (wrong-PIN counting is not a rule change)
+    return commit(sanitize(merged));
   }
 
   /* -------------------------------------------------------------- dates */
@@ -99,12 +104,39 @@
   function minutesOf(s) { return Number(s.slice(0, 2)) * 60 + Number(s.slice(3)); }
 
   /* ---------------------------------------------------------- the clock */
-  function usedSeconds() {
+  // Play time today is kept as one counter per device (by[slot] = seconds) so that the same child playing on two devices
+  // adds up correctly when the counters are merged through an account. r is stamped when a parent resets the timer.
+  var SLOT_KEY = 'mg.parental.slot.v1';
+  function slotId() {
+    var id = read(SLOT_KEY);
+    if (!id || !/^[0-9a-f]{12}$/.test(id)) { id = randomHex(6); write(SLOT_KEY, id); }
+    return id;
+  }
+  function cleanUsed(u) {
+    var out = { date: '', r: 0, by: {} };
+    if (!u || typeof u !== 'object' || typeof u.date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(u.date)) return out;
+    out.date = u.date; out.r = num(u.r, 0, 4e12, 0);
+    if (u.by && typeof u.by === 'object') {
+      Object.keys(u.by).slice(0, 20).forEach(function (k) { if (/^[0-9a-f]{1,16}$/.test(k)) out.by[k] = num(u.by[k], 0, 86400, 0); });
+    } else if (isFinite(u.seconds) && u.seconds > 0) out.by.old = num(u.seconds, 0, 86400, 0);   // the first version kept one number
+    return out;
+  }
+  function usedRecord() {
     var u = null;
     try { u = JSON.parse(read(USED_KEY)); } catch (e) { u = null; }
-    return u && u.date === dateKey() && isFinite(u.seconds) && u.seconds > 0 ? u.seconds : 0;
+    u = cleanUsed(u);
+    return u.date === dateKey() ? u : { date: dateKey(), r: 0, by: {} };
   }
-  function addUsed(sec) { write(USED_KEY, JSON.stringify({ date: dateKey(), seconds: usedSeconds() + sec })); }
+  function usedSeconds() {
+    var u = usedRecord(), total = 0;
+    Object.keys(u.by).forEach(function (k) { total += u.by[k]; });
+    return total;
+  }
+  function addUsed(sec) {
+    var u = usedRecord(), id = slotId();
+    u.by[id] = (u.by[id] || 0) + sec;
+    write(USED_KEY, JSON.stringify(u));
+  }
 
   function hoursState(s, d, now) {
     if (!s.hours.on) return { ok: true };
@@ -195,7 +227,37 @@
     var next = save({ bonus: { date: today, minutes: Math.min(600, (s.bonus.date === today ? s.bonus.minutes : 0) + add) }, pass: { until: clock() + add * 60 * 1000 } });
     return next;
   }
-  function resetToday() { write(USED_KEY, JSON.stringify({ date: dateKey(), seconds: 0 })); refresh(); }
+  function resetToday() { write(USED_KEY, JSON.stringify({ date: dateKey(), r: clock(), by: {} })); refresh(); }
+
+  /* ---------------------------------------------------- account syncing */
+  /** What goes to the child's account: the rules (not the wrong-PIN counter) and today's play time. */
+  function exportSync() {
+    var s = load();
+    s.lock = { fails: 0, until: 0 };
+    return { settings: s, used: usedRecord() };
+  }
+  /** Merges what the account has with this device. The newer rules win; play time is merged per device (the newer reset wins).
+   *  With { preferRemote: true } the account's rules replace this device's whatever their age (linking to an account that already has rules).
+   *  Returns { rules: true if the rules here changed, localNewer: true if this device's rules are newer than the account's }. */
+  function importSync(remote, opts) {
+    var out = { rules: false, localNewer: false };
+    if (!remote || typeof remote !== 'object') return out;
+    var theirs = sanitize(remote.settings), mine = load();
+    if (theirs.pin) {
+      if (!mine.pin || theirs.t > mine.t || (opts && opts.preferRemote)) {
+        theirs.lock = mine.lock;
+        if (JSON.stringify(theirs) !== JSON.stringify(mine)) { commit(theirs); out.rules = true; }
+      }
+      if (mine.t > theirs.t) out.localNewer = true;
+    }
+    var a = usedRecord(), b = cleanUsed(remote.used), merged = a;
+    if (b.date === a.date) {
+      if (b.r > a.r) merged = b;
+      else if (b.r === a.r) { merged = { date: a.date, r: a.r, by: {} }; Object.keys(a.by).concat(Object.keys(b.by)).forEach(function (k) { merged.by[k] = Math.max(a.by[k] || 0, b.by[k] || 0); }); }
+      if (JSON.stringify(merged) !== JSON.stringify(a)) { write(USED_KEY, JSON.stringify(merged)); refresh(); }
+    }
+    return out;
+  }
 
   /* ------------------------------------------------------ what is allowed */
   function gameBlocked(id) { var s = load(); return s.enabled && s.blocked.indexOf(id) >= 0; }
@@ -300,6 +362,8 @@
     status: status, gameBlocked: gameBlocked, keepInside: keepInside, dateKey: dateKey, isWeekend: isWeekend,
     // parents' shortcuts
     grant: grant, resetToday: resetToday,
+    // an account keeps a copy so the rules follow the child to other devices
+    exportSync: exportSync, importSync: importSync,
     // the timer
     start: start, stop: stop, tick: tick, refresh: refresh, noteActivity: function () { if (active) active.lastActive = clock(); },
     // for tests

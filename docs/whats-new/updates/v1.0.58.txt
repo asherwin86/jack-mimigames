@@ -1,0 +1,9 @@
+v1.0.58  -  4 Oct 2026
+Parental controls follow your child
+-----------------------------------
+Parental controls can now live on your child's account, so the rules apply on every phone, tablet, TV or computer they sign in on, instead of only on the one device where you set them up. They are managed from your own (the parent's) account.
+How to set it up: open Settings > Parental controls (parent PIN), set the rules you want, then in "Put these rules on your child's account" sign in to your own account (or make one), type your child's account name and press Send request. Nothing changes on the child's account yet. The child signs in on any device and sees "Parental controls request"; pressing Accept puts the rules on their account. They can also press Not now or No thanks.
+After that: the child's devices pick up the rules as soon as the child signs in, keep a copy (so signing out does not get around them), and the play time adds up across all their devices. When you change a rule from your own account it reaches the child's devices within about a minute. Only the parent's account can change or remove the rules; the child's side cannot. If you remove them from the child's account, the child's devices are let go the next time they check in.
+Also: a pending request can be cancelled, and the rules can be edited while it waits. Being signed in as the parent on a device does not sign that device in as the child.
+Still true: someone who is not signed in, or who uses another browser, private window or device without signing in, is not limited. It is a house rule more than a security system. 51 Mimi Games is a separate site and is not limited.
+Note for the account server: this update also adds new actions to the account server (mimi-arcade-hub), which redeploys by itself after the update is pushed. The new buttons say so if it is not ready yet.

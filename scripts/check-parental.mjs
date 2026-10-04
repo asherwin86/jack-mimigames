@@ -180,6 +180,63 @@ P.save({ enabled: true });
 ok(P.keepInside(), 'keep-inside is on by default');
 P.save({ keepInside: false });
 ok(!P.keepInside(), '...and can be turned off');
+// ---------- account syncing: the rules follow the child, play time adds up across devices
+globalThis.localStorage = { getItem: (k) => (store.has(k) ? store.get(k) : null), setItem: (k, v) => { store.set(k, String(v)); }, removeItem: (k) => { store.delete(k); } };
+reset();
+await P.setPin('2468'); P.save({ limits: { weekday: 30 }, blocked: ['blockcraft'] });
+const deviceA = P.exportSync();
+ok(deviceA.settings.pin && deviceA.settings.t > 0 && deviceA.settings.limits.weekday === 30, 'the rules can be exported for the account');
+ok(deviceA.settings.lock.fails === 0, '...without the wrong-PIN counter');
+// a second device (empty storage) signs the child in and receives the rules
+store.clear();
+ok(!P.hasPin(), 'a new device starts with no rules');
+r = P.importSync(deviceA);
+ok(r.rules && P.hasPin() && P.enabled() && P.load().limits.weekday === 30 && P.gameBlocked('blockcraft'), 'the new device adopts the rules from the account');
+ok((await P.verifyPin('2468')).ok, '...and the parent PIN works there');
+// the newer rules win, in both directions
+now += 5000; P.save({ limits: { weekday: 90 } });
+r = P.importSync(deviceA);
+ok(!r.rules && r.localNewer && P.load().limits.weekday === 90, 'older rules from the account do not overwrite newer ones here (and we are told to send ours)');
+const newer = P.exportSync(); newer.settings.limits.weekday = 15; newer.settings.t = now + 60000;
+r = P.importSync(newer);
+ok(r.rules && P.load().limits.weekday === 15, 'newer rules from the account replace the ones here');
+const old = P.exportSync(); old.settings.t = 5; old.settings.limits.weekday = 45;
+r = P.importSync(old);
+ok(!r.rules && P.load().limits.weekday === 15, 'older rules are ignored normally');
+r = P.importSync(old, { preferRemote: true });
+ok(r.rules && P.load().limits.weekday === 45, '...but when linking to an account that already has rules, the account\'s rules are used');
+// a wrong-PIN lock-out belongs to the device and is kept when rules arrive
+store.set('mg.parental.v1', JSON.stringify({ ...P.load(), lock: { fails: 3, until: 0 } }));
+const withNew = P.exportSync(); withNew.settings.t = now + 120000; withNew.settings.breakEvery = 45;
+P.importSync(withNew);
+ok(P.load().breakEvery === 45 && P.load().lock.fails === 3, 'rules arriving keep this device\'s own wrong-PIN count');
+// play time: per-device counters add up; a reset replaces them
+reset();
+await P.setPin('2468'); P.save({ limits: { weekday: 60 } });
+e = events(); P.start(e.hooks);
+play(600);
+const tenHere = P.exportSync().used;
+ok(P.status().used === 600, 'ten minutes played here');
+const otherDevice = { settings: P.exportSync().settings, used: { date: tenHere.date, r: 0, by: { abcdef012345: 300 } } };
+P.importSync(otherDevice);
+ok(P.status().used === 900, 'five minutes on another device are added to the same day');
+P.importSync(otherDevice); P.importSync({ settings: otherDevice.settings, used: tenHere });
+ok(P.status().used === 900, 'merging the same numbers again does not count twice');
+P.importSync({ settings: otherDevice.settings, used: { date: tenHere.date, r: 0, by: { abcdef012345: 120 } } });
+ok(P.status().used === 900, 'a smaller number from a device that is behind never lowers the total');
+P.resetToday();
+ok(P.status().used === 0, 'resetting the timer here sets it to zero');
+P.importSync(otherDevice);
+ok(P.status().used === 0, '...and a device that has not heard about the reset cannot bring the old time back');
+const resetCopy = P.exportSync();
+P.importSync({ settings: resetCopy.settings, used: { date: tenHere.date, r: resetCopy.used.r + 1, by: { abcdef012345: 60 } } });
+ok(P.status().used === 60, 'a newer reset from another device replaces the counters');
+P.importSync({ settings: resetCopy.settings, used: { date: '2026-10-04', r: 0, by: { abcdef012345: 9999 } } });
+ok(P.status().used === 60, 'yesterday\'s numbers are ignored');
+P.importSync({ settings: { pin: 'x' }, used: 'junk' }); P.importSync(null);
+ok(P.status().used === 60 && P.hasPin(), 'garbage from the account is ignored');
+P.stop();
+
 // ---------- settings listeners and no storage
 let heard = 0; const off = P.onSettings(() => { heard++; });
 P.save({ breakEvery: 30 }); off(); P.save({ breakEvery: 20 });

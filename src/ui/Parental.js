@@ -1,6 +1,8 @@
 import { CATALOG, ALL_TAGS } from '../games/catalog.js';
 import { LINKED } from '../engine/LinkedGames.js';
 import { parental, minutesText, timeLeftText } from '../engine/ParentalState.js';
+import { Account } from '../engine/Account.js';
+import { ParentalLink, onLinkChange, linkInfo, requestLink, unlinkNow, pullNow, acceptRequest, declineRequest } from '../engine/ParentalSync.js';
 
 /**
  * The screens for the parental controls (the rules and the timer are in public/parental-core.js):
@@ -160,6 +162,7 @@ export function openParentalPanel({ verified = false, onClose } = {}) {
           <div class="pc-btns"><button class="acct-btn small" type="button" data-act="grant" data-min="15">+15 min</button><button class="acct-btn small" type="button" data-act="grant" data-min="30">+30 min</button><button class="acct-btn small" type="button" data-act="grant" data-min="60">+1 hour</button><button class="acct-btn small" type="button" data-act="reset">Reset timer</button></div>
         </div>
         <label class="acct-check pc-switch"><input type="checkbox" name="enabled"${s.enabled ? ' checked' : ''} /> Parental controls are <b>${s.enabled ? 'ON' : 'OFF'}</b></label>
+        <section class="pc-link"><h3>Put these rules on your child's account</h3><div class="pc-link-body"></div></section>
         <section><h3>Play time each day</h3>
           <div class="pc-grid">
             <label>Monday to Friday<select name="weekday">${LIMITS.map(([v, l]) => `<option value="${v}"${v === s.limits.weekday ? ' selected' : ''}>${l}</option>`).join('')}</select></label>
@@ -208,6 +211,42 @@ export function openParentalPanel({ verified = false, onClose } = {}) {
     todayLine(); syncBlocked();
     const tick = setInterval(() => { if (!document.body.contains(root)) clearInterval(tick); else todayLine(); }, 5000);
 
+    const linkView = () => {
+      const host = q('.pc-link-body');
+      if (!host || host.querySelector('input:focus')) return;   // (do not rebuild it while someone is typing)
+      const me = Account.session();
+      const info = linkInfo();
+      const msgHtml = '<p class="pc-link-msg pc-note" aria-live="polite"></p>';
+      const listen = () => { for (const el of host.querySelectorAll('input')) { el.addEventListener('keydown', (ev) => ev.stopPropagation()); el.addEventListener('keyup', (ev) => ev.stopPropagation()); } };
+      if (info?.role === 'parent') {
+        const mine = me && me.key === JSON.parse(localStorage.getItem('mg.parental.link.v1') || '{}').parent;
+        const state = ParentalLink.state;   // pending | active
+        const line = !mine ? `Sign in to your own account to see or change this.`
+          : ParentalLink.status === 'error' ? `<b class="bad">${esc(ParentalLink.msg)}</b>`
+          : state === 'pending' ? `<b>Waiting for ${esc(info.name)} to accept.</b> On their account (on any device) they will be asked to accept parental controls from you. Until they do, nothing changes on their account.`
+          : `<b>${esc(info.name)}'s account has these rules, and you manage them.</b> They follow ${esc(info.name)} to every device they sign in on. Change anything here and it changes there. ${ParentalLink.status === 'syncing' ? 'Saving…' : 'Saved.'}`;
+        host.innerHTML = `<p class="pc-note">${line}</p><div class="pc-btns"><button class="acct-btn small" type="button" data-act="unlink">${state === 'pending' ? 'Cancel the request' : 'Remove from their account'}</button></div>${msgHtml}`;
+      } else if (info?.role === 'child') {
+        host.innerHTML = `<p class="pc-note">These rules came from <b>${esc(info.name)}'s</b> account, which is managed by a parent. They can only be changed from the parent's own account (sign in with it on any device and open Parental controls).</p>${msgHtml}`;
+      } else if (!me) {
+        host.innerHTML = `<p class="pc-note">Rules set here only apply on this device. To have them follow your child to every device, they go on your child's account, managed by <b>your own</b> account. First sign in to your own account (or make one):</p>
+          <div class="pc-grid"><label>Your account name<input type="text" name="parentName" autocomplete="off" /></label><label>Your password<input type="password" name="parentPass" autocomplete="off" /></label></div>
+          <div class="pc-btns"><button class="acct-btn small primary" type="button" data-act="parent-signin">Sign in</button><button class="acct-btn small" type="button" data-act="parent-signup">Create my account</button></div>${msgHtml}`;
+        listen();
+      } else {
+        host.innerHTML = `<p class="pc-note">You are signed in as <b>${esc(me.name)}</b> (your own account). Type your child's account name to ask their account to take these rules. They sign in to their account and accept, and from then on you manage the rules from yours. Nothing is changed on their account until they accept.</p>
+          <div class="pc-grid"><label>Your child's account name<input type="text" name="childName" autocomplete="off" /></label></div>
+          <div class="pc-btns"><button class="acct-btn small primary" type="button" data-act="request">Send request</button><button class="acct-btn small" type="button" data-act="parent-signout">Sign out of ${esc(me.name)}</button></div>${msgHtml}`;
+        listen();
+      }
+    };
+    const linkMsg = (text, bad) => { const el = q('.pc-link-msg'); if (el) { el.textContent = text; el.classList.toggle('bad', !!bad); } };
+    linkView();
+    const offAccount = Account.onChange(() => { if (!document.body.contains(root)) offAccount(); else linkView(); });
+    const offLink = onLinkChange(() => { if (!document.body.contains(root)) offLink(); else linkView(); });
+    const refreshLink = () => pullNow().then(() => { todayLine(); syncBlocked(); linkView(); });
+    if (Account.isSignedIn()) refreshLink();
+
     body.addEventListener('click', (e) => {
       const chip = e.target.closest('.chip');
       if (chip) {
@@ -222,6 +261,9 @@ export function openParentalPanel({ verified = false, onClose } = {}) {
       if (act === 'grant') { P.grant(Number(b.dataset.min)); todayLine(); saved(); }
       else if (act === 'reset') { P.resetToday(); todayLine(); saved(); }
       else if (act === 'pin') changePin();
+      else if (act === 'request' || act === 'parent-signin' || act === 'parent-signup') linkAction(act);
+      else if (act === 'parent-signout') { Account.signOut(); }
+      else if (act === 'unlink') { linkMsg('Working…'); unlinkNow().then((r) => { if (!r.ok) linkMsg(r.msg || 'Could not do that.', true); else linkView(); }); }
       else if (act === 'close') close();
     });
     body.addEventListener('change', (e) => {
@@ -239,6 +281,19 @@ export function openParentalPanel({ verified = false, onClose } = {}) {
       else return;
       todayLine(); saved();
     });
+    async function linkAction(act) {
+      linkMsg('Working…');
+      if (act === 'parent-signin' || act === 'parent-signup') {
+        const name = q('[name=parentName]').value, pass = q('[name=parentPass]').value;
+        const r = act === 'parent-signup' ? await Account.signUp(name, pass) : await Account.signIn(name, pass);
+        if (!r.ok) linkMsg(r.msg || 'Could not sign in.', true);
+        return;   // (signing in redraws this section)
+      }
+      const r = await requestLink(q('[name=childName]').value);
+      if (!r.ok) { linkMsg(r.msg || 'Could not send the request.', true); return; }
+      linkView(); saved();
+    }
+
     q('.pc-search').addEventListener('input', (e) => {
       const needle = e.target.value.trim().toLowerCase();
       body.querySelectorAll('.pc-game').forEach((l) => { l.style.display = !needle || l.dataset.name.includes(needle) ? '' : 'none'; });
@@ -337,6 +392,37 @@ function banner(text) {
   setTimeout(() => el.remove(), 7000);
 }
 
+/* ------------------------------------------------- a parent's request, shown to the child */
+
+let requestCard = null;
+const dismissed = new Set();   // requests the child chose "Not now" for, until the page is reloaded
+
+function showRequest(fromName) {
+  if (requestCard || dismissed.has(fromName)) return;
+  const root = document.createElement('div');
+  root.className = 'acct-backdrop pc-backdrop pc-request';
+  root.innerHTML = `<div class="acct-card pc-card" role="dialog" aria-modal="true" aria-label="Parental controls request">
+    <h2>Parental controls request</h2>
+    <div class="pc-body">
+      <p><b>${esc(fromName)}</b> wants to turn on parental controls for your account.</p>
+      <p class="pc-note">If you accept, play time limits, play hours and blocked games from ${esc(fromName)} apply to your account on every device you sign in on, and ${esc(fromName)} manages them from their own account. Only ${esc(fromName)} can change or remove them.</p>
+      <div class="acct-row"><button class="acct-btn primary" type="button" data-r="accept">Accept</button><button class="acct-btn" type="button" data-r="later">Not now</button><button class="acct-btn" type="button" data-r="decline">No thanks</button></div>
+      <p class="pc-msg" aria-live="polite"></p>
+    </div></div>`;
+  document.body.appendChild(root);
+  requestCard = root;
+  const close = () => { root.remove(); requestCard = null; };
+  root.addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-r]');
+    if (!b) return;
+    const msg = root.querySelector('.pc-msg');
+    if (b.dataset.r === 'later') { dismissed.add(fromName); close(); return; }
+    msg.textContent = 'One moment…';
+    const r = b.dataset.r === 'accept' ? await acceptRequest() : await declineRequest();
+    if (r.ok) close(); else { msg.textContent = r.msg || 'Something went wrong. Try again.'; msg.classList.add('bad'); }
+  });
+}
+
 /* -------------------------------------------------------------------- mount */
 
 /** Starts the timer and wires it to the screens. ctx: { engine, menu, getCurrent }. Returns the core, or null if it did not load. */
@@ -344,6 +430,10 @@ export function mountParental(ctx) {
   const P = parental();
   if (!P) return null;
   P.onSettings(() => ctx.menu.refreshParental?.());
+  onLinkChange(() => {
+    if (ParentalLink.request) showRequest(ParentalLink.request.fromName);
+    else if (requestCard) { requestCard.remove(); requestCard = null; }
+  });
   P.start({
     onChange: () => ctx.menu.refreshParental?.(false),
     onWarn: (m) => banner(`${m} minute${m === 1 ? '' : 's'} of play time left today`),

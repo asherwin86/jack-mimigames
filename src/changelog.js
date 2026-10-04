@@ -2,6 +2,10 @@
  *  menu, under the trailer. Keep entries brief; this isn't a commit log. */
 export const CHANGELOG = [
   {
+    title: 'Parental controls follow your child',
+    detail: 'A parent can now put the rules on their childs account, so they apply on every phone, tablet, TV or computer the child signs in on. In Parental controls, sign in to your own account, type your childs account name and send the request. The child signs in on any device and accepts, and from then on you manage the rules from your own account. Play time adds up across devices, and only the parent can change or remove the rules.',
+  },
+  {
     title: 'Parental controls',
     detail: 'Settings now has Parental controls, protected by a parent PIN. A parent can set a daily play-time limit (one for school days, one for weekends), allowed play hours, a break reminder, and block individual games or whole categories. When the time is up the arcade locks until a parent adds time with the PIN. The Unity games count too, and there is a Keep inside the arcade switch that hides the 51 Mimi Games link, sign-in and bug reports. It is kept on this device, so it works as a house rule rather than a security system.',
   },

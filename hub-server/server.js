@@ -1030,7 +1030,7 @@ function checkRateLimit(req, res, tierName, tier) {
 // actions, since 120/min is a reasonable ceiling for normal play but a
 // very generous budget for guessing passwords.
 const SENSITIVE_PROFILE_ACTIONS = new Set([
-  "create", "login", "changepassword", "recover",
+  "create", "login", "changepassword", "recover", "parental-request",
   "passkey-login-verify", "passkey-register-verify",
 ]);
 
@@ -1168,6 +1168,64 @@ function mergeWallets(a, b) {
   return out;
 }
 
+// --- Parental controls (arcade) ---
+// A parent's rules for a child can be saved on the child's account, so they follow the child to every device they
+// sign in on (public/parental-core.js keeps the same rules and the same merge). The PIN is stored salted and hashed,
+// exactly as the browser makes it. The newer rules win; play time is one counter per device that only ever grows,
+// and a parent's "reset timer" (the larger r) replaces the day's counters.
+function parentalNum(v, lo, hi, d) { v = Number(v); return Number.isFinite(v) ? Math.min(hi, Math.max(lo, Math.round(v))) : d; }
+function parentalTime(v, d) { return typeof v === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(v) ? v : d; }
+function cleanParentalSettings(r) {
+  r = r && typeof r === "object" ? r : {};
+  const pin = r.pin && typeof r.pin.salt === "string" && typeof r.pin.hash === "string" && r.pin.salt.length <= 64 && r.pin.hash.length <= 120
+    ? { salt: r.pin.salt, hash: r.pin.hash } : null;
+  if (!pin) return null;
+  const seen = new Set();
+  const blocked = (Array.isArray(r.blocked) ? r.blocked : []).filter((x) => {
+    if (typeof x !== "string" || x.length > 60 || seen.has(x)) return false;
+    seen.add(x); return true;
+  }).slice(0, 400);
+  const every = parentalNum(r.breakEvery, 0, 180, 0);
+  return {
+    v: 1, enabled: r.enabled === true, pin,
+    limits: { weekday: parentalNum(r.limits && r.limits.weekday, 0, 600, 60), weekend: parentalNum(r.limits && r.limits.weekend, 0, 600, 120) },
+    hours: { on: !!(r.hours && r.hours.on), from: parentalTime(r.hours && r.hours.from, "07:00"), to: parentalTime(r.hours && r.hours.to, "19:30") },
+    breakEvery: every > 0 && every < 5 ? 5 : every,
+    keepInside: r.keepInside !== false,
+    blocked,
+    bonus: { date: r.bonus && typeof r.bonus.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(r.bonus.date) ? r.bonus.date : "", minutes: parentalNum(r.bonus && r.bonus.minutes, 0, 600, 0) },
+    pass: { until: parentalNum(r.pass && r.pass.until, 0, 4e12, 0) },
+    lock: { fails: 0, until: 0 },
+    t: parentalNum(r.t, 0, 4e12, 0),
+  };
+}
+function cleanParentalUsed(u) {
+  const out = { date: "", r: 0, by: {} };
+  if (!u || typeof u !== "object" || typeof u.date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(u.date)) return out;
+  out.date = u.date; out.r = parentalNum(u.r, 0, 4e12, 0);
+  if (u.by && typeof u.by === "object") {
+    for (const [k, v] of Object.entries(u.by).slice(0, 20)) if (/^[0-9a-f]{1,16}$/.test(k)) out.by[k] = parentalNum(v, 0, 86400, 0);
+  }
+  return out;
+}
+function mergeParental(stored, incoming) {
+  const a = stored ? { settings: cleanParentalSettings(stored.settings), used: cleanParentalUsed(stored.used) } : { settings: null, used: cleanParentalUsed(null) };
+  const b = { settings: cleanParentalSettings(incoming && incoming.settings), used: cleanParentalUsed(incoming && incoming.used) };
+  const settings = !a.settings ? b.settings : !b.settings ? a.settings : (b.settings.t > a.settings.t ? b.settings : a.settings);
+  let used = a.used;
+  if (b.used.date > a.used.date) used = b.used;   // a new day replaces yesterday
+  else if (b.used.date === a.used.date) {
+    if (b.used.r > a.used.r) used = b.used;
+    else if (b.used.r === a.used.r) {
+      used = { date: a.used.date, r: a.used.r, by: {} };
+      for (const k of new Set([...Object.keys(a.used.by), ...Object.keys(b.used.by)])) used.by[k] = Math.max(a.used.by[k] || 0, b.used.by[k] || 0);
+    }
+  }
+  return { settings, used };
+}
+
+const PARENTAL_REQUEST_MS = 14 * 24 * 3600 * 1000;
+
 async function handleProfilesApi(req, res, action) {
   if (req.method !== "POST") {
     sendJson(res, 405, { ok: false, msg: "Method not allowed." });
@@ -1206,6 +1264,97 @@ async function handleProfilesApi(req, res, action) {
       saveProfilesToDisk();
     }
     sendJson(res, 200, { ok: true, wallet: auth.entry.wallet ? cleanWallet(auth.entry.wallet) : null });
+    return;
+  }
+
+  // --- Parental controls (arcade): rules kept on a child's account, set up by a parent's account ---
+  // The parent sends a request to the child's account name (parental-request); the child signs in and accepts
+  // (parental-accept), which puts the rules on the child's account with the parent as its controller. From then on only
+  // the controller can change or remove the rules (parental-manage); the child's devices read them (parental) and only
+  // report play time (parental-put). Pending requests expire after two weeks.
+  if (action.startsWith("parental")) {
+    const auth = authenticate(body);
+    if (!auth) { sendJson(res, 200, { ok: false, authFailed: true, msg: "Sign in again." }); return; }
+    const me = auth.entry;
+    const myKey = auth.key || key;
+    const save = () => { me.updatedAt = Date.now(); saveProfilesToDisk(); };
+    const pendingOf = (e) => (e.parentalRequest && Date.now() - e.parentalRequest.at < PARENTAL_REQUEST_MS ? e.parentalRequest : null);
+    const viewOf = (e) => (e.parental && cleanParentalSettings(e.parental.settings)
+      ? { settings: cleanParentalSettings(e.parental.settings), used: cleanParentalUsed(e.parental.used), controllerName: String(e.parental.controllerName || "") } : null);
+    const ownView = () => { const r = pendingOf(me); return { ok: true, parental: viewOf(me), request: r ? { fromName: r.fromName, at: r.at } : null }; };
+
+    if (action === "parental") { sendJson(res, 200, ownView()); return; }
+
+    if (action === "parental-put") {   // the child's own device: play time only, never the rules
+      if (me.parental) {
+        me.parental.used = mergeParental({ settings: me.parental.settings, used: me.parental.used }, { settings: null, used: body.parental && body.parental.used }).used;
+        save();
+      }
+      sendJson(res, 200, ownView());
+      return;
+    }
+
+    if (action === "parental-accept" || action === "parental-decline") {
+      const r = pendingOf(me);
+      if (!r) { sendJson(res, 200, { ok: false, msg: "There is no request to answer (it may have been cancelled or expired)." }); return; }
+      if (action === "parental-accept") {
+        if (me.parental && me.parental.controller !== r.from) { sendJson(res, 200, { ok: false, msg: `This account already has parental controls from ${me.parental.controllerName || "another parent"}. They need to remove them first.` }); return; }
+        me.parental = { settings: r.settings, used: me.parental ? cleanParentalUsed(me.parental.used) : cleanParentalUsed(null), controller: r.from, controllerName: r.fromName };
+      }
+      delete me.parentalRequest;
+      save();
+      sendJson(res, 200, ownView());
+      return;
+    }
+
+    // from here on `me` is the PARENT, acting on a child's account named in body.target
+    const targetKey = typeof body.target === "string" ? body.target.trim().toLowerCase() : "";
+    const child = targetKey ? profiles[targetKey] : null;
+    if (action === "parental-request") {
+      if (!child) { sendJson(res, 200, { ok: false, msg: "There is no account with that name. Check the spelling." }); return; }
+      if (targetKey === myKey) { sendJson(res, 200, { ok: false, msg: "Type your child's account name, not your own." }); return; }
+      const settings = cleanParentalSettings(body.parental && body.parental.settings);
+      if (!settings) { sendJson(res, 200, { ok: false, msg: "Set a parent PIN first." }); return; }
+      if (child.parental && child.parental.controller !== myKey) { sendJson(res, 200, { ok: false, msg: `That account already has parental controls from ${child.parental.controllerName || "another parent"}.` }); return; }
+      const open = pendingOf(child);
+      if (open && open.from !== myKey) { sendJson(res, 200, { ok: false, msg: "Someone else already sent that account a request. Ask them to cancel it first." }); return; }
+      child.parentalRequest = { from: myKey, fromName: me.name || myKey, settings, at: Date.now() };
+      child.updatedAt = Date.now();
+      saveProfilesToDisk();
+      sendJson(res, 200, { ok: true, state: "pending", childName: child.name || targetKey });
+      return;
+    }
+    if (action === "parental-manage") {
+      if (!child) { sendJson(res, 200, { ok: false, msg: "That account no longer exists." }); return; }
+      const active = !!(child.parental && child.parental.controller === myKey);
+      const open = pendingOf(child);
+      const pending = !!(open && open.from === myKey);
+      const state = active ? "active" : pending ? "pending" : "none";
+      const op = body.op;
+      if (op === "put" && state !== "none") {
+        const incoming = body.parental || {};
+        if (active) {
+          const merged = mergeParental({ settings: child.parental.settings, used: child.parental.used }, incoming);
+          if (merged.settings) child.parental.settings = merged.settings;
+          child.parental.used = merged.used;
+        } else {
+          const s2 = cleanParentalSettings(incoming.settings);
+          if (s2) open.settings = s2;
+        }
+        child.updatedAt = Date.now();
+        saveProfilesToDisk();
+      } else if (op === "clear" && state !== "none") {
+        if (active) delete child.parental; else delete child.parentalRequest;
+        child.updatedAt = Date.now();
+        saveProfilesToDisk();
+        sendJson(res, 200, { ok: true, state: "none", parental: null });
+        return;
+      }
+      const now = child.parental && child.parental.controller === myKey ? viewOf(child) : null;
+      sendJson(res, 200, { ok: true, state: now ? "active" : (pendingOf(child) && pendingOf(child).from === myKey ? "pending" : "none"), childName: child.name || targetKey, parental: now });
+      return;
+    }
+    sendJson(res, 400, { ok: false, msg: "Unknown action." });
     return;
   }
 
