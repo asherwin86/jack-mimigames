@@ -137,6 +137,7 @@ export async function pullNow() {
   if (r.parental) {
     writeLink({ role: 'child', key: s.key, name: s.name });
     absorb(P, r.parental, { preferRemote: true });   // the manager's rules are the child's rules (the manager's newest copy)
+    if (P.load().deviceOff) P.save({ deviceOff: false });   // only a parent's own device can be switched off; the child's never
     setStatus('saved');
     return { ok: true, state: 'active' };
   }

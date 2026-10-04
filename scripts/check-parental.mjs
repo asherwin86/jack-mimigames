@@ -237,6 +237,24 @@ P.importSync({ settings: { pin: 'x' }, used: 'junk' }); P.importSync(null);
 ok(P.status().used === 60 && P.hasPin(), 'garbage from the account is ignored');
 P.stop();
 
+// ---------- "off on this device only" (a parent's own device) while the account's rules stay on
+reset();
+await P.setPin('2468'); P.save({ limits: { weekday: 15 }, blocked: ['blockcraft'] });
+e = events(); P.start(e.hooks);
+const tBefore = P.load().t;
+now += 5; P.save({ deviceOff: true });
+ok(P.load().t === tBefore, 'switching it off on this device is not a rule change (the account\'s copy keeps its stamp)');
+ok(!P.enabled() && !P.status().enabled && !P.gameBlocked('blockcraft') && !P.keepInside() && P.load().enabled, 'this device is unlimited, nothing is blocked or hidden, while the rules themselves stay on');
+play(60 * 60);
+ok(P.status().used === 0 && !P.status().locked, 'play on this device uses no time and never locks');
+ok(P.exportSync().settings.deviceOff === false && P.exportSync().settings.enabled, 'the account\'s copy never says "off on this device", and still says on');
+const fromAccount = P.exportSync(); fromAccount.settings.t = now + 1e6; fromAccount.settings.limits.weekday = 20;
+P.importSync(fromAccount);
+ok(P.load().limits.weekday === 20 && P.load().deviceOff === true && !P.enabled(), 'new rules from the account arrive but this device stays off');
+P.save({ deviceOff: false });
+ok(P.enabled() && P.gameBlocked('blockcraft') && P.keepInside(), 'switching it back on restores everything');
+P.stop();
+
 // ---------- settings listeners and no storage
 let heard = 0; const off = P.onSettings(() => { heard++; });
 P.save({ breakEvery: 30 }); off(); P.save({ breakEvery: 20 });

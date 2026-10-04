@@ -66,6 +66,7 @@
       bonus: { date: r.bonus && /^\d{4}-\d{2}-\d{2}$/.test(r.bonus.date) ? r.bonus.date : '', minutes: num(r.bonus && r.bonus.minutes, 0, 600, 0) },
       pass: { until: num(r.pass && r.pass.until, 0, 4e12, 0) },   // a parent let them play outside the allowed hours until this time
       lock: { fails: num(r.lock && r.lock.fails, 0, 100, 0), until: num(r.lock && r.lock.until, 0, 4e12, 0) },
+      deviceOff: r.deviceOff === true,   // a parent turned the controls off on THIS device only (never sent to an account)
       t: num(r.t, 0, 4e12, 0),   // when a parent last changed the rules (the newer copy wins when it is synced with an account)
     };
   }
@@ -93,7 +94,7 @@
   }
   function save(patch) {
     var merged = assign(load(), patch);
-    if (Object.keys(patch || {}).some(function (k) { return k !== 'lock'; })) merged.t = clock();   // (wrong-PIN counting is not a rule change)
+    if (Object.keys(patch || {}).some(function (k) { return k !== 'lock' && k !== 'deviceOff'; })) merged.t = clock();   // (wrong-PIN counting and this-device-only switches are not rule changes)
     return commit(sanitize(merged));
   }
 
@@ -150,7 +151,7 @@
   /** Where things stand right now: { enabled, locked: null | {kind:'time'|'hours', ...}, remaining (seconds, or null for no limit), limit (minutes), bonus, used (seconds) }. */
   function status() {
     var s = load();
-    if (!s.enabled) return { enabled: false, locked: null, remaining: null, limit: 0, bonus: 0, used: usedSeconds() };
+    if (!s.enabled || s.deviceOff) return { enabled: false, locked: null, remaining: null, limit: 0, bonus: 0, used: usedSeconds() };
     var now = clock(), d = new Date(now);
     var limit = isWeekend(d) ? s.limits.weekend : s.limits.weekday;
     var bonus = s.bonus.date === dateKey(d) ? s.bonus.minutes : 0;
@@ -234,6 +235,7 @@
   function exportSync() {
     var s = load();
     s.lock = { fails: 0, until: 0 };
+    s.deviceOff = false;   // belongs to this device
     return { settings: s, used: usedRecord() };
   }
   /** Merges what the account has with this device. The newer rules win; play time is merged per device (the newer reset wins).
@@ -245,7 +247,7 @@
     var theirs = sanitize(remote.settings), mine = load();
     if (theirs.pin) {
       if (!mine.pin || theirs.t > mine.t || (opts && opts.preferRemote)) {
-        theirs.lock = mine.lock;
+        theirs.lock = mine.lock; theirs.deviceOff = mine.deviceOff;
         if (JSON.stringify(theirs) !== JSON.stringify(mine)) { commit(theirs); out.rules = true; }
       }
       if (mine.t > theirs.t) out.localNewer = true;
@@ -260,8 +262,8 @@
   }
 
   /* ------------------------------------------------------ what is allowed */
-  function gameBlocked(id) { var s = load(); return s.enabled && s.blocked.indexOf(id) >= 0; }
-  function keepInside() { var s = load(); return s.enabled && s.keepInside; }
+  function gameBlocked(id) { var s = load(); return s.enabled && !s.deviceOff && s.blocked.indexOf(id) >= 0; }
+  function keepInside() { var s = load(); return s.enabled && !s.deviceOff && s.keepInside; }
 
   /* ----------------------------------------------------------- the timer */
   var active = null;   // the running ticker, if any
@@ -355,7 +357,7 @@
   return {
     // settings
     load: load, save: save, onSettings: function (fn) { listeners.push(fn); return function () { listeners = listeners.filter(function (f) { return f !== fn; }); }; },
-    hasPin: function () { return !!load().pin; }, enabled: function () { return load().enabled; },
+    hasPin: function () { return !!load().pin; }, enabled: function () { var s = load(); return s.enabled && !s.deviceOff; },
     // PIN
     setPin: setPin, verifyPin: verifyPin, changePin: changePin, validPin: validPin,
     // rules

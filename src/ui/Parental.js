@@ -225,7 +225,11 @@ export function openParentalPanel({ verified = false, onClose } = {}) {
           : ParentalLink.status === 'error' ? `<b class="bad">${esc(ParentalLink.msg)}</b>`
           : state === 'pending' ? `<b>Waiting for ${esc(info.name)} to accept.</b> On their account (on any device) they will be asked to accept parental controls from you. Until they do, nothing changes on their account.`
           : `<b>${esc(info.name)}'s account has these rules, and you manage them.</b> They follow ${esc(info.name)} to every device they sign in on. Change anything here and it changes there. ${ParentalLink.status === 'syncing' ? 'Saving…' : 'Saved.'}`;
-        host.innerHTML = `<p class="pc-note">${line}</p><div class="pc-btns"><button class="acct-btn small" type="button" data-act="unlink">${state === 'pending' ? 'Cancel the request' : 'Remove from their account'}</button></div>${msgHtml}`;
+        const off = P.load().deviceOff;
+        host.innerHTML = `<p class="pc-note">${line}</p>
+          <label class="acct-check pc-switch"><input type="checkbox" name="deviceOff"${off ? ' checked' : ''} /> Turn the controls off on <b>this device only</b></label>
+          <p class="pc-note">For you, as the parent: no limits, locks or blocked games here, and your play does not use up ${esc(info.name)}'s time. ${esc(info.name)}'s account stays restricted on their devices. (The ON/OFF switch at the top is different: it changes the rules for ${esc(info.name)}'s account.)</p>
+          <div class="pc-btns"><button class="acct-btn small" type="button" data-act="unlink">${state === 'pending' ? 'Cancel the request' : 'Remove from their account'}</button></div>${msgHtml}`;
       } else if (info?.role === 'child') {
         host.innerHTML = `<p class="pc-note">These rules came from <b>${esc(info.name)}'s</b> account, which is managed by a parent. They can only be changed from the parent's own account (sign in with it on any device and open Parental controls).</p>${msgHtml}`;
       } else if (!me) {
@@ -278,6 +282,7 @@ export function openParentalPanel({ verified = false, onClose } = {}) {
       else if (t.name === 'from' || t.name === 'to') { if (t.value) P.save({ hours: { [t.name]: t.value } }); }
       else if (t.name === 'breakEvery') P.save({ breakEvery: Number(t.value) });
       else if (t.name === 'keepInside') P.save({ keepInside: t.checked });
+      else if (t.name === 'deviceOff') { P.save({ deviceOff: t.checked }); linkView(); }
       else return;
       todayLine(); saved();
     });

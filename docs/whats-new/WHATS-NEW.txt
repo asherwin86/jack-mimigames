@@ -5,6 +5,12 @@ Newest update first. Every update is also in its own file in the "updates"
 folder. Each one is released to the website and the Windows app together
 (the app updates itself the next time you open it).
 
+v1.0.59  -  4 Oct 2026
+Parents can turn parental controls off on their own device
+----------------------------------------------------------
+New: in Parental controls, once you have linked your child's account, there is a tick box "Turn the controls off on this device only". Tick it on your own phone or computer and you get no limits, locks or blocked games there, and your own play no longer uses up your child's time. Your child's account stays restricted on their devices, and you can still change their rules from your own account.
+The ON/OFF switch at the top is different: it changes the rules for your child's account. The new tick box only affects the device you are holding, it is never sent to the account, and it stays as you left it when you close and reopen the app. Only a parent's own device can be switched off this way; a child's device cannot.
+
 v1.0.58  -  4 Oct 2026
 Parental controls follow your child
 -----------------------------------
