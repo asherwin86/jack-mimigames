@@ -2,6 +2,10 @@
  *  menu, under the trailer. Keep entries brief; this isn't a commit log. */
 export const CHANGELOG = [
   {
+    title: 'Parental controls',
+    detail: 'Settings now has Parental controls, protected by a parent PIN. A parent can set a daily play-time limit (one for school days, one for weekends), allowed play hours, a break reminder, and block individual games or whole categories. When the time is up the arcade locks until a parent adds time with the PIN. The Unity games count too, and there is a Keep inside the arcade switch that hides the 51 Mimi Games link, sign-in and bug reports. It is kept on this device, so it works as a house rule rather than a security system.',
+  },
+  {
     title: 'Sky Hop Party and Tag Game join the hub',
     detail: 'Two more Unity games now have tiles after the 100 games: Sky Hop Party (race over floating islands, solo or online) and Tag Game (dodge the taggers in practice mode, or play online). Like Island Kart Rush they run on their own page and are big downloads, so the Windows and Android apps open the website for them. Their online modes use their own servers, which can take up to about a minute to wake after a quiet spell.',
   },

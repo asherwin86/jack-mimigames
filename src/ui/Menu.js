@@ -4,6 +4,8 @@ import { openInstallDialog } from './InstallDialog.js';
 import { openBugReport } from './BugReportDialog.js';
 import { OTHER_ARCADE, switchToOtherArcade, switchUsesApp, chooseOtherAppLocation } from '../engine/OtherArcade.js';
 import { LINKED, openLinked } from '../engine/LinkedGames.js';
+import { openParentalPanel } from './Parental.js';
+import { controlsOn, isBlocked, keepInside, timeLeftText } from '../engine/ParentalState.js';
 import { CATALOG, ALL_TAGS, TARGET } from '../games/catalog.js';
 import { isImplemented } from '../games/index.js';
 import { Scores } from '../engine/Storage.js';
@@ -102,6 +104,7 @@ export class Menu {
               <button class="toggle" data-setting="compact" data-default="0" aria-pressed="${prefs.compact}">
                 <span class="dot"></span>Compact
               </button>
+              <button class="pc-btn" type="button" title="Play time limits, blocked games and more (needs a parent PIN)">&#128737; Parental controls</button>
             </div>
           </div>
           <div class="chips"></div>
@@ -139,6 +142,7 @@ export class Menu {
       if (e.target.closest('.install-btn')) { openInstallDialog(); return; }
       if (e.target.closest('.bug-btn')) { openBugReport(); return; }
       if (e.target.closest('.switch-btn')) { switchToOtherArcade(); return; }
+      if (e.target.closest('.pc-btn')) { openParentalPanel(); return; }
       const opener = e.target.closest('.settings-btn');
       if (opener) {
         const box = this.root.querySelector('.settings-box');
@@ -162,6 +166,7 @@ export class Menu {
     };
 
     this.render();
+    this.root.querySelector('.menu')?.classList.toggle('keep-inside', keepInside());
     this._syncAccountButton();
     this.setCoins(Rocoins.balance());
     this._startGamepadNav();
@@ -184,10 +189,21 @@ export class Menu {
     btn.title = who ? `Signed in as ${who} — click to manage your account` : 'Sign in to keep your worlds on your account';
   }
 
+  /** Parental controls changed (or a minute passed): hide or show the links to other sites, redraw the tiles, update the time-left line. */
+  refreshParental(full = true) {
+    const menuEl = this.root.querySelector('.menu');
+    if (!menuEl) return;
+    menuEl.classList.toggle('keep-inside', keepInside());
+    const p = this.root.querySelector('.menu-head > p');
+    if (p) p.innerHTML = this._tagline(Settings.get('seasonal', true));
+    if (full && this.$grid) this.render();
+  }
+
   /** The line under the title, with the special day / school holiday greeting when there is one. */
   _tagline(seasonal) {
     const theme = seasonal ? themeFor(new Date(), seasonOverride()) : null;
-    return `${CATALOG.length} of ${TARGET} built &middot; every one rendered in 3D${theme ? ` &middot; <span class="season-tag">${theme.label}</span>` : ''}`;
+    const left = timeLeftText();
+    return `${CATALOG.length} of ${TARGET} built &middot; every one rendered in 3D${theme ? ` &middot; <span class="season-tag">${theme.label}</span>` : ''}${left ? ` &middot; <span class="pc-left">${left}</span>` : ''}`;
   }
 
   /** Reflects the props setting on the button, for when Shift flips it. */
@@ -217,7 +233,11 @@ export class Menu {
     });
 
     // The sister arcade and the Unity games sit after the built-in games (see engine/LinkedGames.js).
+    const inside = keepInside();
+    const hideApps = controlsOn() && isInstalledCopy();   // in the apps the Unity games open in a browser that cannot be limited
     const links = LINKED.filter((e) => {
+      if (inside && e.kind === 'arcade') return false;     // 51 Mimi Games has no limits
+      if (hideApps && e.kind === 'page') return false;
       if (this.tag && !e.tags.includes(this.tag)) return false;
       if (!q) return true;
       return (e.name + ' ' + e.blurb + ' ' + e.badge + ' ' + e.tags.join(' ')).toLowerCase().includes(q);
@@ -230,27 +250,28 @@ export class Menu {
 
     this.$grid.innerHTML = list.map((e, i) => {
       const best = Scores.best(e.id);
-      const ready = isImplemented(e.id);
+      const blocked = isBlocked(e.id);
+      const ready = isImplemented(e.id) && !blocked;
       // Negative delay starts each tile part-way through its turn.
       const delay = `animation-delay:-${(i * 0.37).toFixed(2)}s`;
       return `
-        <button class="tile${ready ? '' : ' soon'}" data-id="${e.id}" style="${delay}" ${ready ? '' : 'disabled'}>
+        <button class="tile${blocked ? ' blocked' : ready ? '' : ' soon'}" data-id="${e.id}" style="${delay}" ${ready ? '' : 'disabled'}>
           <span class="num">#${String(e.n).padStart(3, '0')}</span>
           <span class="name">${e.name}</span>
           <span class="blurb">${e.blurb}</span>
           <span class="foot">
             <span class="tag">${e.tags[0]}</span>
-            ${best !== null ? `<span class="pb">best ${fmt(best)} ${e.unit || ''}</span>` : ''}
+            ${blocked ? '<span class="pb">&#128274; blocked by a parent</span>' : best !== null ? `<span class="pb">best ${fmt(best)} ${e.unit || ''}</span>` : ''}
           </span>
         </button>`;
     }).join('') + links.map((e, i) => `
-        <button class="tile linked" data-link="${e.id}" style="animation-delay:-${((list.length + i) * 0.37).toFixed(2)}s">
+        <button class="tile linked${isBlocked(e.id) ? ' blocked' : ''}" data-link="${e.id}" ${isBlocked(e.id) ? 'disabled' : ''} style="animation-delay:-${((list.length + i) * 0.37).toFixed(2)}s">
           <span class="num">${e.badge.toUpperCase()}</span>
           <span class="name">${e.name}</span>
           <span class="blurb">${e.blurb}</span>
           <span class="foot">
             <span class="tag">${e.tags[0]}</span>
-            <span class="pb">opens its own page &#8599;</span>
+            <span class="pb">${isBlocked(e.id) ? '&#128274; blocked by a parent' : 'opens its own page &#8599;'}</span>
           </span>
         </button>`).join('');
   }
@@ -322,7 +343,7 @@ export class Menu {
    *  thing to a real `:hover` a script can drive — CSS :hover only follows
    *  the actual mouse, never something moved by JS. */
   _setHover(el) {
-    const target = el?.closest?.('.tile, .toggle, .chip, .settings-btn, .account-btn, .coins-btn, .install-btn, .bug-btn, .switch-btn') ?? null;
+    const target = el?.closest?.('.tile, .toggle, .chip, .settings-btn, .account-btn, .coins-btn, .install-btn, .bug-btn, .switch-btn, .pc-btn') ?? null;
     if (target === this._hoverEl) return;
     this._hoverEl?.classList.remove('gp-hover');
     this._hoverEl = target;

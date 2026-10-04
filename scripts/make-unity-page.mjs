@@ -22,6 +22,6 @@ for (const f of ['WebBuild.data', 'WebBuild.framework.js', 'WebBuild.loader.js',
 }
 const mb = Math.floor(fs.readdirSync(build).reduce((n, f) => n + fs.statSync(path.join(build, f)).size, 0) / 1e6);
 const html = fs.readFileSync(path.join(root, 'scripts/unity-page-template.html'), 'utf8')
-  .replaceAll('{{TITLE}}', title).replaceAll('{{PRODUCT}}', product).replaceAll('{{SIZE}}', String(mb));
+  .replaceAll('{{ID}}', id).replaceAll('{{TITLE}}', title).replaceAll('{{PRODUCT}}', product).replaceAll('{{SIZE}}', String(mb));
 fs.writeFileSync(path.join(dir, 'index.html'), html);
 console.log(`unity-builds/${id}/index.html written (${mb} MB build).`);

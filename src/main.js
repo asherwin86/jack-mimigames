@@ -7,6 +7,8 @@ import { loadGame } from './games/index.js';
 import { buildBackdrop } from './ui/Backdrop.js';
 import { mountEventCounter } from './ui/EventCounter.js';
 import { armFullscreenOnArrival } from './engine/OtherArcade.js';
+import { mountParental, notify } from './ui/Parental.js';
+import { isBlocked } from './engine/ParentalState.js';
 import { Settings } from './engine/Settings.js';
 import { Rocoins } from './engine/Rocoins.js';
 import { runFinished, onEarned, minutesPlayed } from './engine/challenges.js';
@@ -34,6 +36,9 @@ menu.onSeasonal = (on) => { engine.idleScene?.setSeasonal?.(on); eventCounter.re
 let current = null;
 let currentEntry = null;
 let paused = false;
+
+// Parental controls: counts play time, locks when it is used up, and warns before. Blocked games are refused in route() and play().
+mountParental({ engine, menu, getCurrent: () => current });
 
 // ---------- Rocoins: the wallet, the admin panel (` key) and challenge pay-outs ----------
 let adminWasRunning = false;
@@ -119,6 +124,7 @@ engine.onEnd = (entry, score, detail) => {
 };
 
 async function play(id) {
+  if (isBlocked(id)) { notify('That game is blocked by a parent.'); location.hash = ''; return; }
   touch.hide();
   uiRoot.innerHTML = '';
   paused = false;
@@ -183,6 +189,7 @@ function toMenu() {
 
 function route() {
   const id = location.hash.replace(/^#\/?/, '');
+  if (id && isBlocked(id)) { notify('That game is blocked by a parent.'); location.hash = ''; return; }
   if (!id) toMenu();
   else if (id !== current) play(id);
 }

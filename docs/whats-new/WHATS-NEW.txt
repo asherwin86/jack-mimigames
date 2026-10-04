@@ -5,6 +5,15 @@ Newest update first. Every update is also in its own file in the "updates"
 folder. Each one is released to the website and the Windows app together
 (the app updates itself the next time you open it).
 
+v1.0.57  -  4 Oct 2026
+Parental controls
+-----------------
+New: Settings (the gear on the menu) > Parental controls. The first time it asks you to choose a parent PIN (4 to 8 digits, typed twice); after that it asks for the PIN every time.
+What a parent can set: play time per day (one limit for Monday to Friday, one for Saturday and Sunday: none, 15 minutes up to 4 hours); allowed play hours (for example 7:00 am to 7:30 pm, overnight windows work too); a break reminder every 20 to 60 minutes; blocked games, one at a time or a whole category with one tap; and "Keep inside the arcade", which hides the link to 51 Mimi Games, the Switch button, sign-in, bug reports and the app download.
+How it works: the timer only runs while the arcade is open on screen and someone is playing (it pauses after 5 idle minutes, and two open tabs never count double). It warns at 5 minutes and 1 minute left. When the time is up, or outside the allowed hours, a lock screen covers everything and pauses the game; a parent presses "I am a parent", types the PIN and adds 15 minutes, 30 minutes or an hour. The menu and the pause screen show the time left today. Blocked games are greyed out and cannot be opened, even by typing the address. Five wrong PINs lock the keypad for 5 minutes. The keypad is made of buttons, so it works with a mouse, a finger or a controller.
+The Unity games (Island Kart Rush, Sky Hop Party, Tag Game) follow the same rules and their time is counted too. In the Windows and Android apps they open in a browser that cannot be limited, so they are hidden there while the controls are on.
+Be aware: this is stored in the browser or app on that device. Clearing the site data, a different browser or a private window, or another device is not limited, so it is a house rule rather than a security system. 51 Mimi Games is a separate site and is not limited (keep "Keep inside the arcade" on to stop switching to it). If the PIN is forgotten, the only way back in is to clear the site data, which also clears the limits.
+
 v1.0.56  -  4 Oct 2026
 Sky Hop Party and Tag Game added to the hub
 -------------------------------------------

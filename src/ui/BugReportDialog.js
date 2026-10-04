@@ -1,4 +1,5 @@
 import { Account } from '../engine/Account.js';
+import { keepInside } from '../engine/ParentalState.js';
 
 /**
  * "Report a problem": a small form anyone can use (signed in or not). Reports
@@ -12,6 +13,7 @@ const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&
 const when = (t) => { try { return new Date(t).toLocaleString(); } catch { return ''; } };
 
 export function openBugReport({ game = '' } = {}) {
+  if (keepInside()) return;   // parental controls
   if (open) { open.focus(); return; }
   const root = document.createElement('div');
   root.className = 'acct-backdrop';

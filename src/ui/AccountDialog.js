@@ -1,4 +1,5 @@
 import { Account, hubUrl } from '../engine/Account.js';
+import { keepInside } from '../engine/ParentalState.js';
 import { Rocoins, coinText } from '../engine/Rocoins.js';
 import { RocoinTools } from '../engine/RocoinTools.js';
 
@@ -25,6 +26,7 @@ function ago(ts) {
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
 export function openAccountDialog() {
+  if (keepInside()) return;   // parental controls: no sign-in while they keep the arcade closed
   if (open) { open.focus(); return; }
   const root = document.createElement('div');
   root.className = 'acct-backdrop';

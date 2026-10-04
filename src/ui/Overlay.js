@@ -1,4 +1,5 @@
 import { openBugReport } from './BugReportDialog.js';
+import { keepInside, timeLeftText } from '../engine/ParentalState.js';
 
 /** Full-screen "ready?" card shown before a game's own update loop starts
  *  ticking — the scene behind it is already built and visible, just frozen,
@@ -29,14 +30,16 @@ export function showPause(root, entry, { onResume, onMenu }) {
       <div class="card">
         <h2>Paused</h2>
         <p>${entry.name}</p>
+        ${timeLeftText() ? `<p class="pc-left-line">${timeLeftText()}</p>` : ''}
         <div class="row">
           <button class="btn primary" data-act="resume">Resume</button>
           <button class="btn" data-act="menu">Quit to menu</button>
-          <button class="btn" data-act="report">Report a bug</button>
+          ${keepInside() ? '' : '<button class="btn" data-act="report">Report a bug</button>'}
         </div>
       </div>
     </div>`;
-  root.querySelector('[data-act="report"]').onclick = () => openBugReport({ game: entry.id });
+  const report = root.querySelector('[data-act="report"]');
+  if (report) report.onclick = () => openBugReport({ game: entry.id });
   root.querySelector('[data-act="resume"]').onclick = () => { root.innerHTML = ''; onResume(); };
   root.querySelector('[data-act="menu"]').onclick = onMenu;
   root.querySelector('[data-act="resume"]').focus();
