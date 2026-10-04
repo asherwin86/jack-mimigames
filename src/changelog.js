@@ -2,6 +2,10 @@
  *  menu, under the trailer. Keep entries brief; this isn't a commit log. */
 export const CHANGELOG = [
   {
+    title: 'Sky Hop Party and Tag Game join the hub',
+    detail: 'Two more Unity games now have tiles after the 100 games: Sky Hop Party (race over floating islands, solo or online) and Tag Game (dodge the taggers in practice mode, or play online). Like Island Kart Rush they run on their own page and are big downloads, so the Windows and Android apps open the website for them. Their online modes use their own servers, which can take up to about a minute to wake after a quiet spell.',
+  },
+  {
     title: 'One hub: Island Kart Rush (Unity) and 51 Mimi Games',
     detail: 'The menu now has two extra tiles after the 100 games. Island Kart Rush is a kart racer made in Unity that runs in your browser on its own page (a big download the first time). The 51 Mimi Games tile opens the sister arcade. In the Windows and Android apps the Kart Rush tile opens the website, because the game is too big to carry inside the apps.',
   },

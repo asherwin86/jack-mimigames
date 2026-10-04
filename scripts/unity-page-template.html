@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en-us">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, height=device-height, initial-scale=1.0, user-scalable=no, shrink-to-fit=yes">
+  <title>{{TITLE}} - 100 Mimi Games</title>
+  <meta name="robots" content="noindex">
+  <link rel="shortcut icon" href="TemplateData/favicon.ico">
+  <!--
+    The Unity WebGL build of {{TITLE}} (the Build/ and TemplateData/ folders come from Unity unchanged), wrapped in
+    our own page: it fills the screen, has a Back button to the arcade and a fullscreen button. It is served by the
+    website only, because the files are big (about {{SIZE}} MB), so the Windows and Android apps open this page in the browser.
+  -->
+  <style>
+    html, body { margin: 0; height: 100%; background: #0b0e17; color: #e8eefc; font-family: system-ui, sans-serif; overflow: hidden; }
+    #unity-canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; background: #231F20; display: block; outline: none; }
+    #loading { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; background: #0b0e17; text-align: center; padding: 0 24px; }
+    #unity-logo { width: 154px; height: 130px; background: url('TemplateData/unity-logo-dark.png') no-repeat center; }
+    #bar-empty { width: 141px; height: 18px; background: url('TemplateData/progress-bar-empty-dark.png') no-repeat center; }
+    #bar-full { width: 0%; height: 18px; background: url('TemplateData/progress-bar-full-dark.png') no-repeat center; }
+    #note { font-size: 13px; color: #9aa6c4; max-width: 340px; line-height: 1.45; }
+    /* The two buttons sit in the bottom corners (the games keep their own buttons and score at the top) and fade out of the way until the pointer moves, so they never cover the game's own buttons for long. */
+    .pill { position: fixed; z-index: 5; padding: 8px 14px; border-radius: 999px; border: 1px solid rgba(255,255,255,.3); background: rgba(8,12,20,.78); color: #fff; font: 700 13px system-ui, sans-serif; cursor: pointer; text-decoration: none; opacity: .3; transition: opacity .25s; }
+    body.awake .pill, .pill:hover, .pill:focus-visible { opacity: 1; }
+    .pill:hover { border-color: #6ee7ff; }
+    #back { left: 10px; bottom: 10px; }
+    #full { right: 10px; bottom: 10px; display: none; }
+    #error { position: fixed; z-index: 6; left: 50%; top: 30%; transform: translateX(-50%); max-width: min(480px, 90vw); padding: 16px 18px; border-radius: 12px; background: #5a1f27; border: 1px solid #ff8a96; font-size: 14px; line-height: 1.5; display: none; }
+    #error a { color: #fff; }
+  </style>
+</head>
+<body>
+  <canvas id="unity-canvas" tabindex="-1"></canvas>
+  <div id="loading">
+    <div id="unity-logo"></div>
+    <div id="bar-empty"><div id="bar-full"></div></div>
+    <div id="note">Loading {{TITLE}}. The first visit downloads about {{SIZE}} MB, so it can take a moment.</div>
+  </div>
+  <a id="back" class="pill" href="../../">&#8592; Arcade</a>
+  <button id="full" class="pill" type="button">Fullscreen</button>
+  <div id="error" role="alert"></div>
+
+  <script>
+    // Show the two buttons while the pointer or a finger is moving, and for a few seconds after.
+    (function () {
+      var timer = 0;
+      function wake() { document.body.classList.add('awake'); clearTimeout(timer); timer = setTimeout(function () { document.body.classList.remove('awake'); }, 3000); }
+      ['pointermove', 'pointerdown', 'touchstart'].forEach(function (n) { addEventListener(n, wake, { passive: true }); });
+      wake();
+    })();
+
+    var canvas = document.getElementById('unity-canvas');
+    var errorBox = document.getElementById('error');
+    function showError(html) { errorBox.innerHTML = html; errorBox.style.display = 'block'; document.getElementById('loading').style.display = 'none'; }
+
+    // Fullscreen on arrival: the arcade sends you here with ?fs=1. Browsers only allow fullscreen after a tap or key
+    // press, so try now, and if refused do it on the first tap (the loading note says so).
+    (function () {
+      var params; try { params = new URLSearchParams(location.search); } catch (e) { return; }
+      if (params.get('fs') !== '1') return;
+      params.delete('fs');
+      var rest = params.toString();
+      try { history.replaceState(history.state, '', location.pathname + (rest ? '?' + rest : '') + location.hash); } catch (e) { /* no history API */ }
+      var el = document.documentElement;
+      var request = el.requestFullscreen || el.webkitRequestFullscreen;
+      if (!request || document.fullscreenElement) return;
+      function go() { try { var r = request.call(el, { navigationUI: 'hide' }); return r && r.then ? r : Promise.resolve(); } catch (e) { return Promise.reject(e); } }
+      go().catch(function () {
+        document.getElementById('note').textContent = 'Loading {{TITLE}}. Tap anywhere for fullscreen. The first visit downloads about {{SIZE}} MB.';
+        var events = ['pointerdown', 'pointerup', 'touchend', 'mousedown', 'keydown'];
+        var trying = false;
+        function stop() { events.forEach(function (n) { removeEventListener(n, onGesture, true); }); }
+        function onGesture(e) {
+          if (e.type === 'keydown' && e.key === 'Escape') return;
+          if (trying) return;
+          trying = true;
+          go().then(stop, function () { trying = false; });
+        }
+        events.forEach(function (n) { addEventListener(n, onGesture, true); });
+        setTimeout(stop, 60000);
+      });
+    })();
+
+    var buildUrl = 'Build';
+    var config = {
+      arguments: [],
+      dataUrl: buildUrl + '/WebBuild.data',
+      frameworkUrl: buildUrl + '/WebBuild.framework.js',
+      codeUrl: buildUrl + '/WebBuild.wasm',
+      streamingAssetsUrl: 'StreamingAssets',
+      companyName: 'DefaultCompany',
+      productName: '{{PRODUCT}}',
+      productVersion: '0.1.0',
+      showBanner: function (msg, type) { if (type === 'error') showError(msg); },
+    };
+
+    var script = document.createElement('script');
+    script.src = buildUrl + '/WebBuild.loader.js';
+    script.onerror = function () { showError('Could not load the game files. Check your connection and <a href="">try again</a>.'); };
+    script.onload = function () {
+      createUnityInstance(canvas, config, function (progress) {
+        document.getElementById('bar-full').style.width = (100 * progress) + '%';
+      }).then(function (unityInstance) {
+        document.getElementById('loading').style.display = 'none';
+        var full = document.getElementById('full');
+        full.style.display = 'block';
+        full.onclick = function () { unityInstance.SetFullscreen(1); };
+        canvas.focus();
+        window.__unity = unityInstance;
+      }).catch(function (message) {
+        showError('{{TITLE}} could not start: ' + String(message) + '<br>It needs a browser with WebGL 2 (a recent Chrome, Edge, Firefox or Safari).');
+      });
+    };
+    document.body.appendChild(script);
+  </script>
+</body>
+</html>

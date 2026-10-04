@@ -20,6 +20,16 @@ export const LINKED = [
     path: 'unity/kart-racer/index.html',
   },
   {
+    id: 'sky-hop-party', kind: 'page', name: 'Sky Hop Party', badge: 'Unity', tags: ['platformer'],
+    blurb: 'Race over floating islands: first to the flag wins. Pick a course, then play solo or go online. WASD or arrows move, Space jumps (twice for a double jump). It opens its own page, and the first visit is a big download.',
+    path: 'unity/sky-hop-party/index.html',
+  },
+  {
+    id: 'tag-game', kind: 'page', name: 'Tag Game', badge: 'Unity', tags: ['chase'],
+    blurb: 'Tag in 3D: dodge the taggers in practice mode, or play online against other people. Made in Unity. It opens its own page, and the first visit is a big download.',
+    path: 'unity/tag-game/index.html',
+  },
+  {
     id: 'mimi-51', kind: 'arcade', name: '51 Mimi Games', badge: 'Arcade', tags: ['arcade'],
     blurb: 'The sister arcade: dozens more mini-games, plus Kart Circuit, Block Realm and Rival Arena. Opens 51 Mimi Games.',
   },

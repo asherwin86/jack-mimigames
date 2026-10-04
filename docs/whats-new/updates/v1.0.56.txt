@@ -1,0 +1,8 @@
+v1.0.56  -  4 Oct 2026
+Sky Hop Party and Tag Game added to the hub
+-------------------------------------------
+Two more Unity games from your TagGame the game folder now have tiles after the 100 built-in games (next to Island Kart Rush and 51 Mimi Games): Sky Hop Party and Tag Game. Each opens on its own page with a Back (Arcade) button and a Fullscreen button, both tucked into the bottom corners and faded until you move the mouse.
+Both are website only (about 51 MB and 76 MB), so the Windows installer and the Android app are built without them; in those apps the tiles open the website. They are not saved for offline use.
+Their online modes use their own servers on Render (sky-hop-server and tag-game-server). A free Render server can take up to about a minute to wake after a quiet spell. Tag Game also signs in to Unity's online services, and it needs its StreamingAssets folder (included).
+New helper: scripts/make-unity-page.mjs builds the page around any Unity WebGL build, so adding another game is: copy its build into unity-builds/<id>/, run the script, add a tile in src/engine/LinkedGames.js.
+The test (npm run check:linked) now checks every Unity game: files present, plain (not compressed), under GitHub's size limit, no secrets in the published config, pages match the template.
