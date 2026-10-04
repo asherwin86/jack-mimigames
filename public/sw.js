@@ -29,7 +29,8 @@ self.addEventListener('fetch', (event) => {
   const req = event.request;
   if (req.method !== 'GET' || req.headers.has('range')) return;
   const url = new URL(req.url);
-  if (url.origin !== self.location.origin || /\.(mp4|webm)$/i.test(url.pathname)) return;
+  // The Unity games (/unity/...) are big pages of their own: never cache them, and never let one of them be saved as the arcade's home page.
+  if (url.origin !== self.location.origin || /\.(mp4|webm)$/i.test(url.pathname) || /\/unity\//.test(url.pathname)) return;
 
   if (req.mode === 'navigate') {
     event.respondWith((async () => {

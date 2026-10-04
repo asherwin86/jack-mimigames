@@ -1,10 +1,40 @@
 import { defineConfig } from 'vite';
-import { readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import { cpSync, existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { join, normalize, relative, resolve, extname } from 'node:path';
 import { CATALOG } from './src/games/catalog.js';
 
 const SITE = (process.env.SITE_URL || 'https://mimi-games-hzi0.onrender.com').replace(/\/$/, '');
 const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+
+/**
+ * Unity games (unity-builds/<id>/: a Unity WebGL build plus its page). They are big, so they live on the website
+ * only: copied to dist/unity/<id>/ for a website build, left out when MIMI_APP_BUILD=1 (the Windows and Android
+ * app builds set it), never saved by the offline cache (see the skip list in precacheList below and public/sw.js).
+ * The dev server serves them at /unity/<id>/ too.
+ */
+const UNITY_SRC = resolve('unity-builds');
+const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.wasm': 'application/wasm', '.data': 'application/octet-stream', '.png': 'image/png', '.ico': 'image/x-icon', '.json': 'application/json' };
+function unityGames() {
+  let outDir = resolve('dist');
+  return {
+    name: 'unity-games',
+    configResolved(config) { outDir = resolve(config.root, config.build.outDir); },
+    configureServer(server) {
+      server.middlewares.use('/unity', (req, res, next) => {
+        let rel = decodeURIComponent((req.url || '/').split('?')[0]);
+        if (rel.endsWith('/')) rel += 'index.html';
+        const file = normalize(join(UNITY_SRC, rel));
+        if (!file.startsWith(UNITY_SRC) || !existsSync(file) || !statSync(file).isFile()) { next(); return; }
+        res.setHeader('Content-Type', MIME[extname(file).toLowerCase()] || 'application/octet-stream');
+        res.end(readFileSync(file));
+      });
+    },
+    closeBundle() {
+      if (process.env.MIMI_APP_BUILD === '1' || !existsSync(UNITY_SRC)) return;
+      try { cpSync(UNITY_SRC, join(outDir, 'unity'), { recursive: true }); } catch (e) { console.error('Could not copy the Unity builds:', e.message); }
+    },
+  };
+}
 
 /** Search-engine extras: crawlable text and structured data built from the game catalogue, plus robots.txt and sitemap.xml. */
 function seo() {
@@ -57,7 +87,7 @@ function precacheList() {
         }
       };
       try { walk(root); } catch { return; }
-      const skip = /\.(mp4|webm|map)$|^sw\.js$|^precache\.json$/i;
+      const skip = /\.(mp4|webm|map)$|^sw\.js$|^precache\.json$|^unity\//i;
       writeFileSync(join(root, 'precache.json'), JSON.stringify(['./', ...files.filter((f) => !skip.test(f))]));
       // Stamp the service worker with this build, so every deploy installs a fresh one (and drops the old cache).
       try {
@@ -71,7 +101,7 @@ function precacheList() {
 export default defineConfig({
   base: './',
   define: { __BUILD__: JSON.stringify(new Date().toISOString().slice(0, 16).replace('T', ' ')) },
-  plugins: [seo(), precacheList()],
+  plugins: [seo(), unityGames(), precacheList()],
   // host: true binds every interface, so the LAN URL works from a phone
   // or another machine, not just localhost.
   server: { open: true, host: true },

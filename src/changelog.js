@@ -2,6 +2,10 @@
  *  menu, under the trailer. Keep entries brief; this isn't a commit log. */
 export const CHANGELOG = [
   {
+    title: 'One hub: Island Kart Rush (Unity) and 51 Mimi Games',
+    detail: 'The menu now has two extra tiles after the 100 games. Island Kart Rush is a kart racer made in Unity that runs in your browser on its own page (a big download the first time). The 51 Mimi Games tile opens the sister arcade. In the Windows and Android apps the Kart Rush tile opens the website, because the game is too big to carry inside the apps.',
+  },
+  {
     title: 'Switching goes fullscreen',
     detail: 'When you switch between 100 Mimi Games and 51 Mimi Games in a browser, the page you arrive at asks to go fullscreen so there is no address bar. Browsers only allow that after a tap, so if it is refused a small hint says Tap anywhere for fullscreen and your first tap does it. iPhone Safari has no fullscreen for web pages at all: add the site to your Home Screen (now set up to open with no bars) and it fills the screen.',
   },

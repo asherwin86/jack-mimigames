@@ -27,6 +27,9 @@ jobs:
           java-version: 21
       - run: npm ci
       - name: Build the web app and copy it into the Android project
+        env:
+          # The big Unity games live on the website only (see vite.config.js); the APK would be far too large with them.
+          MIMI_APP_BUILD: '1'
         run: |
           npm run build
           npx cap sync android

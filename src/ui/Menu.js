@@ -3,6 +3,7 @@ import { isInstalledCopy } from '../engine/Install.js';
 import { openInstallDialog } from './InstallDialog.js';
 import { openBugReport } from './BugReportDialog.js';
 import { OTHER_ARCADE, switchToOtherArcade, switchUsesApp, chooseOtherAppLocation } from '../engine/OtherArcade.js';
+import { LINKED, openLinked } from '../engine/LinkedGames.js';
 import { CATALOG, ALL_TAGS, TARGET } from '../games/catalog.js';
 import { isImplemented } from '../games/index.js';
 import { Scores } from '../engine/Storage.js';
@@ -156,6 +157,7 @@ export class Menu {
 
     this.$grid.onclick = (e) => {
       const t = e.target.closest('.tile');
+      if (t?.dataset.link) { const entry = LINKED.find((l) => l.id === t.dataset.link); if (entry) openLinked(entry); return; }
       if (t && !t.classList.contains('soon')) this.onPlay(t.dataset.id);
     };
 
@@ -214,7 +216,14 @@ export class Menu {
       return (e.name + ' ' + e.blurb + ' ' + e.tags.join(' ')).toLowerCase().includes(q);
     });
 
-    if (!list.length) {
+    // The sister arcade and the Unity games sit after the built-in games (see engine/LinkedGames.js).
+    const links = LINKED.filter((e) => {
+      if (this.tag && !e.tags.includes(this.tag)) return false;
+      if (!q) return true;
+      return (e.name + ' ' + e.blurb + ' ' + e.badge + ' ' + e.tags.join(' ')).toLowerCase().includes(q);
+    });
+
+    if (!list.length && !links.length) {
       this.$grid.innerHTML = `<div class="empty" style="grid-column:1/-1">No games match “${q}”.</div>`;
       return;
     }
@@ -234,7 +243,16 @@ export class Menu {
             ${best !== null ? `<span class="pb">best ${fmt(best)} ${e.unit || ''}</span>` : ''}
           </span>
         </button>`;
-    }).join('');
+    }).join('') + links.map((e, i) => `
+        <button class="tile linked" data-link="${e.id}" style="animation-delay:-${((list.length + i) * 0.37).toFixed(2)}s">
+          <span class="num">${e.badge.toUpperCase()}</span>
+          <span class="name">${e.name}</span>
+          <span class="blurb">${e.blurb}</span>
+          <span class="foot">
+            <span class="tag">${e.tags[0]}</span>
+            <span class="pb">opens its own page &#8599;</span>
+          </span>
+        </button>`).join('');
   }
 
   /* -------------------------------------------------------- gamepad cursor */

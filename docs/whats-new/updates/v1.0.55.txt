@@ -1,0 +1,7 @@
+v1.0.55  -  4 Oct 2026
+One hub: Island Kart Rush (Unity) and a 51 Mimi Games tile
+----------------------------------------------------------
+Two new tiles at the end of the game list. They sit apart from the 100 built-in games (no scores or challenges): "Island Kart Rush" is the Unity kart racer from your KartGame project, running in the browser on its own page, with a Back button and a Fullscreen button; "51 Mimi Games" opens the sister arcade (in the Windows app it starts your 51 app, as the Switch button does).
+The Unity game is about 58 MB, so it is only on the website. The Windows installer and the Android app are built without it (a new MIMI_APP_BUILD setting), so they stay small; in those apps the Kart Rush tile opens the website in your browser instead. It is not downloaded for offline use either.
+The offline cache was changed to ignore the Unity pages, so visiting one can never replace the arcade's saved home page.
+Not done yet: SkyHopParty and TagGame. They need web builds exported from Unity first (SkyHopParty uses Unity 6000.7.0b2, which is not installed on the E: drive). Island Kart Rush's "Online Race" needs its own server (KartGame/server), which has not been put online.

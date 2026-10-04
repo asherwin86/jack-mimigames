@@ -31,3 +31,5 @@ jobs:
         run: npm run release:win
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # The big Unity games live on the website only (see vite.config.js); the installer would be far too large with them.
+          MIMI_APP_BUILD: '1'

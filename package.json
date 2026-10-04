@@ -23,6 +23,7 @@
     "check:seasons": "node scripts/check-seasons.mjs",
     "check:admin": "node scripts/check-admin-cli.mjs",
     "check:otherapp": "node scripts/check-otherapp.mjs",
+    "check:linked": "node scripts/check-linked.mjs",
     "hub:admin": "node scripts/hub-admin.mjs",
     "check:nativepad": "node scripts/check-nativepad.mjs",
     "server:hub": "node hub-server/server.js",
