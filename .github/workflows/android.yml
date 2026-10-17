@@ -30,6 +30,9 @@ jobs:
         env:
           # The big Unity games live on the website only (see vite.config.js); the APK would be far too large with them.
           MIMI_APP_BUILD: '1'
+          # Stamped into the app so it can tell when a newer release exists (src/engine/AppUpdate.js). A branch run gives
+          # something that is not a version, which just turns the check off.
+          VITE_APP_VERSION: ${{ github.ref_name }}
         run: |
           npm run build
           npx cap sync android

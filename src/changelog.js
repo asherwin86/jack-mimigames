@@ -2,6 +2,10 @@
  *  menu, under the trailer. Keep entries brief; this isn't a commit log. */
 export const CHANGELOG = [
   {
+    title: 'The Android app tells you when there is a new version',
+    detail: 'When a newer version of 100 Mimi Games is out, the Android app now shows a banner with an Update button. Tap it, open the file that downloads, and tap Install; your progress is kept. Android does not let an app installed this way replace itself without that last tap, so this is as automatic as it can be. You need to install this version once by hand; after that the banner finds every new one.',
+  },
+  {
     title: 'Host for other devices (Windows app)',
     detail: 'The Windows app can now be the server. Open Host in the menu to see this computer\'s address and a QR code: phones, tablets and other computers on the same Wi-Fi can open it and play from your computer, with accounts that live on your computer. The app also announces itself to the website, so a phone that opens the site on the same network is offered a Join button. It is a jump, not a silent switch, because browsers do not let an https website talk to a plain-http address on your network. In the app itself, if the website\'s account server is down it now uses the one running inside the app instead (tick Always use this computer\'s server in the Host window to skip the check). Accounts are separate on each server. Stop hosting and Start hosting buttons turn it off and on without closing the app. The first time, Windows may ask to allow network access: choose Private networks.',
   },
