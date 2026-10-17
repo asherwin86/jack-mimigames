@@ -1,5 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import { spawn } from 'node:child_process';
+import http from 'node:http';
 import fs from 'node:fs';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
@@ -33,6 +34,71 @@ function setUpOtherApp() {
   ipcMain.handle('other-app:status', (e) => (fromOurWindow(e) ? otherApp.status() : null));
   ipcMain.handle('other-app:choose', (e) => (fromOurWindow(e) ? otherApp.choose() : { ok: false }));
   ipcMain.handle('other-app:launch', (e) => (fromOurWindow(e) ? otherApp.launch() : { ok: false }));
+}
+
+/* This computer as a server.
+ *
+ * The app runs the same account/multiplayer server as the website (hub-server/server.js) as a child process, and
+ * tells it to also serve the built game, so a phone on the same Wi-Fi can open http://<this-pc>:<port>/ and play with
+ * accounts that live here. It also announces itself to the website's server so a visitor on the same network is
+ * offered a link. The window itself still loads dist/ straight off disk: moving it to http://localhost would change
+ * its origin, and every save and sign-in lives in localStorage under the old one.
+ *
+ * Port 1864, not 1764: 51 Mimi Games hosts on 1764, and the two apps can be open together. */
+const HOST_PORT = Number(process.env.MIMI_HOST_PORT) || 1864;
+let hubProcess = null;
+
+function startHub() {
+  // Packed, the files are unpacked next to the archive (asarUnpack in package.json) so a plain Node child can read them.
+  const real = (p) => p.replace(`app.asar${path.sep}`, `app.asar.unpacked${path.sep}`);
+  const script = real(path.join(__dirname, '../hub-server/server.js'));
+  const dist = real(path.join(__dirname, '../dist'));
+  if (!fs.existsSync(script) || !fs.existsSync(dist)) { console.error('[host] server files are missing; hosting is off'); return; }
+  hubProcess = spawn(process.execPath, [script], {
+    env: {
+      ...process.env,
+      ELECTRON_RUN_AS_NODE: '1',
+      PORT: String(HOST_PORT),
+      MIMI_DATA_DIR: app.getPath('userData'),
+      MIMI_HOST_MODE: '1',
+      HUB_STATIC_DIR: dist,
+    },
+    stdio: 'inherit',
+    windowsHide: true,
+  });
+  hubProcess.on('exit', (code) => {
+    hubProcess = null;
+    // 98 = the port was taken, most likely by a second copy of this app; the first one is already hosting.
+    if (code !== 0) console.error(`[host] server exited with code ${code}`);
+  });
+}
+
+/** Asks the local server (from here, so the page never needs permission to call it). Resolves { ok:false } if it is not up. */
+function hostRequest(urlPath, body) {
+  return new Promise((resolve) => {
+    const data = body ? JSON.stringify(body) : null;
+    const req = http.request({
+      host: '127.0.0.1', port: HOST_PORT, path: urlPath, method: data ? 'POST' : 'GET', timeout: 4000,
+      headers: data ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) } : {},
+    }, (res) => {
+      let text = '';
+      res.on('data', (c) => { text += c; });
+      res.on('end', () => { try { resolve(JSON.parse(text)); } catch { resolve({ ok: false }); } });
+    });
+    req.on('timeout', () => req.destroy());
+    req.on('error', () => resolve({ ok: false }));
+    if (data) req.write(data);
+    req.end();
+  });
+}
+
+function setUpHost() {
+  startHub();
+  const fromOurWindow = (e) => !!win && e.sender === win.webContents;
+  ipcMain.handle('host:info', (e) => (fromOurWindow(e) ? hostRequest('/api/host/info') : { ok: false }));
+  ipcMain.handle('host:announce', (e, on) => (fromOurWindow(e) && typeof on === 'boolean' ? hostRequest('/api/host/announce', { on }) : { ok: false }));
+  ipcMain.handle('host:sharing', (e, on) => (fromOurWindow(e) && typeof on === 'boolean' ? hostRequest('/api/host/sharing', { on }) : { ok: false }));
+  app.on('before-quit', () => { try { hubProcess?.kill(); } catch { /* already gone */ } });
 }
 
 function createWindow() {
@@ -96,6 +162,7 @@ app.on('second-instance', () => {
 app.whenReady().then(() => {
   setUpOtherApp();
   createWindow();
+  setUpHost();
   setUpAutoUpdate();
 
   app.on('activate', () => {

@@ -2,6 +2,10 @@
  *  menu, under the trailer. Keep entries brief; this isn't a commit log. */
 export const CHANGELOG = [
   {
+    title: 'Host for other devices (Windows app)',
+    detail: 'The Windows app can now be the server. Open Host in the menu to see this computer\'s address and a QR code: phones, tablets and other computers on the same Wi-Fi can open it and play from your computer, with accounts that live on your computer. The app also announces itself to the website, so a phone that opens the site on the same network is offered a Join button. It is a jump, not a silent switch, because browsers do not let an https website talk to a plain-http address on your network. In the app itself, if the website\'s account server is down it now uses the one running inside the app instead (tick Always use this computer\'s server in the Host window to skip the check). Accounts are separate on each server. Stop hosting and Start hosting buttons turn it off and on without closing the app. The first time, Windows may ask to allow network access: choose Private networks.',
+  },
+  {
     title: 'Parental controls follow your child',
     detail: 'A parent can now put the rules on their childs account, so they apply on every phone, tablet, TV or computer the child signs in on. In Parental controls, sign in to your own account, type your childs account name and send the request. The child signs in on any device and accepts, and from then on you manage the rules from your own account. Play time adds up across devices, and only the parent can change or remove the rules.',
   },

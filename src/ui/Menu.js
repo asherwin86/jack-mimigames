@@ -1,6 +1,8 @@
 import { Rocoins } from '../engine/Rocoins.js';
 import { isInstalledCopy } from '../engine/Install.js';
 import { openInstallDialog } from './InstallDialog.js';
+import { openHostDialog } from './HostDialog.js';
+import { desktopHost } from '../engine/Host.js';
 import { openBugReport } from './BugReportDialog.js';
 import { OTHER_ARCADE, switchToOtherArcade, switchUsesApp, chooseOtherAppLocation } from '../engine/OtherArcade.js';
 import { LINKED, openLinked } from '../engine/LinkedGames.js';
@@ -104,6 +106,7 @@ export class Menu {
               <button class="toggle" data-setting="compact" data-default="0" aria-pressed="${prefs.compact}">
                 <span class="dot"></span>Compact
               </button>
+              ${desktopHost() ? `<button class="host-btn" type="button" aria-haspopup="dialog" title="Let phones, tablets and other computers on your Wi-Fi play from this computer">&#128421; Host</button>` : ''}
               <button class="pc-btn" type="button" title="Play time limits, blocked games and more (needs a parent PIN)">&#128737; Parental controls</button>
             </div>
           </div>
@@ -140,6 +143,7 @@ export class Menu {
       if (e.target.closest('.account-btn')) { openAccountDialog(); return; }
       if (e.target.closest('.coins-btn')) { this.onAdmin?.(); return; }
       if (e.target.closest('.install-btn')) { openInstallDialog(); return; }
+      if (e.target.closest('.host-btn')) { openHostDialog(); return; }
       if (e.target.closest('.bug-btn')) { openBugReport(); return; }
       if (e.target.closest('.switch-btn')) { switchToOtherArcade(); return; }
       if (e.target.closest('.pc-btn')) { openParentalPanel(); return; }
@@ -343,7 +347,7 @@ export class Menu {
    *  thing to a real `:hover` a script can drive — CSS :hover only follows
    *  the actual mouse, never something moved by JS. */
   _setHover(el) {
-    const target = el?.closest?.('.tile, .toggle, .chip, .settings-btn, .account-btn, .coins-btn, .install-btn, .bug-btn, .switch-btn, .pc-btn') ?? null;
+    const target = el?.closest?.('.tile, .toggle, .chip, .settings-btn, .account-btn, .coins-btn, .install-btn, .host-btn, .bug-btn, .switch-btn, .pc-btn') ?? null;
     if (target === this._hoverEl) return;
     this._hoverEl?.classList.remove('gp-hover');
     this._hoverEl = target;

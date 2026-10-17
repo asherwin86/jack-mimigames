@@ -16,7 +16,10 @@ import { createAdmin, notifyEarned } from './ui/AdminPanel.js';
 import { startRocoinSync } from './engine/RocoinSync.js';
 import { startParentalSync } from './engine/ParentalSync.js';
 import { TouchControls } from './ui/TouchControls.js';
+import { startHostFinder } from './engine/Host.js';
 import './engine/Install.js';   // catches the browser's install prompt and registers the service worker (website only)
+
+startHostFinder();   // desktop app: fall back to its own server if the website's is down; website: offer a nearby host
 
 const canvas = document.getElementById('stage');
 const hudRoot = document.getElementById('hud');

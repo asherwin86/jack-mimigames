@@ -13,4 +13,10 @@ contextBridge.exposeInMainWorld('mimiDesktop', {
     choose: () => ipcRenderer.invoke('other-app:choose'),
     launch: () => ipcRenderer.invoke('other-app:launch'),
   },
+  // This computer as a server for other devices (see electron/main.js, hub-server/server.js and src/engine/Host.js).
+  host: {
+    info: () => ipcRenderer.invoke('host:info'),
+    announce: (on) => ipcRenderer.invoke('host:announce', !!on),
+    sharing: (on) => ipcRenderer.invoke('host:sharing', !!on),
+  },
 });

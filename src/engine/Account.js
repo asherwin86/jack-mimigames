@@ -21,14 +21,21 @@ const DEFAULT_HUB = 'https://mimi-arcade-hub.onrender.com';
 
 const listeners = new Set();
 let hubOverride = null;
+// Chosen at run time, never saved: the computer-hosted server when this page was served by one (the host stamps
+// window.MIMI_LOCAL_HOST into index.html), or when the desktop app finds the website's server down (see engine/Host.js).
+// A saved override still wins, so nothing here can take over someone's own setting.
+let autoHub = (typeof window !== 'undefined' && window.MIMI_LOCAL_HOST === true) ? window.location.origin : null;
+
+/** Sets (or, with null, clears) the hub chosen automatically for this session. */
+export function setAutoHub(url) { autoHub = url ? String(url).replace(/\/+$/, '') : null; }
 
 function storageGet(k) { try { return localStorage.getItem(k); } catch { return null; } }
 function storageSet(k, v) { try { if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch { /* private mode */ } }
 
-/** Base URL of the account server: a build-time VITE_HUB_URL, a user override, or the default. */
+/** Base URL of the account server: a build-time VITE_HUB_URL, a user override, a hub chosen automatically for this session, or the default. */
 export function hubUrl() {
   const envUrl = typeof import.meta !== 'undefined' ? import.meta.env?.VITE_HUB_URL : undefined;
-  return String(hubOverride ?? storageGet(HUB_OVERRIDE_KEY) ?? envUrl ?? DEFAULT_HUB).trim().replace(/\/+$/, '');
+  return String(hubOverride ?? storageGet(HUB_OVERRIDE_KEY) ?? autoHub ?? envUrl ?? DEFAULT_HUB).trim().replace(/\/+$/, '');
 }
 
 /** Points the game at a different account server (tests, self-hosting). `null` restores the default. */

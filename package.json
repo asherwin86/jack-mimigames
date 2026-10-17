@@ -34,8 +34,10 @@
     "release:win": "npm run build && electron-builder --win --publish=always"
   },
   "dependencies": {
+    "@simplewebauthn/server": "^13.3.3",
     "electron-updater": "^6.3.9",
     "peerjs": "^1.5.5",
+    "qrcode-generator": "^1.4.4",
     "three": "^0.180.0",
     "ws": "^8.21.3"
   },
@@ -55,7 +57,24 @@
     },
     "files": [
       "dist/**",
-      "electron/**"
+      "electron/**",
+      "hub-server/server.js",
+      "hub-server/package.json"
+    ],
+    "asarUnpack": [
+      "hub-server/**",
+      "dist/**",
+      "node_modules/ws/**",
+      "node_modules/@simplewebauthn/**",
+      "node_modules/@hexagon/**",
+      "node_modules/@levischuck/**",
+      "node_modules/@peculiar/**",
+      "node_modules/asn1js/**",
+      "node_modules/pvtsutils/**",
+      "node_modules/pvutils/**",
+      "node_modules/reflect-metadata/**",
+      "node_modules/tslib/**",
+      "node_modules/tsyringe/**"
     ],
     "win": {
       "target": "nsis",

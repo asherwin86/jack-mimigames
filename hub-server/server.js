@@ -28,6 +28,7 @@ const path = require("path");
 const crypto = require("crypto");
 const dns = require("dns");
 const net = require("net");
+const os = require("os");
 const { WebSocketServer } = require("ws");
 // This Node version's built-in `globalThis.crypto` is (oddly) the classic
 // Node `crypto` module itself, not a WebCrypto-compliant object — it has no
@@ -2886,7 +2887,333 @@ async function handleWorldsApi(req, res, action) {
   sendJson(res, 404, { ok: false, msg: "Unknown action." });
 }
 
+/* Hosting for other devices, and finding a host.
+ *
+ * The desktop app runs this same server.js as a child process (see
+ * electron/main.js) with MIMI_HOST_MODE=1, which makes it a home server for
+ * every other device on the network. server.js already listens on all
+ * interfaces, so the only missing pieces were "what address do I give people"
+ * and "how does a phone that opened the website learn it".
+ *
+ * Browsers make that second part hard on purpose. The website is https://, and
+ * an https page may not fetch or open a WebSocket to a plain http://192.168.x.x
+ * host (mixed content), so the page cannot quietly talk to the LAN server —
+ * and a probe would not even tell it whether the host is there. What a page
+ * *may* do is navigate: a top-level jump from https to http is allowed. So the
+ * website acts as a rendezvous point and the visitor is sent to the host:
+ *
+ *   host  -> POST /api/host/register   every minute, over IPv4
+ *   phone -> GET  /api/host/lookup     "any host registered from my public IP?"
+ *            then offers to go to http://<lan-ip>:<port>/ as a normal link.
+ *
+ * Hosts and visitors behind the same router share one public IPv4 address,
+ * which is the whole matching rule. (Dual-stack networks can break it: a phone
+ * that reaches the website over IPv6 presents a different address. The
+ * address + QR panel in Settings is the fallback for that and for the website
+ * being down.)
+ *
+ * CORS is the one thing that differs from 51 Mimi Games. This server answers
+ * every other endpoint with Access-Control-Allow-Origin: * (the website and the
+ * desktop app are other origins, and no cookies are involved), but these host
+ * endpoints must not: a page on any site could otherwise read a visitor's LAN
+ * address, or flip the sharing switch on the computer it is running on. So
+ * they use sendHostJson, which sends no CORS header at all except on lookup, and
+ * there only to the arcade's own website (HOST_LOOKUP_ORIGINS).
+ *
+ * What the registry will and won't hold: addresses are rebuilt here from a
+ * validated private IPv4 + port, never a URL taken from the request, and it is
+ * keyed by the address the *proxy* saw (the last x-forwarded-for entry, not the
+ * first, which a client can forge). The worst a forged registration can do is
+ * show a banner to visitors behind the forger's own router. */
+const HOST_MODE = process.env.MIMI_HOST_MODE === "1";
+const RENDEZVOUS_URL = (process.env.MIMI_RENDEZVOUS_URL || "https://mimi-arcade-hub.onrender.com").replace(/\/+$/, "");
+const HOST_STATE_PATH = path.join(process.env.MIMI_DATA_DIR || ROOT, "data", "host-announce.json");
+const HOST_HEARTBEAT_MS = 60_000;
+const HOST_TTL_MS = 3 * HOST_HEARTBEAT_MS;
+const RATE_LIMIT_HOST = { windowMs: 60_000, max: 20 };
+const MAX_HOSTS_PER_IP = 5;
+const MAX_REGISTRY_IPS = 2000;
+
+let APP_VERSION = "";
+try { APP_VERSION = require("./package.json").version || ""; } catch (e) { /* not bundled; harmless */ }
+
+function isPrivateIPv4(ip) {
+  const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(ip);
+  if (!m) return false;
+  const [a, b, c, d] = m.slice(1).map(Number);
+  if ([a, b, c, d].some((n) => n > 255)) return false;
+  return a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168);
+}
+
+// This machine's LAN addresses, most-likely-useful first. Windows also lists
+// virtual adapters (WSL, Hyper-V, Docker) that no other device can reach; they
+// can't be told apart reliably, so they're listed last rather than hidden.
+function lanAddresses() {
+  const found = [];
+  for (const [iface, list] of Object.entries(os.networkInterfaces())) {
+    for (const a of list || []) {
+      if (a.family !== "IPv4" || a.internal || !isPrivateIPv4(a.address)) continue;
+      const virtual = /vethernet|wsl|hyper-v|docker|virtualbox|vmware|vbox|loopback/i.test(iface);
+      const rank = (a.address.startsWith("192.168.") ? 0 : a.address.startsWith("10.") ? 1 : 2) + (virtual ? 10 : 0);
+      found.push({ ip: a.address, iface, rank });
+    }
+  }
+  return found.sort((x, y) => x.rank - y.rank).map(({ ip, iface }) => ({ ip, iface }));
+}
+
+function hostName() {
+  return (os.hostname() || "This computer").replace(/[^\w .-]/g, "").slice(0, 40) || "This computer";
+}
+
+let hostState = { id: "", announce: true, sharing: true };
+function loadHostState() {
+  try {
+    const saved = JSON.parse(fs.readFileSync(HOST_STATE_PATH, "utf8"));
+    if (typeof saved.announce === "boolean") hostState.announce = saved.announce;
+    if (typeof saved.sharing === "boolean") hostState.sharing = saved.sharing;
+    if (typeof saved.id === "string" && /^[a-f0-9]{16}$/.test(saved.id)) hostState.id = saved.id;
+  } catch (e) { /* first run */ }
+  if (!hostState.id) hostState.id = crypto.randomBytes(8).toString("hex");
+}
+function saveHostState() {
+  try {
+    fs.mkdirSync(path.dirname(HOST_STATE_PATH), { recursive: true });
+    fs.writeFileSync(HOST_STATE_PATH, JSON.stringify(hostState));
+  } catch (e) { console.warn("Couldn't save host settings:", e.message); }
+}
+
+const hostHeartbeat = { ok: null, at: 0, error: "" };
+let heartbeatTimer = null;
+let retryTimer = null;
+
+function postJsonTo(urlStr, body) {
+  return new Promise((resolve, reject) => {
+    const u = new URL(urlStr);
+    const data = JSON.stringify(body);
+    const req = (u.protocol === "https:" ? https : http).request({
+      hostname: u.hostname, port: u.port || undefined, path: u.pathname, method: "POST",
+      // IPv4 on purpose: the visitor is matched by public address, and this is
+      // the family most home networks present identically for every device.
+      family: 4, timeout: 10_000,
+      headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(data) },
+    }, (res) => { res.resume(); res.on("end", () => resolve(res.statusCode)); });
+    req.on("timeout", () => req.destroy(new Error("timed out")));
+    req.on("error", reject);
+    req.end(data);
+  });
+}
+
+async function sendHeartbeat() {
+  const ips = lanAddresses().map((a) => a.ip).slice(0, 6);
+  if (!ips.length) { hostHeartbeat.ok = false; hostHeartbeat.error = "No network connection found."; return; }
+  try {
+    const status = await postJsonTo(`${RENDEZVOUS_URL}/api/host/register`, {
+      id: hostState.id, name: hostName(), port: Number(PORT), scheme: hasCert ? "https" : "http", ips,
+    });
+    hostHeartbeat.ok = status === 200;
+    hostHeartbeat.error = status === 200 ? "" : `The website answered ${status}.`;
+  } catch (e) {
+    hostHeartbeat.ok = false;
+    hostHeartbeat.error = "Couldn't reach the website to announce this computer.";
+  }
+  hostHeartbeat.at = Date.now();
+  // A free-tier website can take most of a minute to wake up, and the regular
+  // beat is a minute apart, so a failed first attempt would otherwise leave this
+  // computer unannounced for a whole minute after the site came back.
+  if (!hostHeartbeat.ok && hostState.sharing && hostState.announce && !retryTimer) {
+    retryTimer = setTimeout(() => { retryTimer = null; if (hostState.sharing && hostState.announce) sendHeartbeat(); }, 10_000);
+    retryTimer.unref();
+  }
+}
+
+function applyAnnounce() {
+  if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null; }
+  if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
+  if (hostState.sharing && hostState.announce) {
+    sendHeartbeat();
+    heartbeatTimer = setInterval(sendHeartbeat, HOST_HEARTBEAT_MS);
+    heartbeatTimer.unref();
+  } else {
+    postJsonTo(`${RENDEZVOUS_URL}/api/host/unregister`, { id: hostState.id }).catch(() => {});
+    hostHeartbeat.ok = null; hostHeartbeat.error = "";
+  }
+}
+
+function startHosting() {
+  if (!HOST_MODE) return;
+  loadHostState();
+  applyAnnounce();
+}
+
+/* The Start / Stop button. "Stopped" means nobody but this computer can reach the
+ * server: every request or socket from another device is refused, and the
+ * announcement is withdrawn. The server itself keeps running, because the
+ * desktop app's own window is served by it and would go blank otherwise. */
+function isLocalSocket(req) {
+  return /^(::1|127\.0\.0\.1|::ffff:127\.0\.0\.1)$/.test(req.socket.remoteAddress || "");
+}
+function lanBlocked(req) {
+  return HOST_MODE && !hostState.sharing && !isLocalSocket(req);
+}
+
+// publicIp -> Map(hostId -> { name, port, scheme, ips, seen })
+const hostRegistry = new Map();
+
+function registryKey(req) {
+  const forwarded = req.headers["x-forwarded-for"];
+  let ip = typeof forwarded === "string" && forwarded.trim() ? forwarded.split(",").pop().trim() : (req.socket.remoteAddress || "");
+  return ip.replace(/^::ffff:/, "");
+}
+
+function isLoopbackRequest(req) {
+  if (req.headers["x-forwarded-for"]) return false;
+  return /^(::1|127\.0\.0\.1|::ffff:127\.0\.0\.1)$/.test(req.socket.remoteAddress || "");
+}
+
+function liveHostsFor(key) {
+  const bucket = hostRegistry.get(key);
+  if (!bucket) return [];
+  const now = Date.now();
+  for (const [id, h] of bucket) if (now - h.seen > HOST_TTL_MS) bucket.delete(id);
+  if (!bucket.size) { hostRegistry.delete(key); return []; }
+  return [...bucket].map(([id, h]) => ({ id, name: h.name, urls: h.ips.map((ip) => `${h.scheme}://${ip}:${h.port}/`) }));
+}
+
+setInterval(() => { for (const key of [...hostRegistry.keys()]) liveHostsFor(key); }, 5 * 60_000).unref();
+
+const HOST_LOOKUP_ORIGINS = new Set(
+  (process.env.HUB_HOST_ORIGINS || "https://mimi-games-hzi0.onrender.com,http://localhost:5173")
+    .split(",").map((o) => o.trim()).filter(Boolean)
+);
+function lookupOrigin(req) {
+  const o = req.headers.origin;
+  return typeof o === "string" && HOST_LOOKUP_ORIGINS.has(o) ? o : "";
+}
+// Like sendJson, but with no blanket CORS header (see the comment above).
+function sendHostJson(res, status, obj, allowOrigin) {
+  const headers = { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", "Vary": "Origin" };
+  if (allowOrigin) headers["Access-Control-Allow-Origin"] = allowOrigin;
+  res.writeHead(status, headers);
+  res.end(JSON.stringify(obj));
+}
+
+async function handleHostApi(req, res, action) {
+  if (action === "lookup") {
+    if (req.method !== "GET") { sendHostJson(res, 405, { ok: false, msg: "Method not allowed." }); return; }
+    sendHostJson(res, 200, { ok: true, hosts: liveHostsFor(registryKey(req)) }, lookupOrigin(req));
+    return;
+  }
+  if (action === "info") {
+    if (req.method !== "GET") { sendHostJson(res, 405, { ok: false, msg: "Method not allowed." }); return; }
+    const addresses = lanAddresses();
+    sendHostJson(res, 200, {
+      ok: true, hostMode: HOST_MODE, sharing: !HOST_MODE || hostState.sharing, announcing: HOST_MODE && hostState.sharing && hostState.announce, announce: hostState.announce,
+      name: hostName(), version: APP_VERSION, port: Number(PORT), scheme: hasCert ? "https" : "http",
+      addresses: addresses.map((a) => ({ ...a, url: `${hasCert ? "https" : "http"}://${a.ip}:${PORT}/` })),
+      rendezvous: RENDEZVOUS_URL, heartbeat: { ...hostHeartbeat },
+    });
+    return;
+  }
+  if (action === "announce") {
+    if (req.method !== "POST") { sendHostJson(res, 405, { ok: false, msg: "Method not allowed." }); return; }
+    // Only the app on this very computer may flip it — a phone on the same Wi-Fi may not.
+    if (!HOST_MODE || !isLoopbackRequest(req)) { sendHostJson(res, 403, { ok: false, msg: "Not allowed." }); return; }
+    const body = await readJsonBody(req, 1024).catch(() => null);
+    if (!body || typeof body.on !== "boolean") { sendHostJson(res, 400, { ok: false, msg: "Expected { on: true|false }." }); return; }
+    hostState.announce = body.on;
+    saveHostState();
+    applyAnnounce();
+    sendHostJson(res, 200, { ok: true, announcing: hostState.announce });
+    return;
+  }
+  if (action === "sharing") {
+    if (req.method !== "POST") { sendHostJson(res, 405, { ok: false, msg: "Method not allowed." }); return; }
+    if (!HOST_MODE || !isLoopbackRequest(req)) { sendHostJson(res, 403, { ok: false, msg: "Not allowed." }); return; }
+    const body = await readJsonBody(req, 1024).catch(() => null);
+    if (!body || typeof body.on !== "boolean") { sendHostJson(res, 400, { ok: false, msg: "Expected { on: true|false }." }); return; }
+    hostState.sharing = body.on;
+    saveHostState();
+    applyAnnounce();
+    sendHostJson(res, 200, { ok: true, sharing: hostState.sharing });
+    return;
+  }
+  if (action === "register" || action === "unregister") {
+    if (req.method !== "POST") { sendHostJson(res, 405, { ok: false, msg: "Method not allowed." }); return; }
+    if (!checkRateLimit(req, res, "host", RATE_LIMIT_HOST)) return;
+    const body = await readJsonBody(req, 2 * 1024).catch(() => null);
+    if (!body || typeof body.id !== "string" || !/^[a-f0-9]{16}$/.test(body.id)) { sendHostJson(res, 400, { ok: false, msg: "Bad request." }); return; }
+    const key = registryKey(req);
+    if (action === "unregister") {
+      hostRegistry.get(key)?.delete(body.id);
+      sendHostJson(res, 200, { ok: true });
+      return;
+    }
+    const port = Number(body.port);
+    const ips = Array.isArray(body.ips) ? body.ips.filter((ip) => typeof ip === "string" && isPrivateIPv4(ip)).slice(0, 6) : [];
+    if (!Number.isInteger(port) || port < 1024 || port > 65535 || !["http", "https"].includes(body.scheme) || !ips.length) {
+      sendHostJson(res, 400, { ok: false, msg: "Bad request." });
+      return;
+    }
+    let bucket = hostRegistry.get(key);
+    if (!bucket) {
+      if (hostRegistry.size >= MAX_REGISTRY_IPS) { sendHostJson(res, 503, { ok: false, msg: "Busy." }); return; }
+      bucket = new Map();
+      hostRegistry.set(key, bucket);
+    }
+    if (!bucket.has(body.id) && bucket.size >= MAX_HOSTS_PER_IP) { sendHostJson(res, 429, { ok: false, msg: "Too many hosts." }); return; }
+    const name = typeof body.name === "string" ? body.name.replace(/[^\w .-]/g, "").slice(0, 40) : "";
+    bucket.set(body.id, { name: name || "A computer", port, scheme: body.scheme, ips, seen: Date.now() });
+    sendHostJson(res, 200, { ok: true });
+    return;
+  }
+  sendHostJson(res, 404, { ok: false, msg: "Not found." });
+}
+
+/* The built game, for other devices. The desktop app starts this server with
+ * HUB_STATIC_DIR pointing at its own dist/, so a phone that opens
+ * http://<this-pc>:<port>/ gets the whole game from here, and its accounts come
+ * from this same server (index.html is stamped with window.MIMI_LOCAL_HOST so
+ * the page knows; see src/engine/Account.js). Off unless HUB_STATIC_DIR is set,
+ * so the hosted account server stays API-only. */
+const STATIC_DIR = process.env.HUB_STATIC_DIR ? path.resolve(process.env.HUB_STATIC_DIR) : "";
+const BUILT_MIME = {
+  ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".mjs": "text/javascript; charset=utf-8",
+  ".css": "text/css; charset=utf-8", ".json": "application/json; charset=utf-8", ".webmanifest": "application/manifest+json; charset=utf-8",
+  ".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp", ".gif": "image/gif",
+  ".ico": "image/x-icon", ".woff": "font/woff", ".woff2": "font/woff2", ".ttf": "font/ttf", ".wasm": "application/wasm",
+  ".mp3": "audio/mpeg", ".ogg": "audio/ogg", ".wav": "audio/wav", ".glb": "model/gltf-binary", ".txt": "text/plain; charset=utf-8",
+  ".data": "application/octet-stream",
+};
+function serveBuilt(req, res, urlPath) {
+  let rel;
+  try { rel = decodeURIComponent(urlPath); } catch (e) { res.writeHead(400); res.end("Bad request"); return; }
+  if (rel.endsWith("/")) rel += "index.html";
+  // Resolve first, then require the result to be inside the folder — the same
+  // order that fixed the path-traversal hole in 51's server (see its CLAUDE.md).
+  const filePath = path.resolve(STATIC_DIR, "." + rel);
+  if (filePath !== STATIC_DIR && !filePath.startsWith(STATIC_DIR + path.sep)) { res.writeHead(404); res.end("Not found"); return; }
+  fs.stat(filePath, (err, stat) => {
+    if (err || !stat.isFile()) { res.writeHead(404); res.end("Not found"); return; }
+    const type = BUILT_MIME[path.extname(filePath).toLowerCase()] || "application/octet-stream";
+    if (path.basename(filePath) === "index.html") {
+      fs.readFile(filePath, "utf8", (e2, html) => {
+        if (e2) { res.writeHead(500); res.end("Error"); return; }
+        res.writeHead(200, { "Content-Type": type, "Cache-Control": "no-cache" });
+        res.end(html.replace("</head>", "<script>window.MIMI_LOCAL_HOST=true;</script></head>"));
+      });
+      return;
+    }
+    res.writeHead(200, { "Content-Type": type, "Content-Length": stat.size, "Cache-Control": "no-cache" });
+    fs.createReadStream(filePath).pipe(res);
+  });
+}
+
 function requestHandler(req, res) {
+  if (lanBlocked(req)) {
+    res.writeHead(503, { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" });
+    res.end("Hosting is turned off on this computer. Turn it on from Host in the menu.");
+    return;
+  }
   const urlPath = req.url.split("?")[0];
   // (arcade) CORS preflight — the arcade's website and desktop app are other origins.
   if (req.method === "OPTIONS") {
@@ -2897,6 +3224,17 @@ function requestHandler(req, res) {
       "Access-Control-Max-Age": "86400",
     });
     res.end();
+    return;
+  }
+  const hostMatch = urlPath.match(/^\/api\/host\/([a-z]+)$/);
+  if (hostMatch) {
+    handleHostApi(req, res, hostMatch[1]).catch(() => {
+      sendHostJson(res, 500, { ok: false, msg: "Server error." });
+    });
+    return;
+  }
+  if (STATIC_DIR && req.method === "GET" && !urlPath.startsWith("/api/") && urlPath !== "/health") {
+    serveBuilt(req, res, urlPath);
     return;
   }
   if (API_ONLY) {
@@ -3173,7 +3511,8 @@ function broadcast(room, payload, exceptId) {
 
 let nextClientId = 1;
 
-wss.on("connection", (ws) => {
+wss.on("connection", (ws, req) => {
+  if (req && lanBlocked(req)) { ws.close(1013, "Hosting is turned off"); return; }
   const clientId = String(nextClientId++);
   let joinedRoom = null;
   let roomCode = null;
@@ -3417,6 +3756,7 @@ bootstrapData().then(() => {
     const wsScheme = hasCert ? "wss" : "ws";
     console.log(`Mini Games server running at ${scheme}://localhost:${PORT}`);
     console.log(`Multiplayer relay at ${wsScheme}://localhost:${PORT}/mp`);
+    startHosting();
     if (!hasCert) {
       console.log("No TLS cert found in certs/ — voice chat (getUserMedia) will only work on http://localhost, not over the LAN.");
     }
