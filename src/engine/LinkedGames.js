@@ -30,6 +30,11 @@ export const LINKED = [
     path: 'unity/tag-game/index.html',
   },
   {
+    id: 'kart-circuit-unity', kind: 'page', name: 'Kart Circuit Unity', badge: 'Unity', tags: ['racing'],
+    blurb: 'The Unity version of Kart Circuit, racing against bots. W and S gas and brake, A and D steer, Space or Shift drifts. A controller works too: left stick steers, RT gas, LT brake, RB drift. It opens in its own page, and the first visit is a big download.',
+    path: 'unity/kart-circuit-unity/index.html',
+  },
+  {
     id: 'mimi-51', kind: 'arcade', name: '51 Mimi Games', badge: 'Arcade', tags: ['arcade'],
     blurb: 'The sister arcade: dozens more mini-games, plus Kart Circuit, Block Realm and Rival Arena. Opens 51 Mimi Games.',
   },
