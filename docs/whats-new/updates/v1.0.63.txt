@@ -1,0 +1,5 @@
+v1.0.63  -  1 Nov 2026
+Tag Game updated
+----------------
+The Tag Game on the website (the Tag Game tile after the 100 games) is now the newest build. What is new: a Spectate button, so you can watch other people's live games and follow a player or fly around freely; a School map; and online play works again, because the game now connects to the new Tag Game server (the old one had been switched off, so online games could not start).
+It runs on the website only, because the game files are big (about 76 MB on the first visit). In the Windows and Android apps the tile opens the website, as before.

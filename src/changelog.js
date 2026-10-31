@@ -2,6 +2,10 @@
  *  menu, under the trailer. Keep entries brief; this isn't a commit log. */
 export const CHANGELOG = [
   {
+    title: 'Tag Game updated',
+    detail: 'Tag Game has a new build: you can now watch other games live with the Spectate button (follow a player or fly around), there is a new School map, and online play is back because the game now uses the new Tag Game server. It is on the website, in the Tag Game tile after the 100 games.',
+  },
+  {
     title: 'The Android app tells you when there is a new version',
     detail: 'When a newer version of 100 Mimi Games is out, the Android app now shows a banner with an Update button. Tap it, open the file that downloads, and tap Install; your progress is kept. Android does not let an app installed this way replace itself without that last tap, so this is as automatic as it can be. You need to install this version once by hand; after that the banner finds every new one.',
   },

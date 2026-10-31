@@ -26,7 +26,7 @@ export const LINKED = [
   },
   {
     id: 'tag-game', kind: 'page', name: 'Tag Game', badge: 'Unity', tags: ['chase'],
-    blurb: 'Tag in 3D: dodge the taggers in practice mode, or play online against other people. Made in Unity. It opens its own page, and the first visit is a big download.',
+    blurb: 'Tag in 3D: dodge the taggers in practice mode, play online against other people, or watch live games with Spectate. Made in Unity. It opens its own page, and the first visit is a big download.',
     path: 'unity/tag-game/index.html',
   },
   {
