@@ -11,7 +11,7 @@ import { isInstalledCopy } from './Install.js';
  *  - Everywhere else it jumps to the website: in the same tab on the web (so
  *    Back returns here), in the browser for the other installed copies.
  */
-export const OTHER_ARCADE = { name: '51 Mimi Games', url: 'https://mimi-games-bvpj.onrender.com/' };
+export const OTHER_ARCADE = { name: '51 Mimi Games', url: 'https://mimi-games-lg9l.onrender.com/' };
 
 /** The address the website switch goes to. `?fs=1` tells the other arcade it was reached by Switch, so it can go fullscreen (see armFullscreenOnArrival). */
 export const switchUrl = () => `${OTHER_ARCADE.url}?fs=1`;
