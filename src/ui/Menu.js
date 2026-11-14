@@ -15,6 +15,7 @@ import { Settings } from '../engine/Settings.js';
 import { themeFor, seasonOverride } from '../engine/Seasons.js';
 import { Account } from '../engine/Account.js';
 import { openAccountDialog } from './AccountDialog.js';
+import { openAdminConsole } from './AdminConsole.js';
 import { CHANGELOG } from '../changelog.js';
 
 export class Menu {
@@ -108,6 +109,7 @@ export class Menu {
               </button>
               ${desktopHost() ? `<button class="host-btn" type="button" aria-haspopup="dialog" title="Let phones, tablets and other computers on your Wi-Fi play from this computer">&#128421; Host</button>` : ''}
               <button class="pc-btn" type="button" title="Play time limits, blocked games and more (needs a parent PIN)">&#128737; Parental controls</button>
+              <button class="ad-btn" type="button" title="Admin console: Rocoins, commands, tools (needs the admin password)">&#128295; Admin</button>
             </div>
           </div>
           <div class="chips"></div>
@@ -147,6 +149,7 @@ export class Menu {
       if (e.target.closest('.bug-btn')) { openBugReport(); return; }
       if (e.target.closest('.switch-btn')) { switchToOtherArcade(); return; }
       if (e.target.closest('.pc-btn')) { openParentalPanel(); return; }
+      if (e.target.closest('.ad-btn')) { openAdminConsole(); return; }
       const opener = e.target.closest('.settings-btn');
       if (opener) {
         const box = this.root.querySelector('.settings-box');
@@ -347,7 +350,7 @@ export class Menu {
    *  thing to a real `:hover` a script can drive — CSS :hover only follows
    *  the actual mouse, never something moved by JS. */
   _setHover(el) {
-    const target = el?.closest?.('.tile, .toggle, .chip, .settings-btn, .account-btn, .coins-btn, .install-btn, .host-btn, .bug-btn, .switch-btn, .pc-btn') ?? null;
+    const target = el?.closest?.('.tile, .toggle, .chip, .settings-btn, .account-btn, .coins-btn, .install-btn, .host-btn, .bug-btn, .switch-btn, .pc-btn, .ad-btn') ?? null;
     if (target === this._hoverEl) return;
     this._hoverEl?.classList.remove('gp-hover');
     this._hoverEl = target;

@@ -5,6 +5,14 @@ Newest update first. Every update is also in its own file in the "updates"
 folder. Each one is released to the website and the Windows app together
 (the app updates itself the next time you open it).
 
+v1.0.65  -  14 Nov 2026
+Admin console
+-------------
+New: an admin panel with commands. Open it from Settings > Admin, or press Shift and the backtick key (the key under Escape) on a keyboard. It asks for the admin password (the same one as the Rocoin tools). Press Escape to close it, and "lock" to lock it again.
+What it does: quick buttons for +100, +1,000, +100,000 Rocoins and infinite Rocoins, and a command line. Type help for the list: give, take and set Rocoins, infinite on or off, games (lists every game and id), play (opens any game by name), home, season (force or switch off the school-holiday colours), info (build, account, device), hub (show, change, reset or test the account server address), refresh (clears the saved copy of the app and reloads), reset coins yes (empties the wallet) and lock. The up arrow brings back earlier commands.
+Not available while parental controls are on for that device, so a child cannot use it to get around them. The password only keeps casual clicking out, it is not real security.
+Plain backtick still opens the Rocoins and powers panel as before.
+
 v1.0.63  -  1 Nov 2026
 Tag Game updated
 ----------------

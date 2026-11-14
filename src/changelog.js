@@ -2,6 +2,10 @@
  *  menu, under the trailer. Keep entries brief; this isn't a commit log. */
 export const CHANGELOG = [
   {
+    title: 'Admin console',
+    detail: 'Settings now has an Admin button (or press Shift and the backtick key). Enter the admin password and you get a console with commands: give or take Rocoins, set an exact amount, infinite Rocoins on or off, open any game by name, force or switch off the holiday colours, show the build and device info, test or change the account server address, clear the saved app and reload, and reset the wallet. Type help to see them all. It stays shut while parental controls are on for that device.',
+  },
+  {
     title: 'Tag Game updated',
     detail: 'Tag Game has a new build: you can now watch other games live with the Spectate button (follow a player or fly around), there is a new School map, and online play is back because the game now uses the new Tag Game server. It is on the website, in the Tag Game tile after the 100 games.',
   },

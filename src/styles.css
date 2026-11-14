@@ -632,3 +632,18 @@ html, body {
 .pc-link-body .pc-btns { margin-top: 8px; }
 .pc-link-body input[type=text], .pc-link-body input[type=password] { width: 100%; box-sizing: border-box; }
 .pc-link .bad { color: #ff9a92; }
+
+/* Admin console */
+.ad-backdrop { z-index: 99400; }
+.ad-card { max-width: 640px; width: min(640px, 94vw); max-height: 92vh; overflow-y: auto; }
+.ad-form { display: flex; gap: 8px; margin: 10px 0; }
+.ad-form input { flex: 1; min-width: 0; padding: 10px 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,.25); background: rgba(255,255,255,.06); color: #fff; font: 14px ui-monospace, Consolas, monospace; }
+.ad-bal { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin: 6px 0; }
+.ad-bal-n { font-weight: 800; font-size: 18px; }
+.ad-quick { display: flex; flex-wrap: wrap; gap: 6px; }
+.ad-foot { margin-top: 4px; }
+.ad-log { height: 240px; overflow-y: auto; margin: 8px 0; padding: 10px 12px; border-radius: 10px; background: #070a12; border: 1px solid rgba(255,255,255,.14); font: 12.5px/1.5 ui-monospace, Consolas, monospace; white-space: pre-wrap; word-break: break-word; }
+.ad-log .cmd { color: #9be7ff; }
+.ad-log .ok { color: #cfe9d4; }
+.ad-log .bad { color: #ff9a92; }
+.ad-msg { min-height: 1.2em; margin: 0; font-size: 13px; }

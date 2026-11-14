@@ -13,6 +13,7 @@ import { Settings } from './engine/Settings.js';
 import { Rocoins } from './engine/Rocoins.js';
 import { runFinished, onEarned, minutesPlayed } from './engine/challenges.js';
 import { createAdmin, notifyEarned } from './ui/AdminPanel.js';
+import { openAdminConsole } from './ui/AdminConsole.js';
 import { startRocoinSync } from './engine/RocoinSync.js';
 import { startParentalSync } from './engine/ParentalSync.js';
 import { TouchControls } from './ui/TouchControls.js';
@@ -261,6 +262,8 @@ addEventListener('keydown', (e) => {
   // ` opens/closes the Rocoins panel from anywhere — except while typing somewhere else (Blockcraft's chat).
   if (e.code === 'Backquote' && !e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey) {
     const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
+    // Shift + ` (~) opens the admin console (password needed); plain ` is the Rocoins panel.
+    if (e.shiftKey && (!typing || e.target.closest?.('.ad-card'))) { e.preventDefault(); openAdminConsole(); return; }
     if (!typing || e.target.closest?.('.rc-card')) { e.preventDefault(); admin.toggle(); }
     return;
   }
