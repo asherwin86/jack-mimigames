@@ -16,6 +16,9 @@ const UPDATE_CHECK_EVERY_MS = 4 * 60 * 60 * 1000;
 // a second copy of the whole arcade.
 if (!app.requestSingleInstanceLock()) app.quit();
 
+// Windows needs this to show notifications (bug reports) under the app's own name.
+app.setAppUserModelId('au.com.feesynergy.mimigames');
+
 let win = null;
 
 /** The Windows-only "Switch to 51 Mimi Games" button: pick that app's .exe once, then it starts it and closes this app. */

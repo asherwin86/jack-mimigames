@@ -2,6 +2,10 @@
  *  menu, under the trailer. Keep entries brief; this isn't a commit log. */
 export const CHANGELOG = [
   {
+    title: 'Bug report notifications',
+    detail: 'When someone sends a bug report, the arcade owner now gets a pop-up on the computer (a Windows notification in the desktop app) showing who sent it, which game and what they wrote. Clicking it opens the inbox. It works while the app is open, even minimised, and when you are signed in as the owner. On the website, the Inbox has a Turn on notifications button.',
+  },
+  {
     title: 'Admin console',
     detail: 'Settings now has an Admin button (or press Shift and the backtick key). Enter the admin password and you get a console with commands: give or take Rocoins, set an exact amount, infinite Rocoins on or off, open any game by name, force or switch off the holiday colours, show the build and device info, test or change the account server address, clear the saved app and reload, and reset the wallet. Type help to see them all. It stays shut while parental controls are on for that device.',
   },

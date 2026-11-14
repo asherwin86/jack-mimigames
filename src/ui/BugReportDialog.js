@@ -12,14 +12,14 @@ const CATEGORIES = [['bug', 'Something is broken'], ['suggestion', 'An idea'], [
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const when = (t) => { try { return new Date(t).toLocaleString(); } catch { return ''; } };
 
-export function openBugReport({ game = '' } = {}) {
+export function openBugReport({ game = '', tab: startTab = 'send' } = {}) {
   if (keepInside()) return;   // parental controls
-  if (open) { open.focus(); return; }
+  if (open) { open.focus(); open.show?.(startTab); return; }
   const root = document.createElement('div');
   root.className = 'acct-backdrop';
   document.body.appendChild(root);
 
-  let tab = 'send';           // 'send' | 'inbox'
+  let tab = startTab === 'inbox' ? 'inbox' : 'send';           // 'send' | 'inbox'
   let busy = false;
   let message = null;         // { ok, text }
   let sent = false;
@@ -29,7 +29,7 @@ export function openBugReport({ game = '' } = {}) {
   const close = () => { root.remove(); removeEventListener('keydown', onKey, true); open = null; };
   const onKey = (e) => { if (e.key === 'Escape') { e.stopImmediatePropagation(); e.preventDefault(); close(); } };
   addEventListener('keydown', onKey, true);
-  open = { focus: () => root.querySelector('textarea')?.focus(), close };
+  open = { focus: () => root.querySelector('textarea')?.focus(), close, show: (t) => { if (t === 'inbox') { tab = 'inbox'; if (isOwner) loadInbox(); render(); } } };
 
   async function send() {
     if (busy) return;
@@ -65,7 +65,8 @@ export function openBugReport({ game = '' } = {}) {
     const tabs = isOwner ? `<div class="acct-tabs"><button type="button" data-tab="send" class="${tab === 'send' ? 'on' : ''}">Send a report</button><button type="button" data-tab="inbox" class="${tab === 'inbox' ? 'on' : ''}">Inbox (${inbox?.length ?? 0})</button></div>` : '';
     let body;
     if (tab === 'inbox' && isOwner) {
-      body = `<div class="bug-list">${(inbox || []).map((r) => `
+      const canAsk = typeof Notification !== 'undefined' && Notification.permission === 'default';
+      body = `${canAsk ? '<p class="acct-note">Want a pop-up on this computer when someone sends a report? <button class="acct-btn small" type="button" data-act="notify">Turn on notifications</button></p>' : ''}<div class="bug-list">${(inbox || []).map((r) => `
         <div class="bug-item">
           <div class="bug-meta"><strong>${esc(r.category)}</strong> &middot; ${esc(r.name)} &middot; ${esc(r.context?.game || 'no game')} &middot; ${esc(when(r.createdAt))}</div>
           <p>${esc(r.message)}</p>
@@ -90,6 +91,7 @@ export function openBugReport({ game = '' } = {}) {
     if (ta) ta.value = typed;
     root.querySelector('.acct-x')?.addEventListener('click', close);
     root.querySelector('[data-act="close"]')?.addEventListener('click', close);
+    root.querySelector('[data-act="notify"]')?.addEventListener('click', () => { Notification.requestPermission().then(() => render()); });
     root.querySelector('[data-act="another"]')?.addEventListener('click', () => { sent = false; message = null; render(); });
     root.querySelectorAll('[data-tab]').forEach((b) => b.addEventListener('click', () => { tab = b.dataset.tab; render(); }));
     root.querySelectorAll('[data-done]').forEach((b) => b.addEventListener('click', () => done(b.dataset.done)));

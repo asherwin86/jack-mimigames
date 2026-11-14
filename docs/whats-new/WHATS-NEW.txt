@@ -5,6 +5,14 @@ Newest update first. Every update is also in its own file in the "updates"
 folder. Each one is released to the website and the Windows app together
 (the app updates itself the next time you open it).
 
+v1.0.66  -  14 Nov 2026
+Bug report notifications
+------------------------
+New: when someone sends a bug report, you get a notification on the computer. In the Windows app it is a normal Windows pop-up (bottom right) saying who sent it, which game, and the start of what they wrote. Click it to open the inbox. If several arrive together you see the first three and then "and N more". The first time you sign in, one pop-up says how many reports are already waiting instead of showing each old one.
+It checks every minute while the app is open (minimised is fine) and you are signed in as the arcade owner. Only the owner's account can read reports, so other accounts never see this. If you are not signed in, or the app is closed, you are not told until you open it again.
+On the website: open Report a problem > Inbox and press Turn on notifications so the browser allows pop-ups. If notifications are blocked, a message shows at the top of the screen instead.
+Needs your account to be the owner: on Render, in the mimi-arcade-hub service, set HUB_REPORT_ADMINS to your account name (for example jack).
+
 v1.0.65  -  14 Nov 2026
 Admin console
 -------------
