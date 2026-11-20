@@ -15,7 +15,10 @@ export function setAutoPvp(url) { autoPvp = url ? String(url).replace(/\/+$/, ''
 /** The arena's websocket address ('' when a build turned it off). */
 export function pvpUrl() {
   if (typeof window !== 'undefined' && window.MIMI_LOCAL_HOST === true && Number(window.MIMI_PVP_PORT) > 0) {
-    return `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.hostname}:${Number(window.MIMI_PVP_PORT)}`;
+    // Through the https tunnel (Tailscale Funnel) the arena is on its own public port with TLS; on the home network it is plain.
+    const secure = location.protocol === 'https:';
+    const port = secure ? Number(window.MIMI_PVP_TLS_PORT) || 8443 : Number(window.MIMI_PVP_PORT);
+    return `${secure ? 'wss' : 'ws'}://${location.hostname}:${port}`;
   }
   if (autoPvp) return autoPvp;
   const env = typeof import.meta !== 'undefined' ? import.meta.env?.VITE_PVP_SERVER : undefined;

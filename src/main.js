@@ -19,10 +19,12 @@ import { startReportWatcher } from './ui/ReportWatcher.js';
 import { startParentalSync } from './engine/ParentalSync.js';
 import { TouchControls } from './ui/TouchControls.js';
 import { startHostFinder } from './engine/Host.js';
+import { chooseHomeServer } from './engine/HomeServer.js';
 import { startAppUpdateCheck } from './engine/AppUpdate.js';
 import './engine/Install.js';   // catches the browser's install prompt and registers the service worker (website only)
 
 startAppUpdateCheck();   // Android app: offer the newest APK when a newer release exists
+chooseHomeServer();   // when a home server address is set: try it first, the website's servers are the fallback
 startHostFinder();   // desktop app: fall back to its own server if the website's is down; website: offer a nearby host
 
 const canvas = document.getElementById('stage');

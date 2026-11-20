@@ -13,6 +13,7 @@ import path from 'node:path';
 
 const require = createRequire(import.meta.url);
 const { createHostConfig } = require('../electron/hostConfig.cjs');
+const { createTailscale } = require('../electron/tailscale.cjs');
 let failed = 0;
 const ok = (c, m, d = '') => { if (!c) { failed++; console.log(`\x1b[31mFAIL\x1b[0m ${m} ${d}`); } else console.log(`\x1b[32mok\x1b[0m   ${m}`); };
 
@@ -98,6 +99,70 @@ hub = await startHub('the-pepper');
 l = await post('login', { key: 'jack', passwordHash: hash, device: { label: 'this computer' } });
 ok(l.ok, 'and with the right one again it works');
 await stopHub(hub);
+
+// ---------- the host controls cannot be reached through a tunnel
+{
+  const ctlPort = 23000 + Math.floor(Math.random() * 9000);
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'mimi-ctl-'));
+  const dist = fs.mkdtempSync(path.join(os.tmpdir(), 'mimi-dist-')); fs.writeFileSync(path.join(dist, 'index.html'), '<html><head></head><body>hi</body></html>');
+  const srv = spawn(process.execPath, ['hub-server/server.js'], { env: { ...process.env, PORT: String(ctlPort), MIMI_DATA_DIR: d, MIMI_HOST_MODE: '1', HUB_STATIC_DIR: dist, MIMI_PVP_PORT: '7443', MIMI_PVP_TLS_PORT: '8443', MIMI_HOST_CONTROL_TOKEN: 'secret-secret-secret-1234' }, stdio: 'ignore' });
+  procs.push(srv);
+  const base = `http://127.0.0.1:${ctlPort}`;
+  for (let i = 0; i < 60; i++) { try { if ((await fetch(`${base}/health`)).ok) break; } catch { /* not up */ } await new Promise((r) => setTimeout(r, 150)); }
+  const call = (p2, method, headers = {}, body) => fetch(base + p2, { method, headers: { 'Content-Type': 'application/json', ...headers }, body }).then(async (r) => ({ status: r.status, json: await r.json().catch(() => ({})) }));
+  const T = { 'x-mimi-host-control': 'secret-secret-secret-1234' };
+  let x = await call('/api/host/info', 'GET'); ok(x.status === 403, 'the host info needs the app\'s secret, even from this computer', String(x.status));
+  x = await call('/api/host/info', 'GET', { 'x-mimi-host-control': 'wrong' }); ok(x.status === 403, '...a wrong secret is refused');
+  x = await call('/api/host/info', 'GET', T); ok(x.status === 200 && x.json.ok, 'with the secret it answers');
+  x = await call('/api/host/sharing', 'POST', {}, '{"on":false}'); ok(x.status === 403, 'switching hosting off needs the secret');
+  x = await call('/api/host/sharing', 'POST', { ...T, 'x-forwarded-for': '203.0.113.5' }, '{"on":false}'); ok(x.status === 403, '...and a request that came through a tunnel is refused even with the secret (a proxy header marks it)');
+  x = await call('/api/host/sharing', 'POST', { ...T, 'tailscale-ingress-src': '203.0.113.5:1234' }, '{"on":false}'); ok(x.status === 403, '...also when the only sign is Tailscale\'s header');
+  x = await call('/api/host/announce', 'POST', {}, '{"on":false}'); ok(x.status === 403, 'announcing needs the secret too');
+  x = await call('/api/host/sharing', 'POST', T, '{"on":true}'); ok(x.status === 200, 'the app itself (with the secret, no proxy) can still control it');
+  const page = await fetch(base + '/').then((r) => r.text());
+  ok(/MIMI_LOCAL_HOST=true/.test(page) && /MIMI_PVP_PORT=7443/.test(page) && /MIMI_PVP_TLS_PORT=8443/.test(page), 'pages served from here are told where the arena is, plain and over https');
+  const noTok = spawn(process.execPath, ['hub-server/server.js'], { env: { ...process.env, PORT: String(ctlPort + 1), MIMI_DATA_DIR: d, MIMI_HOST_MODE: '1', HUB_STATIC_DIR: dist }, stdio: 'ignore' });
+  procs.push(noTok);
+  for (let i = 0; i < 60; i++) { try { if ((await fetch(`http://127.0.0.1:${ctlPort + 1}/health`)).ok) break; } catch { /* not up */ } await new Promise((r) => setTimeout(r, 150)); }
+  const y = await fetch(`http://127.0.0.1:${ctlPort + 1}/api/host/sharing`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '1.2.3.4' }, body: '{"on":false}' }).then((r) => r.status);
+  ok(y === 403, 'even a server started without a secret refuses controls that came through a proxy');
+}
+
+// ---------- Tailscale Funnel
+{
+  const calls = [];
+  let mode = 'ready';
+  const fakeRun = async (file, args) => {
+    calls.push([file, ...args].join(' '));
+    const a = args.join(' ');
+    if (mode === 'missing') return { code: -1, stdout: '', stderr: '' };
+    if (a === 'version') return { code: 0, stdout: '1.80.0', stderr: '' };
+    if (a === 'status --json') return { code: 0, stdout: JSON.stringify(mode === 'login' ? { BackendState: 'NeedsLogin' } : mode === 'stopped' ? { BackendState: 'Stopped' } : { BackendState: 'Running', Self: { DNSName: 'my-pc.tail1234.ts.net.' } }), stderr: '' };
+    if (a === 'funnel status --json') return { code: 0, stdout: JSON.stringify(on ? { AllowFunnel: { 'my-pc.tail1234.ts.net:443': true, 'my-pc.tail1234.ts.net:8443': true } } : {}), stderr: '' };
+    if (a.startsWith('funnel --bg')) { if (mode === 'needsfunnel') return { code: 1, stdout: '', stderr: 'Funnel is not enabled on your tailnet.\nTo enable, visit: https://login.tailscale.com/f/funnel?node=abc123' }; on = true; return { code: 0, stdout: '', stderr: '' }; }
+    if (a.includes(' off')) { on = false; return { code: 0, stdout: '', stderr: '' }; }
+    return { code: 1, stdout: '', stderr: 'unknown' };
+  };
+  let on = false;
+  const ts = createTailscale({ run: fakeRun, existsSync: () => true, env: { ProgramFiles: 'C:\\Program Files' }, hubPort: 1864, pvpPort: 7443 });
+  mode = 'missing'; ok((await ts.status()).state === 'missing', 'Tailscale not installed is reported as missing');
+  ok(!(await ts.enable()).ok, '...and turning on says so');
+  const ts2 = createTailscale({ run: fakeRun, existsSync: () => true, env: {}, hubPort: 1864, pvpPort: 7443 });
+  mode = 'login'; ok((await ts2.status()).state === 'needs-login' && /sign in/i.test((await ts2.enable()).msg), 'installed but signed out: asks them to sign in');
+  const ts3 = createTailscale({ run: fakeRun, existsSync: () => true, env: {}, hubPort: 1864, pvpPort: 7443 });
+  mode = 'stopped'; ok((await ts3.status()).state === 'stopped', 'a stopped Tailscale is reported');
+  const ts4 = createTailscale({ run: fakeRun, existsSync: () => true, env: {}, hubPort: 1864, pvpPort: 7443 });
+  mode = 'needsfunnel'; calls.length = 0;
+  let r2 = await ts4.enable(); ok(!r2.ok && r2.link === 'https://login.tailscale.com/f/funnel?node=abc123', 'when Funnel is not allowed yet, it hands back the page to visit', JSON.stringify(r2));
+  const ts5 = createTailscale({ run: fakeRun, existsSync: () => true, env: {}, hubPort: 1864, pvpPort: 7443 });
+  mode = 'ready'; calls.length = 0; on = false;
+  ok((await ts5.status()).on === false, 'ready but not exposed yet');
+  r2 = await ts5.enable();
+  ok(r2.ok && r2.urls.page === 'https://my-pc.tail1234.ts.net/' && r2.urls.arena === 'wss://my-pc.tail1234.ts.net:8443', 'turning on gives the stable address and the arena address', JSON.stringify(r2.urls));
+  ok(calls.some((c) => c.endsWith('funnel --bg --https=443 localhost:1864')) && calls.some((c) => c.endsWith('funnel --bg --https=8443 localhost:7443')), 'it exposes the account server and page on 443 and the arena on 8443 (and nothing else)', calls.filter((c) => c.includes('funnel --bg')).join(' | '));
+  ok((await ts5.status()).on === true, 'status then shows it on');
+  await ts5.disable(); ok((await ts5.status()).on === false && calls.some((c) => c.endsWith('funnel --https=443 off')) && calls.some((c) => c.endsWith('funnel --https=8443 off')), 'turning off closes both');
+}
 
 // ---------- the arena bundle
 const pvpPort = 22000 + Math.floor(Math.random() * 10000);

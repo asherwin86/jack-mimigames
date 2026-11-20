@@ -1,5 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain, safeStorage, shell } from 'electron';
-import { spawn } from 'node:child_process';
+import { spawn, execFile } from 'node:child_process';
+import crypto from 'node:crypto';
 import http from 'node:http';
 import fs from 'node:fs';
 import { createRequire } from 'node:module';
@@ -10,6 +11,7 @@ import electronUpdater from 'electron-updater';   // CommonJS package: no named 
 const { autoUpdater } = electronUpdater;
 const { createOtherApp } = createRequire(import.meta.url)('./otherApp.cjs');   // CommonJS, shared with 51 Mimi Games
 const { createHostConfig } = createRequire(import.meta.url)('./hostConfig.cjs');
+const { createTailscale, PVP_PUBLIC_PORT } = createRequire(import.meta.url)('./tailscale.cjs');
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const UPDATE_CHECK_EVERY_MS = 4 * 60 * 60 * 1000;
 
@@ -58,6 +60,9 @@ const PVP_PORT = Number(process.env.MIMI_PVP_PORT) || 7443;
 let hubProcess = null;
 let pvpProcess = null;
 let hostConfig = null;   // created once the app is ready (it needs the data folder)
+let tailscale = null;
+// A secret only this app knows, sent with every control call to the account server (see hostControlAllowed in hub-server/server.js).
+const CONTROL_TOKEN = crypto.randomBytes(24).toString('hex');
 
 const unpacked = (p) => p.replace(`app.asar${path.sep}`, `app.asar.unpacked${path.sep}`);   // packed, server files sit next to the archive (asarUnpack in package.json) so a plain Node child can read them
 
@@ -74,6 +79,8 @@ function startHub() {
       MIMI_HOST_MODE: '1',
       HUB_STATIC_DIR: dist,
       MIMI_PVP_PORT: String(PVP_PORT),   // pages served from here learn where the arena is
+      MIMI_PVP_TLS_PORT: String(PVP_PUBLIC_PORT),   // ...and where it is when the page came through the https tunnel
+      MIMI_HOST_CONTROL_TOKEN: CONTROL_TOKEN,
       ...hostConfig.hubEnv(),            // the saved account storage, so the accounts the website's server has are the accounts here
     },
     stdio: 'inherit',
@@ -125,7 +132,7 @@ function hostRequest(urlPath, body, port = HOST_PORT) {
     const data = body ? JSON.stringify(body) : null;
     const req = http.request({
       host: '127.0.0.1', port, path: urlPath, method: data ? 'POST' : 'GET', timeout: 4000,
-      headers: data ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) } : {},
+      headers: { 'x-mimi-host-control': CONTROL_TOKEN, ...(data ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) } : {}) },
     }, (res) => {
       let text = '';
       res.on('data', (c) => { text += c; });
@@ -152,6 +159,10 @@ async function hostInfo() {
 
 function setUpHost() {
   hostConfig = createHostConfig({ dir: app.getPath('userData'), fs, safeStorage });
+  tailscale = createTailscale({
+    hubPort: HOST_PORT, pvpPort: PVP_PORT, existsSync: fs.existsSync,
+    run: (file, args) => new Promise((resolve) => execFile(file, args, { timeout: 20000, windowsHide: true }, (err, stdout, stderr) => resolve({ code: err ? (typeof err.code === 'number' ? err.code : -1) : 0, stdout: String(stdout || ''), stderr: String(stderr || '') }))),
+  });
   startHub();
   if (hostConfig.pvpOn()) startPvp();
   const fromOurWindow = (e) => !!win && e.sender === win.webContents;
@@ -164,6 +175,13 @@ function setUpHost() {
     if (on) startPvp(); else stopPvp();
     return { ok: true };
   });
+  ipcMain.handle('host:outside-status', async (e) => {
+    if (!fromOurWindow(e)) return { state: 'missing' };
+    const st = await tailscale.status();
+    return { ...st, urls: st.name ? tailscale.urls(st.name) : null };
+  });
+  ipcMain.handle('host:outside-on', (e) => (fromOurWindow(e) ? tailscale.enable() : { ok: false }));
+  ipcMain.handle('host:outside-off', (e) => (fromOurWindow(e) ? tailscale.disable() : { ok: false }));
   ipcMain.handle('host:storage-save', (e, v) => {
     if (!fromOurWindow(e) || !v || typeof v !== 'object') return { ok: false, msg: 'Not allowed.' };
     const r = hostConfig.saveStorage(v);

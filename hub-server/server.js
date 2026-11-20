@@ -2926,6 +2926,16 @@ async function handleWorldsApi(req, res, action) {
  * first, which a client can forge). The worst a forged registration can do is
  * show a banner to visitors behind the forger's own router. */
 const HOST_MODE = process.env.MIMI_HOST_MODE === "1";
+// The desktop app starts this server with a random secret and sends it with every control call, so even a request that
+// reaches this server through a tunnel on the same computer cannot flip hosting on or off.
+const HOST_CONTROL_TOKEN = process.env.MIMI_HOST_CONTROL_TOKEN || "";
+function hostControlAllowed(req) {
+  if (!HOST_MODE || !isLocalSocket(req)) return false;
+  if (!HOST_CONTROL_TOKEN) return true;
+  const given = String(req.headers["x-mimi-host-control"] || "");
+  const a = Buffer.from(given), b = Buffer.from(HOST_CONTROL_TOKEN);
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
 const RENDEZVOUS_URL = (process.env.MIMI_RENDEZVOUS_URL || "https://mimi-arcade-hub.onrender.com").replace(/\/+$/, "");
 const HOST_STATE_PATH = path.join(process.env.MIMI_DATA_DIR || ROOT, "data", "host-announce.json");
 const HOST_HEARTBEAT_MS = 60_000;
@@ -3049,8 +3059,13 @@ function startHosting() {
  * server: every request or socket from another device is refused, and the
  * announcement is withdrawn. The server itself keeps running, because the
  * desktop app's own window is served by it and would go blank otherwise. */
+// A tunnel or reverse proxy on this computer (Tailscale Funnel, Cloudflare Tunnel...) connects from 127.0.0.1, so "the
+// connection came from this computer" is not proof that the person did. Whatever such a proxy adds to a request marks it as
+// not local; and the desktop app's own controls need a secret on top (see hostControlAllowed).
+const PROXY_HEADERS = ["x-forwarded-for", "x-forwarded-host", "x-forwarded-proto", "forwarded", "via", "x-real-ip", "cf-connecting-ip", "tailscale-ingress-src", "tailscale-funnel-request"];
+function viaProxy(req) { return PROXY_HEADERS.some((h) => req.headers[h] !== undefined); }
 function isLocalSocket(req) {
-  return /^(::1|127\.0\.0\.1|::ffff:127\.0\.0\.1)$/.test(req.socket.remoteAddress || "");
+  return !viaProxy(req) && /^(::1|127\.0\.0\.1|::ffff:127\.0\.0\.1)$/.test(req.socket.remoteAddress || "");
 }
 function lanBlocked(req) {
   return HOST_MODE && !hostState.sharing && !isLocalSocket(req);
@@ -3065,10 +3080,7 @@ function registryKey(req) {
   return ip.replace(/^::ffff:/, "");
 }
 
-function isLoopbackRequest(req) {
-  if (req.headers["x-forwarded-for"]) return false;
-  return /^(::1|127\.0\.0\.1|::ffff:127\.0\.0\.1)$/.test(req.socket.remoteAddress || "");
-}
+function isLoopbackRequest(req) { return isLocalSocket(req); }
 
 function liveHostsFor(key) {
   const bucket = hostRegistry.get(key);
@@ -3105,6 +3117,7 @@ async function handleHostApi(req, res, action) {
   }
   if (action === "info") {
     if (req.method !== "GET") { sendHostJson(res, 405, { ok: false, msg: "Method not allowed." }); return; }
+    if (HOST_MODE && HOST_CONTROL_TOKEN && !hostControlAllowed(req)) { sendHostJson(res, 403, { ok: false, msg: "Not allowed." }); return; }
     const addresses = lanAddresses();
     sendHostJson(res, 200, {
       ok: true, hostMode: HOST_MODE, sharing: !HOST_MODE || hostState.sharing, announcing: HOST_MODE && hostState.sharing && hostState.announce, announce: hostState.announce,
@@ -3117,7 +3130,7 @@ async function handleHostApi(req, res, action) {
   if (action === "announce") {
     if (req.method !== "POST") { sendHostJson(res, 405, { ok: false, msg: "Method not allowed." }); return; }
     // Only the app on this very computer may flip it — a phone on the same Wi-Fi may not.
-    if (!HOST_MODE || !isLoopbackRequest(req)) { sendHostJson(res, 403, { ok: false, msg: "Not allowed." }); return; }
+    if (!hostControlAllowed(req)) { sendHostJson(res, 403, { ok: false, msg: "Not allowed." }); return; }
     const body = await readJsonBody(req, 1024).catch(() => null);
     if (!body || typeof body.on !== "boolean") { sendHostJson(res, 400, { ok: false, msg: "Expected { on: true|false }." }); return; }
     hostState.announce = body.on;
@@ -3128,7 +3141,7 @@ async function handleHostApi(req, res, action) {
   }
   if (action === "sharing") {
     if (req.method !== "POST") { sendHostJson(res, 405, { ok: false, msg: "Method not allowed." }); return; }
-    if (!HOST_MODE || !isLoopbackRequest(req)) { sendHostJson(res, 403, { ok: false, msg: "Not allowed." }); return; }
+    if (!hostControlAllowed(req)) { sendHostJson(res, 403, { ok: false, msg: "Not allowed." }); return; }
     const body = await readJsonBody(req, 1024).catch(() => null);
     if (!body || typeof body.on !== "boolean") { sendHostJson(res, 400, { ok: false, msg: "Expected { on: true|false }." }); return; }
     hostState.sharing = body.on;
@@ -3199,7 +3212,7 @@ function serveBuilt(req, res, urlPath) {
       fs.readFile(filePath, "utf8", (e2, html) => {
         if (e2) { res.writeHead(500); res.end("Error"); return; }
         res.writeHead(200, { "Content-Type": type, "Cache-Control": "no-cache" });
-        res.end(html.replace("</head>", `<script>window.MIMI_LOCAL_HOST=true;${/^\d{2,5}$/.test(process.env.MIMI_PVP_PORT || "") ? `window.MIMI_PVP_PORT=${Number(process.env.MIMI_PVP_PORT)};` : ""}</script></head>`));
+        res.end(html.replace("</head>", `<script>window.MIMI_LOCAL_HOST=true;${/^\d{2,5}$/.test(process.env.MIMI_PVP_PORT || "") ? `window.MIMI_PVP_PORT=${Number(process.env.MIMI_PVP_PORT)};${/^\d{2,5}$/.test(process.env.MIMI_PVP_TLS_PORT || "") ? `window.MIMI_PVP_TLS_PORT=${Number(process.env.MIMI_PVP_TLS_PORT)};` : ""}` : ""}</script></head>`));
       });
       return;
     }

@@ -50,6 +50,38 @@ export function openHostDialog() {
     } catch { box.hidden = true; }
   }
 
+  /** "Outside your Wi-Fi": Tailscale Funnel gives this computer a stable https address anyone can open. */
+  async function renderOutside(box) {
+    const st = await host.outsideStatus().catch(() => ({ state: 'missing' }));
+    if (!open || !box.isConnected) return;
+    const link = (url, text) => `<a href="${esc(url)}" target="_blank" rel="noopener" style="color:#9be7ff">${esc(text)}</a>`;
+    if (st.state === 'missing') {
+      box.innerHTML = `<p class="acct-note">To let people anywhere reach this computer (not only on your Wi-Fi), use <b>Tailscale</b>: it is free, needs no card, and gives a web address that never changes. Install it on this computer, sign in, then come back here and press the button. ${link('https://tailscale.com/download', 'Get Tailscale')}</p>
+        <div class="inst-row"><button class="acct-btn" data-el="recheck">Check again</button></div>`;
+    } else if (st.state === 'needs-login' || st.state === 'stopped') {
+      box.innerHTML = `<p class="acct-note">Tailscale is installed but ${st.state === 'needs-login' ? 'not signed in' : 'not running'}. Open it from the Windows system tray, sign in, then check again.</p><div class="inst-row"><button class="acct-btn" data-el="recheck">Check again</button></div>`;
+    } else if (st.on) {
+      box.innerHTML = `<p class="acct-note"><b>On.</b> Anyone can open this computer from anywhere at:</p>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:0 0 6px"><button type="button" class="acct-btn" style="font-family:monospace" data-el="copy">${esc(st.urls.page)}</button></div>
+        <p class="acct-fine">The Blockcraft PvP arena is at ${esc(st.urls.arena)} (pages opened from the address above find it by themselves). This only works while this computer and the app are on. The address is stable: it can be set as the default for every device.</p>
+        <div class="inst-row"><button class="acct-btn" data-el="off">Turn off</button></div>`;
+      box.querySelector('[data-el="copy"]').onclick = (e) => { navigator.clipboard?.writeText(st.urls.page).then(() => { e.target.textContent = 'Copied'; setTimeout(() => { e.target.textContent = st.urls.page; }, 1500); }).catch(() => {}); };
+    } else {
+      box.innerHTML = `<p class="acct-note">Tailscale is ready${st.name ? ` (this computer is <code>${esc(st.name)}</code>)` : ''}. Pressing the button makes the account server, the game and the PvP arena reachable from anywhere at a stable address. Only turn it on if you are happy for anyone with the address to use your server.</p>
+        <div class="inst-row"><button class="acct-btn primary" data-el="on">Turn on</button></div><p class="acct-fine" data-el="o-msg" aria-live="polite"></p>`;
+    }
+    box.querySelector('[data-el="recheck"]')?.addEventListener('click', () => renderOutside(box));
+    box.querySelector('[data-el="off"]')?.addEventListener('click', async (e) => { e.target.disabled = true; await host.outsideOff().catch(() => {}); renderOutside(box); });
+    box.querySelector('[data-el="on"]')?.addEventListener('click', async (e) => {
+      e.target.disabled = true;
+      const msg = box.querySelector('[data-el="o-msg"]'); msg.textContent = 'Turning on…';
+      const r = await host.outsideOn().catch(() => ({ ok: false, msg: 'Could not turn it on.' }));
+      if (r.ok) { renderOutside(box); return; }
+      msg.innerHTML = `${esc(r.msg || 'Could not turn it on.')}${r.link ? ` ${link(r.link, 'Open the Tailscale page')}` : ''}`;
+      e.target.disabled = false;
+    });
+  }
+
   /** The account storage form: the website's database address, token and password pepper, saved on this computer only. */
   async function renderStorage(box, info) {
     const st = info.storage || { configured: false };
@@ -108,6 +140,8 @@ export function openHostDialog() {
       <h3 class="inst-h" style="margin:14px 0 6px">Blockcraft PvP arena</h3>
       <div class="inst-row" style="margin:0 0 6px"><button class="acct-btn${pvp.on ? '' : ' primary'}" data-el="pvp">${pvp.on ? '&#9209; Stop the arena' : '&#9654; Start the arena'}</button></div>
       <p class="acct-fine" data-el="pvpstatus">${pvp.on ? (pvp.running ? `Running on port ${pvp.port}${pvp.maxPlayers ? `, ${pvp.players} of ${pvp.maxPlayers} players` : ''}. In this app, Blockcraft's "Join PvP Arena" goes here. Devices on your Wi-Fi that open this computer's address get it too.` : 'Starting…') : "Stopped. Blockcraft's PvP arena button uses the website's arena."}</p>
+      <h3 class="inst-h" style="margin:14px 0 6px">Outside your Wi-Fi</h3>
+      <div data-el="outside"><p class="acct-note">Checking Tailscale…</p></div>
       <h3 class="inst-h" style="margin:14px 0 6px">Account storage</h3>
       <div data-el="storage"></div>
       <p class="acct-fine">The first time, Windows may ask to allow network access. Choose Private networks.</p>`;
@@ -142,6 +176,7 @@ export function openHostDialog() {
     body.querySelector('[data-el="always"]').onchange = (e) => setAlwaysUseLocalHub(e.target.checked);
     body.querySelector('[data-el="pvp"]').onclick = async (e) => { e.target.disabled = true; await host.pvp(!pvp.on).catch(() => {}); setTimeout(async () => { await applyDesktopChoice(); render(); }, 1800); };
     renderStorage(body.querySelector('[data-el="storage"]'), info);
+    renderOutside(body.querySelector('[data-el="outside"]'));
   }
   render();
 }

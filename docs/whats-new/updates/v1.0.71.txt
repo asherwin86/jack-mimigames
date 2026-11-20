@@ -1,0 +1,7 @@
+v1.0.71  -  21 Nov 2026
+Reach this computer from anywhere
+---------------------------------
+New in the Windows app's Host window (Settings > Host): an "Outside your Wi-Fi" section. It uses Tailscale Funnel, which is free and needs no card. Install Tailscale on this computer (tailscale.com/download), sign in once, then press Turn on. The game page and account server go out at a stable address like https://your-pc.your-tailnet.ts.net/ and the Blockcraft PvP arena at the same name on port 8443. The first time, Tailscale may ask you to allow Funnel for this computer: the Host window shows the link to open. Turn off closes it again.
+Anyone with the address can use the server while this computer and the app are running. Pages opened from that address use this computer's accounts and arena automatically.
+Safer hosting controls: the buttons that stop hosting or change announcing now need a secret that only the app knows, and anything that arrives through a tunnel or proxy is treated as an outsider, so the tunnel cannot be used to switch your hosting off.
+There is also a place in the code for a "home server address": once you tell Claude your stable address it can be made the default for every device (website, Android and TV apps, other computers), which quietly falls back to the website's own servers if this computer is off.

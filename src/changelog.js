@@ -2,6 +2,10 @@
  *  menu, under the trailer. Keep entries brief; this isn't a commit log. */
 export const CHANGELOG = [
   {
+    title: 'Reach this computer from anywhere',
+    detail: 'The Windows app\'s Host window has a new Outside your Wi-Fi section. With the free Tailscale installed and signed in, one button gives this computer a stable web address that works from anywhere: the game, the account server and the PvP arena all go out through it. The controls that start and stop hosting are now protected by a secret only the app knows, so nobody can reach them through the tunnel.',
+  },
+  {
     title: 'Host the arena and keep your accounts',
     detail: 'The Windows app now also runs the Blockcraft PvP arena on this computer (Host window > Blockcraft PvP arena), and its account server can use the same account storage as the website, so every account, Rocoin and parental rule stays. Give it the three storage values once (Host window > Account storage) and this computer becomes the default address for accounts and for Blockcraft Join PvP Arena in the app. Phones on your Wi-Fi that open this computer get the arena too. Handy while the website servers are down.',
   },
