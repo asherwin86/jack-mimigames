@@ -8,7 +8,7 @@
  *     powers(): [{id,name,cost}], runPower(id): Promise<{ok,text}>,
  *     settings: { list(): [{name,on}], set(name, on) }  (name is one of SETTING_NAMES),
  *     scores: { all(): {gameId: score}, clear(gameIdOrNull) }, resetSettings(),
- *     account: { name(), signOut() } }
+ *     account: { name(), signOut() }, crazy(on|off|undefined): { ok, text } }
  */
 const num = (v) => { const n = Math.floor(Number(v)); return Number.isFinite(n) ? n : NaN; };
 const ok = (text) => ({ ok: true, text });
@@ -86,6 +86,15 @@ export function makeCommands(env) {
         if (!g) return bad(`No game matches "${args.join(' ')}". Try: games`);
         env.go(`#/${g.id}`);
         return ok(`Opening ${g.name}.`);
+      },
+    },
+    crazy: {
+      usage: 'crazy [on|off]', about: 'make the game go crazy (spins, wobbles, speed changes, confetti); run again to stop',
+      run: ([a]) => {
+        const v = String(a || '').toLowerCase();
+        if (v && !['on', 'off'].includes(v)) return bad('Use: crazy  or  crazy on  or  crazy off');
+        const r = env.crazy(v ? v === 'on' : undefined);
+        return r.ok ? ok(r.text) : bad(r.text);
       },
     },
     random: {

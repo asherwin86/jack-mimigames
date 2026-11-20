@@ -1,0 +1,6 @@
+v1.0.68  -  21 Nov 2026
+Go crazy button
+---------------
+New: a "Go crazy" button in the admin console (Settings > Admin, or Shift and the backtick key), and a crazy command. Press it during a game and the console closes and the game goes wild: the colours keep cycling, and every couple of seconds something different happens: the screen spins, wobbles, zooms, flips, shakes or blurs, the game speeds up or slows down for a few seconds, confetti falls, and the camera swings in and out.
+Press the button or type crazy again to stop. It also stops by itself when you leave the game or start another one. It works on the menu too.
+It never strobes (the fastest thing is a slow colour cycle, like the Disco power), and it refuses to run on a device that is set to reduced motion. Like the rest of the admin console it does not open while parental controls are on.

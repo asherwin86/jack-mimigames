@@ -2,6 +2,10 @@
  *  menu, under the trailer. Keep entries brief; this isn't a commit log. */
 export const CHANGELOG = [
   {
+    title: 'Go crazy button',
+    detail: 'The admin console has a Go crazy button (or type crazy). The colours cycle and every couple of seconds something wild happens: the screen spins, wobbles, zooms, flips, shakes or blurs, the game speeds up or slows down, confetti falls and the camera swings in and out. Press it again, or type crazy, to stop; it also stops when the game ends. It never strobes, and it stays off on devices set to reduced motion.',
+  },
+  {
     title: 'More admin commands',
     detail: 'The admin console has many new commands: power runs any power for free during a game, random opens a random game, setting changes the display toggles, scores shows or clears best scores, backup and restore save your Rocoins, scores and settings to a file, reports opens the bug inbox, account shows or signs out, plus fullscreen, reload and reset settings. Type help to see them all. Also, pressing Shift on its own flips the sky as before, but Shift with another key no longer does.',
   },

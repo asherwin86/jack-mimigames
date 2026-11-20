@@ -37,7 +37,7 @@ function canvasFx(id, cls) {
   };
 }
 
-function confetti() {
+export function confetti() {
   if (typeof document === 'undefined') return;
   const layer = document.createElement('div');
   layer.className = 'rc-confetti';

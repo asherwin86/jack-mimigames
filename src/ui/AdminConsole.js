@@ -5,6 +5,7 @@ import { Settings } from '../engine/Settings.js';
 import { Scores } from '../engine/Storage.js';
 import { allPowers, findPower, usePower } from '../engine/Powers.js';
 import { openBugReport } from './BugReportDialog.js';
+import { setCrazy, crazyOn } from '../engine/Crazy.js';
 import { CATALOG } from '../games/catalog.js';
 import { LINKED } from '../engine/LinkedGames.js';
 import { controlsOn, parental } from '../engine/ParentalState.js';
@@ -151,6 +152,14 @@ export function openAdminConsole() {
       },
     },
     account: { name: () => Account.name(), signOut: () => Account.signOut() },
+    crazy: (want) => {
+      const c = getContext();
+      if (!c.engine) return { ok: false, text: 'The game is not ready yet.' };
+      if (matchMedia?.('(prefers-reduced-motion: reduce)').matches) return { ok: false, text: 'This device asks for reduced motion, so chaos mode stays off.' };
+      const on = setCrazy(c.engine, want);
+      if (on) setTimeout(close, 400);   // so you can see it
+      return { ok: true, text: on ? 'Going crazy! Open the console and type crazy (or press the button) to stop. It also stops when a game ends.' : 'Back to normal.' };
+    },
   };
   const cmds = makeCommands(env);
 
@@ -170,7 +179,7 @@ export function openAdminConsole() {
   function consoleView() {
     const c = card(`<h2>Admin console</h2>
       <div class="ad-bal"><span class="ad-bal-n"></span>
-        <span class="ad-quick"><button class="acct-btn small" data-run="give 100">+100</button><button class="acct-btn small" data-run="give 1000">+1,000</button><button class="acct-btn small" data-run="give 100000">+100,000</button><button class="acct-btn small" data-run="infinite toggle">&infin; Infinite</button></span></div>
+        <span class="ad-quick"><button class="acct-btn small" data-run="give 100">+100</button><button class="acct-btn small" data-run="give 1000">+1,000</button><button class="acct-btn small" data-run="give 100000">+100,000</button><button class="acct-btn small" data-run="infinite toggle">&infin; Infinite</button><button class="acct-btn small ad-crazy" data-run="crazy">&#129322; Go crazy</button></span></div>
       <pre class="ad-log" aria-live="polite" tabindex="0"></pre>
       <form class="ad-form" autocomplete="off"><input type="text" name="cmd" placeholder="Type a command, or help" spellcheck="false" autocapitalize="off" /><button class="acct-btn primary" type="submit">Run</button></form>
       <div class="ad-quick ad-foot"><button class="acct-btn small" data-run="help">Help</button><button class="acct-btn small" data-run="info">Info</button><button class="acct-btn small" data-run="hub ping">Test server</button><button class="acct-btn small" data-run="refresh">Refresh app</button><button class="acct-btn small" data-run="lock">Lock</button></div>`);

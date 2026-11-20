@@ -21,7 +21,7 @@ const env = {
   hub: { url: () => hub, set: (u) => { hub = u || 'https://default.example.com'; }, ping: async () => ({ ok: true, text: 'pong' }) },
 };
 // fakes for the newer commands
-let setting = null, sets = [], scoreStore = { 'tetra-drop': 120, 'cube-dodger': 9 }, cleared2 = [], reportsOpened = 0, backedUp = 0, restored = 0, reloaded = 0, fs = 0, resetS = 0, signedOut = 0, user = 'Jack', ran = null;
+let crazied = [], setting = null, sets = [], scoreStore = { 'tetra-drop': 120, 'cube-dodger': 9 }, cleared2 = [], reportsOpened = 0, backedUp = 0, restored = 0, reloaded = 0, fs = 0, resetS = 0, signedOut = 0, user = 'Jack', ran = null;
 const powerList = [{ id: 'slowmo', name: 'Slow-mo', cost: 15 }, { id: 'confetti', name: 'Confetti', cost: 5 }];
 Object.assign(env, {
   rand: () => 0.5, reload: () => { reloaded++; }, fullscreen: () => { fs++; }, reports: () => { reportsOpened++; },
@@ -31,6 +31,7 @@ Object.assign(env, {
   settings: { list: () => [{ name: 'music', on: true }, { name: 'props', on: false }], set: (n, on) => { sets.push([n, on]); } },
   scores: { all: () => scoreStore, clear: (id) => { cleared2.push(id); } }, resetSettings: () => { resetS++; },
   account: { name: () => user, signOut: () => { signedOut++; user = null; } },
+  crazy: (want) => { crazied.push(want); return { ok: true, text: 'crazy' }; },
 });
 const { run, names } = makeCommands(env);
 
@@ -115,6 +116,11 @@ r = await run('fullscreen'); ok(r.ok && fs === 1, 'fullscreen');
 r = await run('reload'); ok(r.ok && reloaded === 1, 'reload');
 r = await run('reset settings'); ok(!r.ok && !resetS, 'reset settings needs yes');
 r = await run('reset settings yes'); ok(r.ok && resetS === 1, 'reset settings yes');
+
+r = await run('crazy'); ok(r.ok && crazied.at(-1) === undefined, 'crazy flips chaos mode');
+r = await run('crazy on'); ok(r.ok && crazied.at(-1) === true, 'crazy on');
+r = await run('crazy OFF'); ok(r.ok && crazied.at(-1) === false, 'crazy off');
+r = await run('crazy maybe'); ok(!r.ok && crazied.length === 3, 'crazy only understands on or off');
 
 const boom = makeCommands({ ...env, info: () => { throw new Error('boom'); } });
 r = await boom.run('info'); ok(!r.ok && /boom/.test(r.text), 'a command that throws gives a message instead of crashing');
