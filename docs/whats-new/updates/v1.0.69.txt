@@ -1,0 +1,5 @@
+v1.0.69  -  21 Nov 2026
+Admin button on the pause screen
+--------------------------------
+New: the pause screen (Escape, or Start on a controller) now has an Admin button next to Resume, Quit to menu and Report a bug. It opens the admin console over the game, so you can press Go crazy, run powers for free, give Rocoins and so on without a keyboard shortcut. The first time on a device it asks for the admin password (which needs a keyboard or an on-screen keyboard); after that it opens straight away until you type lock.
+Crazy mode keeps going after you press Resume. The button is hidden while parental controls are on for that device.

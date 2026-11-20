@@ -2,6 +2,10 @@
  *  menu, under the trailer. Keep entries brief; this isn't a commit log. */
 export const CHANGELOG = [
   {
+    title: 'Admin button on the pause screen',
+    detail: 'The pause screen now has an Admin button, so you can open the admin console in the middle of a game with a tap or a controller instead of a keyboard shortcut. From there you can run powers for free, press Go crazy and more. It asks for the admin password the first time and remembers it, and it is hidden while parental controls are on.',
+  },
+  {
     title: 'Go crazy button',
     detail: 'The admin console has a Go crazy button (or type crazy). The colours cycle and every couple of seconds something wild happens: the screen spins, wobbles, zooms, flips, shakes or blurs, the game speeds up or slows down, confetti falls and the camera swings in and out. Press it again, or type crazy, to stop; it also stops when the game ends. It never strobes, and it stays off on devices set to reduced motion.',
   },
