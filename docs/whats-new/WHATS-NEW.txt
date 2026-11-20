@@ -5,6 +5,15 @@ Newest update first. Every update is also in its own file in the "updates"
 folder. Each one is released to the website and the Windows app together
 (the app updates itself the next time you open it).
 
+v1.0.70  -  21 Nov 2026
+Host the PvP arena and keep your accounts
+-----------------------------------------
+New in the Windows app's Host window (Settings > Host):
+Blockcraft PvP arena: the app now runs the Blockcraft PvP server on this computer (port 7443), switched on by default, with a Stop / Start button. Inside the app, Blockcraft's "Join PvP Arena" and the public server list use this computer's arena whenever it is running. Phones and tablets on your Wi-Fi that open this computer's address (shown in the Host window) get the arena too.
+Account storage: the account server inside the app can now use the same storage as the website's account server, so every account, Rocoin balance, world and parental rule is the same. Open the old server on Render (its Environment tab), copy UPSTASH_REDIS_REST_URL, UPSTASH_REDIS_REST_TOKEN and HASH_PEPPER (the pepper must be exactly the same or passwords will not match), and paste them into Host > Account storage. They are saved on this computer only, encrypted with Windows, and never shown again. Once saved, this computer's server is the default for accounts in the app. "Remove the saved storage" undoes it.
+Only run one server on the shared storage at a time: if the website's server is also running, the window warns you, because two servers writing the same storage can overwrite each other's newest accounts.
+The first time, Windows may ask to allow network access: choose Private networks. Devices outside your Wi-Fi cannot reach this computer yet.
+
 v1.0.69  -  21 Nov 2026
 Admin button on the pause screen
 --------------------------------

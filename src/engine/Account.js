@@ -26,6 +26,9 @@ let hubOverride = null;
 // A saved override still wins, so nothing here can take over someone's own setting.
 let autoHub = (typeof window !== 'undefined' && window.MIMI_LOCAL_HOST === true) ? window.location.origin : null;
 
+/** The website's own account server (what is used when nothing else was chosen). */
+export const defaultHubUrl = () => DEFAULT_HUB;
+
 /** Sets (or, with null, clears) the hub chosen automatically for this session. */
 export function setAutoHub(url) { autoHub = url ? String(url).replace(/\/+$/, '') : null; }
 

@@ -18,5 +18,8 @@ contextBridge.exposeInMainWorld('mimiDesktop', {
     info: () => ipcRenderer.invoke('host:info'),
     announce: (on) => ipcRenderer.invoke('host:announce', !!on),
     sharing: (on) => ipcRenderer.invoke('host:sharing', !!on),
+    pvp: (on) => ipcRenderer.invoke('host:pvp', !!on),
+    saveStorage: (v) => ipcRenderer.invoke('host:storage-save', { url: String(v?.url ?? ''), token: String(v?.token ?? ''), pepper: String(v?.pepper ?? '') }),
+    clearStorage: () => ipcRenderer.invoke('host:storage-clear'),
   },
 });

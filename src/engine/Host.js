@@ -1,4 +1,5 @@
 import { hubUrl, setAutoHub } from './Account.js';
+import { setAutoPvp } from './PvpAddress.js';
 
 /**
  * Hosting for other devices, from the client's side. The server half is in hub-server/server.js ("Hosting for other
@@ -7,10 +8,11 @@ import { hubUrl, setAutoHub } from './Account.js';
  * Three jobs, depending on where this page is running:
  *
  *  - Served by a host (window.MIMI_LOCAL_HOST): nothing to do. Account.js already points at the host's own server.
- *  - The Windows app: normally keep using the website's account server, but if that one is not answering, use the
- *    server running inside this app instead. Ticking "always use this computer's server" in the Host dialog skips the
- *    check. (Accounts are separate on each server, which is why this is a fallback and not the default: switching
- *    silently would look like signed-in accounts disappearing.)
+ *  - The Windows app: its own account server and Blockcraft PvP arena run inside it. The account server becomes the default
+ *    once it has been given the website's account storage (so the accounts are the same ones); until then the website's
+ *    server stays the default and this one is only used if that one is not answering, or if "always use this computer's
+ *    server" is ticked. (Without shared storage the accounts are separate on each server, which is why switching
+ *    silently would look like signed-in accounts disappearing.) The arena is this computer's own whenever it is running.
  *  - The website or a phone browser: ask the website's server whether a host is announced from this network, and offer
  *    a link to it. A link and not a connection, because browsers refuse to let an https page call a plain-http address
  *    on a home network, and a probe would not say whether it is reachable. A top-level navigation is allowed.
@@ -41,12 +43,30 @@ async function answers(url, ms = 4000) {
   } catch { return false; } finally { clearTimeout(timer); }
 }
 
-/** The Windows app: use this computer's server when asked to, or when the website's server is down. */
+/** The Windows app: this computer's servers are the defaults once they can be trusted with the accounts (see below). */
 async function chooseDesktopHub(host) {
-  const info = await host.info().catch(() => null);
+  // The servers inside the app start a moment after the window opens: ask a few times before giving up.
+  let info = null;
+  for (let i = 0; i < 10; i++) {
+    info = await host.info().catch(() => null);
+    if (info && info.ok && (!info.pvp?.on || info.pvp.running || i >= 5)) break;
+    await new Promise((r) => setTimeout(r, 1000));
+  }
   if (!info || !info.ok) return;                  // the server inside the app is not running: nothing to switch to
   const local = `http://localhost:${info.port}`;
-  if (alwaysUseLocalHub() || !(await answers(hubUrl()))) setAutoHub(local);
+  // The accounts are the same accounts as the website's only if this computer's server was given the same account storage
+  // (Host window > Account storage). Then it is the default, because it is the same data and is always at hand. Without that
+  // its accounts would be a separate, empty set, so it stays a fallback for when the website's server is down.
+  if (info.storage?.configured || alwaysUseLocalHub() || !(await answers(hubUrl()))) setAutoHub(local);
+  if (info.pvp?.running) setAutoPvp(`ws://localhost:${info.pvp.port}`);
+}
+
+/** Re-decides which servers this app uses (after the Host window changed something). */
+export async function applyDesktopChoice() {
+  const host = desktopHost();
+  if (!host) return;
+  setAutoHub(null); setAutoPvp(null);
+  await chooseDesktopHub(host);
 }
 
 const onLanAlready = () => {

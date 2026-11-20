@@ -3199,7 +3199,7 @@ function serveBuilt(req, res, urlPath) {
       fs.readFile(filePath, "utf8", (e2, html) => {
         if (e2) { res.writeHead(500); res.end("Error"); return; }
         res.writeHead(200, { "Content-Type": type, "Cache-Control": "no-cache" });
-        res.end(html.replace("</head>", "<script>window.MIMI_LOCAL_HOST=true;</script></head>"));
+        res.end(html.replace("</head>", `<script>window.MIMI_LOCAL_HOST=true;${/^\d{2,5}$/.test(process.env.MIMI_PVP_PORT || "") ? `window.MIMI_PVP_PORT=${Number(process.env.MIMI_PVP_PORT)};` : ""}</script></head>`));
       });
       return;
     }

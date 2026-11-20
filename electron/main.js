@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, safeStorage, shell } from 'electron';
 import { spawn } from 'node:child_process';
 import http from 'node:http';
 import fs from 'node:fs';
@@ -9,6 +9,7 @@ import electronUpdater from 'electron-updater';   // CommonJS package: no named 
 
 const { autoUpdater } = electronUpdater;
 const { createOtherApp } = createRequire(import.meta.url)('./otherApp.cjs');   // CommonJS, shared with 51 Mimi Games
+const { createHostConfig } = createRequire(import.meta.url)('./hostConfig.cjs');
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const UPDATE_CHECK_EVERY_MS = 4 * 60 * 60 * 1000;
 
@@ -18,6 +19,9 @@ if (!app.requestSingleInstanceLock()) app.quit();
 
 // Windows needs this to show notifications (bug reports) under the app's own name.
 app.setAppUserModelId('au.com.feesynergy.mimigames');
+
+// A source run (npm run electron) may keep its data in another folder, for testing. A packaged app never does.
+if (!app.isPackaged && process.env.MIMI_USER_DATA_DIR) app.setPath('userData', process.env.MIMI_USER_DATA_DIR);
 
 let win = null;
 
@@ -49,13 +53,17 @@ function setUpOtherApp() {
  *
  * Port 1864, not 1764: 51 Mimi Games hosts on 1764, and the two apps can be open together. */
 const HOST_PORT = Number(process.env.MIMI_HOST_PORT) || 1864;
+/* The Blockcraft PvP arena runs here too, on its own port (7443 is the port it has always used when self-hosted). */
+const PVP_PORT = Number(process.env.MIMI_PVP_PORT) || 7443;
 let hubProcess = null;
+let pvpProcess = null;
+let hostConfig = null;   // created once the app is ready (it needs the data folder)
+
+const unpacked = (p) => p.replace(`app.asar${path.sep}`, `app.asar.unpacked${path.sep}`);   // packed, server files sit next to the archive (asarUnpack in package.json) so a plain Node child can read them
 
 function startHub() {
-  // Packed, the files are unpacked next to the archive (asarUnpack in package.json) so a plain Node child can read them.
-  const real = (p) => p.replace(`app.asar${path.sep}`, `app.asar.unpacked${path.sep}`);
-  const script = real(path.join(__dirname, '../hub-server/server.js'));
-  const dist = real(path.join(__dirname, '../dist'));
+  const script = unpacked(path.join(__dirname, '../hub-server/server.js'));
+  const dist = unpacked(path.join(__dirname, '../dist'));
   if (!fs.existsSync(script) || !fs.existsSync(dist)) { console.error('[host] server files are missing; hosting is off'); return; }
   hubProcess = spawn(process.execPath, [script], {
     env: {
@@ -65,6 +73,8 @@ function startHub() {
       MIMI_DATA_DIR: app.getPath('userData'),
       MIMI_HOST_MODE: '1',
       HUB_STATIC_DIR: dist,
+      MIMI_PVP_PORT: String(PVP_PORT),   // pages served from here learn where the arena is
+      ...hostConfig.hubEnv(),            // the saved account storage, so the accounts the website's server has are the accounts here
     },
     stdio: 'inherit',
     windowsHide: true,
@@ -76,12 +86,45 @@ function startHub() {
   });
 }
 
+/** Stops the account server and starts it again (after the storage settings change). */
+function restartHub() {
+  const again = () => startHub();
+  if (!hubProcess) { again(); return; }
+  const old = hubProcess;
+  old.once('exit', () => setTimeout(again, 400));
+  try { old.kill(); } catch { again(); }
+}
+
+function startPvp() {
+  if (pvpProcess) return;
+  // The bundle is made at build time (scripts/bundle-pvp.mjs); from a plain source checkout the server file itself works too.
+  const script = [path.join(__dirname, '../hub-server/blockcraft-server.bundle.mjs'), path.join(__dirname, '../server/blockcraft-server.mjs')]
+    .map(unpacked).find((f) => fs.existsSync(f));
+  if (!script) { console.error('[host] the PvP server file is missing; it stays off'); return; }
+  pvpProcess = spawn(process.execPath, [script, '--pvp'], {
+    env: {
+      ...process.env,
+      ELECTRON_RUN_AS_NODE: '1',
+      PORT: String(PVP_PORT),
+      DATA_FILE: path.join(app.getPath('userData'), 'blockcraft-pvp-world.json'),   // the arena's world survives restarts
+    },
+    stdio: 'inherit',
+    windowsHide: true,
+  });
+  pvpProcess.on('exit', (code) => {
+    pvpProcess = null;
+    if (code !== 0) console.error(`[host] PvP server exited with code ${code}`);   // 98 or EADDRINUSE: another copy already runs it
+  });
+}
+
+function stopPvp() { try { pvpProcess?.kill(); } catch { /* already gone */ } pvpProcess = null; }
+
 /** Asks the local server (from here, so the page never needs permission to call it). Resolves { ok:false } if it is not up. */
-function hostRequest(urlPath, body) {
+function hostRequest(urlPath, body, port = HOST_PORT) {
   return new Promise((resolve) => {
     const data = body ? JSON.stringify(body) : null;
     const req = http.request({
-      host: '127.0.0.1', port: HOST_PORT, path: urlPath, method: data ? 'POST' : 'GET', timeout: 4000,
+      host: '127.0.0.1', port, path: urlPath, method: data ? 'POST' : 'GET', timeout: 4000,
       headers: data ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) } : {},
     }, (res) => {
       let text = '';
@@ -95,13 +138,45 @@ function hostRequest(urlPath, body) {
   });
 }
 
+/** The Host window's view of everything: the account server's own report plus the arena and the saved storage settings. */
+async function hostInfo() {
+  const hub = await hostRequest('/api/host/info');
+  const pvpHealth = await hostRequest('/health', null, PVP_PORT);
+  const st = hostConfig.publicStatus();
+  return {
+    ...hub,
+    storage: { configured: st.configured, where: st.where, encrypted: st.encrypted },
+    pvp: { on: st.pvp, running: pvpHealth.ok === true, port: PVP_PORT, players: Number(pvpHealth.players) || 0, maxPlayers: Number(pvpHealth.maxPlayers) || 0 },
+  };
+}
+
 function setUpHost() {
+  hostConfig = createHostConfig({ dir: app.getPath('userData'), fs, safeStorage });
   startHub();
+  if (hostConfig.pvpOn()) startPvp();
   const fromOurWindow = (e) => !!win && e.sender === win.webContents;
-  ipcMain.handle('host:info', (e) => (fromOurWindow(e) ? hostRequest('/api/host/info') : { ok: false }));
+  ipcMain.handle('host:info', (e) => (fromOurWindow(e) ? hostInfo() : { ok: false }));
   ipcMain.handle('host:announce', (e, on) => (fromOurWindow(e) && typeof on === 'boolean' ? hostRequest('/api/host/announce', { on }) : { ok: false }));
   ipcMain.handle('host:sharing', (e, on) => (fromOurWindow(e) && typeof on === 'boolean' ? hostRequest('/api/host/sharing', { on }) : { ok: false }));
-  app.on('before-quit', () => { try { hubProcess?.kill(); } catch { /* already gone */ } });
+  ipcMain.handle('host:pvp', (e, on) => {
+    if (!fromOurWindow(e) || typeof on !== 'boolean') return { ok: false };
+    hostConfig.setPvp(on);
+    if (on) startPvp(); else stopPvp();
+    return { ok: true };
+  });
+  ipcMain.handle('host:storage-save', (e, v) => {
+    if (!fromOurWindow(e) || !v || typeof v !== 'object') return { ok: false, msg: 'Not allowed.' };
+    const r = hostConfig.saveStorage(v);
+    if (r.ok) restartHub();
+    return r;
+  });
+  ipcMain.handle('host:storage-clear', (e) => {
+    if (!fromOurWindow(e)) return { ok: false };
+    hostConfig.clearStorage();
+    restartHub();
+    return { ok: true };
+  });
+  app.on('before-quit', () => { try { hubProcess?.kill(); } catch { /* already gone */ } stopPvp(); });
 }
 
 function createWindow() {

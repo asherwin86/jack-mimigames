@@ -27,12 +27,13 @@
     "check:parental": "node scripts/check-parental.mjs",
     "check:parental-server": "node scripts/check-parental-server.mjs",
     "check:admin-console": "node scripts/check-admin-console.mjs",
+    "check:host": "node scripts/check-host.mjs",
     "hub:admin": "node scripts/hub-admin.mjs",
     "check:nativepad": "node scripts/check-nativepad.mjs",
     "server:hub": "node hub-server/server.js",
-    "electron": "npm run build && electron .",
+    "electron": "npm run build && node scripts/bundle-pvp.mjs && electron .",
     "dist:win": "npm run build && electron-builder --win --publish=never",
-    "release:win": "npm run build && electron-builder --win --publish=always"
+    "release:win": "npm run build && node scripts/bundle-pvp.mjs && electron-builder --win --publish=always"
   },
   "dependencies": {
     "@simplewebauthn/server": "^13.3.3",
@@ -60,7 +61,8 @@
       "dist/**",
       "electron/**",
       "hub-server/server.js",
-      "hub-server/package.json"
+      "hub-server/package.json",
+      "hub-server/blockcraft-server.bundle.mjs"
     ],
     "asarUnpack": [
       "hub-server/**",

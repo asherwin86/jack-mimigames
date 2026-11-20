@@ -4,6 +4,7 @@ import { sky, clamp, damp, seeded, lerp, invLerp, rand, Burst } from '../engine/
 import { H, SEA, hash2, calibrateHeight, heightAt } from '../engine/terrainHeight.js';
 import { createArena } from '../engine/PvpArena.js';
 import { Account } from '../engine/Account.js';
+import { pvpUrl, registryUrl } from '../engine/PvpAddress.js';
 import { openAccountDialog } from '../ui/AccountDialog.js';
 import {
   isValidSkinData, importSkinFile, skinToDataURL, skinFromDataURL, defaultSkinCanvas, buildSkinnedPlayer, drawSkinPreview,
@@ -49,10 +50,9 @@ const NET_MOVE_INTERVAL = 0.1;    // seconds between position updates sent to th
 // The always-on public PvP server (see deploy/). The Multiplayer panel gets a
 // one-click "Join PvP Arena" button for it; a build can point elsewhere with
 // VITE_PVP_SERVER=wss://… (an empty value hides the button).
-const PVP_SERVER_URL = (import.meta.env && import.meta.env.VITE_PVP_SERVER) ?? 'wss://blockcraft-pvp.onrender.com';
+// (src/engine/PvpAddress.js: this computer's own arena when the desktop app is hosting one, otherwise the public arena.)
 // The public server list lives on the same always-on server (see server/blockcraft-server.mjs):
 // hosts announce a join code there, everyone else reads the list back.
-const REGISTRY_URL = PVP_SERVER_URL.replace(/^ws/i, 'http').replace(/\/+$/, '');
 const MP_LIST_KEY = 'mg.blockcraft.listPublic';
 const MP_LEVEL_KEY = 'mg.blockcraft.aiLevel';
 const MP_BOTS_KEY = 'mg.blockcraft.botCount';
@@ -1963,14 +1963,14 @@ export default class Blockcraft extends Game {
    *  between the host and each joiner. */
   startAnnounce() {
     this.stopAnnounce(false);
-    if (!REGISTRY_URL || !this.listPublic || !this.hostCode) return;
+    if (!registryUrl() || !this.listPublic || !this.hostCode) return;
     this.announceNow();
     this.announceTimer = setInterval(() => this.announceNow(), ANNOUNCE_EVERY_MS);
   }
 
   announceNow() {
-    if (!REGISTRY_URL || !this.listPublic || !this.hostPeer || !this.hostCode || typeof fetch !== 'function') return;
-    fetch(`${REGISTRY_URL}/servers`, {
+    if (!registryUrl() || !this.listPublic || !this.hostPeer || !this.hostCode || typeof fetch !== 'function') return;
+    fetch(`${registryUrl()}/servers`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1984,8 +1984,8 @@ export default class Blockcraft extends Game {
    *  rather than waiting for it to expire. */
   stopAnnounce(remove = true) {
     if (this.announceTimer) { clearInterval(this.announceTimer); this.announceTimer = null; }
-    if (remove && REGISTRY_URL && this.hostCode && typeof fetch === 'function') {
-      fetch(`${REGISTRY_URL}/servers/remove`, {
+    if (remove && registryUrl() && this.hostCode && typeof fetch === 'function') {
+      fetch(`${registryUrl()}/servers/remove`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ code: this.hostCode }), keepalive: true,
       }).catch(() => { /* it expires by itself in a minute anyway */ });
@@ -1996,17 +1996,17 @@ export default class Blockcraft extends Game {
    *  then whatever games people are hosting right now. */
   async refreshServerList() {
     const box = this.mpPanel?.querySelector('.bc-srv-list');
-    if (!box || !REGISTRY_URL) return;
+    if (!box || !registryUrl()) return;
     box.innerHTML = '<div class="bc-srv-note">Loading…</div>';
-    const get = async (path) => (await fetch(REGISTRY_URL + path, { signal: AbortSignal.timeout(12000) })).json();
+    const get = async (path) => (await fetch(registryUrl() + path, { signal: AbortSignal.timeout(12000) })).json();
     const [arena, hosted] = await Promise.allSettled([get('/health'), get('/servers')]);
     if (!this.mpPanel?.querySelector('.bc-srv-list')) return;   // panel was rebuilt while we waited
     let html = '';
-    if (PVP_SERVER_URL) {
+    if (pvpUrl()) {
       const a = arena.status === 'fulfilled' ? arena.value : null;
       html += `<div class="bc-srv"><span class="bc-srv-name">⚔ Arena (PvP)</span>`
         + `<span class="bc-srv-count">${a ? `${a.players | 0}/${a.maxPlayers | 0}` : 'waking…'}</span>`
-        + `<button data-join="${escapeHtml(PVP_SERVER_URL)}">Join</button></div>`;
+        + `<button data-join="${escapeHtml(pvpUrl())}">Join</button></div>`;
     }
     if (hosted.status === 'fulfilled' && Array.isArray(hosted.value)) {
       for (const h of hosted.value) {
@@ -2705,9 +2705,9 @@ export default class Blockcraft extends Game {
     pvpBtn?.addEventListener('pointerdown', (e) => e.stopPropagation());
     pvpBtn?.addEventListener('click', () => {
       if (this.hostPeer) return;   // hosting your own game is the active mode
-      if (serverInput) serverInput.value = PVP_SERVER_URL;
-      saveLastServer(PVP_SERVER_URL);
-      this.connectMultiplayer(PVP_SERVER_URL);
+      if (serverInput) serverInput.value = pvpUrl();
+      saveLastServer(pvpUrl());
+      this.connectMultiplayer(pvpUrl());
     });
 
     const listBox = panel.querySelector('.bc-list-public');
@@ -3742,12 +3742,12 @@ function multiplayerHtml() {
       <input class="bc-skin-file" type="file" accept="image/png" hidden />
       <div class="bc-label">Server address or host code</div>
       <input class="bc-server-input" type="text" placeholder="ws://host:7443 or a code" maxlength="80" />
-      ${PVP_SERVER_URL ? '<button class="bc-pvp-join">⚔ Join PvP Arena</button>' : ''}
+      ${pvpUrl() ? '<button class="bc-pvp-join">⚔ Join PvP Arena</button>' : ''}
       <div class="bc-net-row">
         <button class="bc-connect">Connect</button>
         <button class="bc-host">Host</button>
       </div>
-      ${REGISTRY_URL ? '<label class="bc-list-row"><input type="checkbox" class="bc-list-public" /> List my hosted game publicly</label>' : ''}
+      ${registryUrl() ? '<label class="bc-list-row"><input type="checkbox" class="bc-list-public" /> List my hosted game publicly</label>' : ''}
       <div class="bc-bots-row" hidden>
         <div class="bc-bots-top"><label>Bots to fight</label><output class="bc-bots-out">3</output></div>
         <input type="range" class="bc-bots" min="0" max="${MAX_BOTS_CHOICE}" step="1" value="3" />
@@ -3758,7 +3758,7 @@ function multiplayerHtml() {
         <select class="bc-level">${AI_LEVELS.map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select>
       </div>
       <div class="bc-host-code" hidden><code></code><button class="bc-copy-code">Copy</button></div>
-      ${REGISTRY_URL ? '<div class="bc-label bc-srv-head">Public servers <button class="bc-srv-refresh" title="Refresh">↻</button></div><div class="bc-srv-list"></div>' : ''}
+      ${registryUrl() ? '<div class="bc-label bc-srv-head">Public servers <button class="bc-srv-refresh" title="Refresh">↻</button></div><div class="bc-srv-list"></div>' : ''}
       <div class="bc-mp-status">Offline — playing solo</div>
       <div class="bc-mp-players"></div>
       <div class="bc-label">Chat</div>
