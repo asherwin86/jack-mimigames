@@ -2,6 +2,10 @@
  *  menu, under the trailer. Keep entries brief; this isn't a commit log. */
 export const CHANGELOG = [
   {
+    title: 'More admin commands',
+    detail: 'The admin console has many new commands: power runs any power for free during a game, random opens a random game, setting changes the display toggles, scores shows or clears best scores, backup and restore save your Rocoins, scores and settings to a file, reports opens the bug inbox, account shows or signs out, plus fullscreen, reload and reset settings. Type help to see them all. Also, pressing Shift on its own flips the sky as before, but Shift with another key no longer does.',
+  },
+  {
     title: 'Bug report notifications',
     detail: 'When someone sends a bug report, the arcade owner now gets a pop-up on the computer (a Windows notification in the desktop app) showing who sent it, which game and what they wrote. Clicking it opens the inbox. It works while the app is open, even minimised, and when you are signed in as the owner. On the website, the Inbox has a Turn on notifications button.',
   },

@@ -5,6 +5,13 @@ Newest update first. Every update is also in its own file in the "updates"
 folder. Each one is released to the website and the Windows app together
 (the app updates itself the next time you open it).
 
+v1.0.67  -  21 Nov 2026
+More admin commands
+-------------------
+The admin console (Settings > Admin, or Shift and the backtick key) has a lot more commands. Type help for the full list. New ones:
+power <id>: run any power for free while you are in a game (powers lists them). random: open a random game. setting <name> on|off: change a display setting (props, music, blacksky, seasonal, nospin, highcontrast, compact); the page reloads to apply it. scores: show your best scores; scores clear <game|all> yes wipes them. backup: download your Rocoins, scores and settings as a file; restore yes loads one back. reports: open the bug report inbox. account: who is signed in; account signout. fullscreen, reload, and reset settings yes.
+Also fixed: pressing Shift on its own on the menu still switches the background props, but it now does that when you let go, and only if you did not press another key, so Shift and backtick no longer flips them by accident.
+
 v1.0.66  -  14 Nov 2026
 Bug report notifications
 ------------------------

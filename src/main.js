@@ -13,7 +13,7 @@ import { Settings } from './engine/Settings.js';
 import { Rocoins } from './engine/Rocoins.js';
 import { runFinished, onEarned, minutesPlayed } from './engine/challenges.js';
 import { createAdmin, notifyEarned } from './ui/AdminPanel.js';
-import { openAdminConsole } from './ui/AdminConsole.js';
+import { openAdminConsole, setAdminContext } from './ui/AdminConsole.js';
 import { startRocoinSync } from './engine/RocoinSync.js';
 import { startReportWatcher } from './ui/ReportWatcher.js';
 import { startParentalSync } from './engine/ParentalSync.js';
@@ -57,6 +57,7 @@ const admin = createAdmin({
   onOpen: () => { adminWasRunning = engine.running; if (adminWasRunning) engine.pause(); },
   onClose: () => { if (adminWasRunning && current) engine.resume(); adminWasRunning = false; },
 });
+setAdminContext(() => ({ engine, game: engine.game, entry: currentEntry }));
 engine.onAdmin = () => admin.toggle();
 menu.onAdmin = () => admin.toggle();
 const syncCoins = () => { engine.hud.coins(Rocoins.balance()); menu.setCoins?.(Rocoins.balance()); };
@@ -260,7 +261,9 @@ setInterval(() => {
 }
 
 addEventListener('hashchange', route);
+let shiftAlone = false;   // Shift went down and nothing else has been pressed since
 addEventListener('keydown', (e) => {
+  shiftAlone = e.key === 'Shift' ? !e.repeat || shiftAlone : false;
   // ` opens/closes the Rocoins panel from anywhere — except while typing somewhere else (Blockcraft's chat).
   if (e.code === 'Backquote' && !e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey) {
     const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
@@ -275,10 +278,13 @@ addEventListener('keydown', (e) => {
     return;
   }
 
-  // Shift strips the sky back to the rainbow and leaves the game tiles alone.
-  // Only on the menu: in a game Shift belongs to the game, and while the search
-  // box has focus it belongs to whoever is typing capitals.
-  if (e.key !== 'Shift' || e.repeat) return;
+});
+// Shift on its own, released without another key (so Shift + ` or Shift + a letter does not flip it). Only on the menu: in a
+// game Shift belongs to the game, and while the search box has focus it belongs to whoever is typing capitals.
+// It strips the sky back to the rainbow and leaves the game tiles alone.
+addEventListener('keyup', (e) => {
+  if (e.key !== 'Shift' || !shiftAlone) return;
+  shiftAlone = false;
   if (!engine.idleScene?.setProps) return;
   if (e.target instanceof HTMLInputElement) return;
   const on = Settings.toggle('bgProps');

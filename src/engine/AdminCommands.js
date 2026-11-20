@@ -4,11 +4,17 @@
  *
  * `env` is everything a command touches, so a test can fake it:
  *   { Rocoins, tools (RocoinTools), games: [{id,name}], go(hash), info(), hub: { url(), set(url|null), ping() },
- *     season(value), refresh(), lock(), clear() }
+ *     season(value), refresh(), lock(), clear(), rand(), reload(), fullscreen(), reports(), backup(), restore(),
+ *     powers(): [{id,name,cost}], runPower(id): Promise<{ok,text}>,
+ *     settings: { list(): [{name,on}], set(name, on) }  (name is one of SETTING_NAMES),
+ *     scores: { all(): {gameId: score}, clear(gameIdOrNull) }, resetSettings(),
+ *     account: { name(), signOut() } }
  */
 const num = (v) => { const n = Math.floor(Number(v)); return Number.isFinite(n) ? n : NaN; };
 const ok = (text) => ({ ok: true, text });
 const bad = (text) => ({ ok: false, text });
+/** The display toggles the console can change (the names people type). */
+export const SETTING_NAMES = ['props', 'music', 'blacksky', 'seasonal', 'nospin', 'highcontrast', 'compact'];
 
 export function makeCommands(env) {
   const { Rocoins } = env;
@@ -82,6 +88,75 @@ export function makeCommands(env) {
         return ok(`Opening ${g.name}.`);
       },
     },
+    random: {
+      usage: 'random', about: 'open a random game',
+      run: () => {
+        const g = env.games[Math.floor(env.rand() * env.games.length)];
+        env.go(`#/${g.id}`);
+        return ok(`Opening ${g.name}.`);
+      },
+    },
+    powers: {
+      usage: 'powers', about: 'list the powers you can run here',
+      run: () => {
+        const list = env.powers();
+        return list.length ? ok(list.map((p) => `${p.id} (${p.name}, ${p.cost})`).join(', ')) : bad('No powers here. Start a game first, then try again.');
+      },
+    },
+    power: {
+      usage: 'power <id>', about: 'run any power for free (during a game)',
+      run: async ([id]) => {
+        if (!id) return bad('Which power? Type powers to see them.');
+        const r = await env.runPower(String(id).toLowerCase());
+        return r.ok ? ok(r.text) : bad(r.text);
+      },
+    },
+    setting: {
+      usage: 'setting [name on|off]', about: 'show or change a display setting (reloads)',
+      run: ([name, v]) => {
+        const rows = env.settings.list();
+        if (!name) return ok(rows.map((r) => `${r.name}: ${r.on ? 'on' : 'off'}`).join('\n'));
+        const n = String(name).toLowerCase();
+        if (!SETTING_NAMES.includes(n)) return bad(`No setting called "${name}". Choices: ${SETTING_NAMES.join(', ')}`);
+        const x = String(v || '').toLowerCase();
+        if (!['on', 'off'].includes(x)) return bad(`Use: setting ${n} on  or  setting ${n} off`);
+        env.settings.set(n, x === 'on');
+        return ok(`${n} is now ${x}. Reloading…`);
+      },
+    },
+    scores: {
+      usage: 'scores [clear <game|all> yes]', about: 'show best scores, or wipe them',
+      run: ([a, b, c]) => {
+        if (!a) {
+          const all = env.scores.all();
+          const rows = Object.entries(all);
+          return rows.length ? ok(`${rows.length} best score${rows.length === 1 ? '' : 's'}: ${rows.map(([id, v]) => `${id} ${v}`).join(', ')}`) : ok('No scores saved yet.');
+        }
+        if (a !== 'clear') return bad('Use: scores  or  scores clear <game|all> yes');
+        if (!b) return bad('Clear which game? Use: scores clear <game|all> yes');
+        const g = b === 'all' ? null : findGame(b);
+        if (b !== 'all' && !g) return bad(`No game matches "${b}".`);
+        if (c !== 'yes') return bad(`This deletes ${g ? `the best score for ${g.name}` : 'every best score on this device'}. If you are sure, add yes: scores clear ${b} yes`);
+        env.scores.clear(g ? g.id : null);
+        return ok(g ? `Cleared the best score for ${g.name}.` : 'Cleared every best score.');
+      },
+    },
+    reports: { usage: 'reports', about: 'open the bug report inbox', run: () => { env.reports(); return ok('Opening the inbox…'); } },
+    account: {
+      usage: 'account [signout]', about: 'who is signed in here, or sign out',
+      run: ([a]) => {
+        const n = env.account.name();
+        if (a === 'signout') { if (!n) return bad('Nobody is signed in.'); env.account.signOut(); return ok(`Signed ${n} out.`); }
+        return ok(n ? `Signed in as ${n}.` : 'Nobody is signed in.');
+      },
+    },
+    backup: { usage: 'backup', about: 'download your saves (scores, Rocoins, settings) as a file', run: () => ok(env.backup()) },
+    restore: {
+      usage: 'restore yes', about: 'load a backup file over the saves on this device',
+      run: ([sure]) => (sure === 'yes' ? (env.restore(), ok('Choose the backup file…')) : bad('This replaces the saves on this device with the ones in a backup file. If you are sure: restore yes')),
+    },
+    fullscreen: { usage: 'fullscreen', about: 'toggle fullscreen', run: () => { env.fullscreen(); return ok('Toggled fullscreen.'); } },
+    reload: { usage: 'reload', about: 'reload the page (keeps your saved copy)', run: () => { env.reload(); return ok('Reloading…'); } },
     home: { usage: 'home', about: 'back to the menu', run: () => { env.go(''); return ok('Back to the menu.'); } },
     season: {
       usage: 'season holidays|off|auto', about: 'force the holiday colours, turn them off, or go back to normal',
@@ -107,9 +182,14 @@ export function makeCommands(env) {
     },
     refresh: { usage: 'refresh', about: 'clear the downloaded copy of the app and reload', run: () => { env.refresh(); return ok('Clearing the saved copy and reloading…'); } },
     reset: {
-      usage: 'reset coins yes', about: 'wipe the Rocoin wallet on this device (cannot be undone)',
+      usage: 'reset coins|settings yes', about: 'wipe the Rocoin wallet, or the display settings, on this device',
       run: ([what, sure]) => {
-        if (what !== 'coins') return bad('Use: reset coins yes');
+        if (what === 'settings') {
+          if (sure !== 'yes') return bad('This puts every display setting back to normal. If you are sure: reset settings yes');
+          env.resetSettings();
+          return ok('Display settings reset. Reloading…');
+        }
+        if (what !== 'coins') return bad('Use: reset coins yes  or  reset settings yes');
         if (sure !== 'yes') return bad('This erases every Rocoin and completed challenge on this device. If you are sure: reset coins yes');
         Rocoins.reset();
         return ok('The wallet on this device is now empty.');

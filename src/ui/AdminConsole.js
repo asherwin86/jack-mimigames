@@ -1,10 +1,14 @@
 import { Rocoins } from '../engine/Rocoins.js';
 import { RocoinTools } from '../engine/RocoinTools.js';
 import { Account, hubUrl, setHubUrl } from '../engine/Account.js';
+import { Settings } from '../engine/Settings.js';
+import { Scores } from '../engine/Storage.js';
+import { allPowers, findPower, usePower } from '../engine/Powers.js';
+import { openBugReport } from './BugReportDialog.js';
 import { CATALOG } from '../games/catalog.js';
 import { LINKED } from '../engine/LinkedGames.js';
 import { controlsOn, parental } from '../engine/ParentalState.js';
-import { makeCommands } from '../engine/AdminCommands.js';
+import { makeCommands, SETTING_NAMES } from '../engine/AdminCommands.js';
 
 /**
  * The admin console: a password-gated window with commands (give Rocoins, infinite Rocoins, open any game, change the
@@ -16,6 +20,38 @@ import { makeCommands } from '../engine/AdminCommands.js';
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
 let panel = null;
+let getContext = () => ({ engine: null, game: null, entry: null });
+/** main.js tells the console how to reach the running game (for the power command). */
+export function setAdminContext(fn) { getContext = fn; }
+
+// The display toggles: the name people type -> the key in Settings, and what it is when never touched.
+const SETTING_KEYS = { props: ['bgProps', true], music: ['music', true], blacksky: ['bgBlack', false], seasonal: ['seasonal', true], nospin: ['noSpin', false], highcontrast: ['highContrast', false], compact: ['compact', false] };
+
+function backupFile() {
+  const keys = {};
+  try { for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k && k.startsWith('mg.') && !k.startsWith('mg.parental')) keys[k] = localStorage.getItem(k); } } catch { /* storage blocked */ }
+  const blob = new Blob([JSON.stringify({ app: '100-mimi-games', saved: new Date().toISOString(), keys }, null, 1)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `100-mimi-games-backup-${new Date().toISOString().slice(0, 10)}.json`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  return `Downloaded a backup of ${Object.keys(keys).length} saved items (scores, Rocoins, settings). Parental controls and sign-in are not included.`;
+}
+
+function restoreFile() {
+  const input = document.createElement('input');
+  input.type = 'file'; input.accept = 'application/json,.json';
+  input.onchange = async () => {
+    try {
+      const data = JSON.parse(await input.files[0].text());
+      if (data?.app !== '100-mimi-games' || typeof data.keys !== 'object') throw new Error('not a backup');
+      for (const [k, v] of Object.entries(data.keys)) if (k.startsWith('mg.') && !k.startsWith('mg.parental') && typeof v === 'string') localStorage.setItem(k, v);
+      location.reload();
+    } catch { alert('That file is not a 100 Mimi Games backup.'); }
+  };
+  input.click();
+}
 
 function infoText() {
   const s = Account.session();
@@ -85,6 +121,36 @@ export function openAdminConsole() {
     refresh: () => setTimeout(refreshApp, 400),
     lock: () => { RocoinTools.setInfinite(false); RocoinTools.lock(); setTimeout(gate, 0); },
     clear: () => { log.length = 0; },
+    rand: Math.random,
+    reload: () => setTimeout(() => location.reload(), 300),
+    fullscreen: () => { if (document.fullscreenElement) document.exitFullscreen?.(); else document.documentElement.requestFullscreen?.().catch(() => {}); },
+    reports: () => { close(); openBugReport({ tab: 'inbox' }); },
+    backup: backupFile,
+    restore: restoreFile,
+    powers: () => { const c = getContext(); return c.engine && c.game ? allPowers(c).map((p) => ({ id: p.id, name: p.name, cost: p.cost })) : []; },
+    runPower: async (id) => {
+      const c = getContext();
+      const p = c.engine ? findPower(id, allPowers(c)) : null;
+      if (!p) return { ok: false, text: c.game ? `No power called "${id}". Type powers to see them.` : 'Start a game first, then run the power.' };
+      if (!(p.toggle && p.active?.(c))) RocoinTools.give(p.cost);   // free: pay for it, then use it, net nothing
+      const r = await usePower(p, c);
+      if (r.ok) setTimeout(close, 150);          // out of the way of the game, but only once it worked (errors stay readable)
+      else if (!(p.toggle && p.active?.(c)) && Rocoins.spent() > 0) Rocoins.refund(0);
+      return { ok: r.ok, text: r.msg };
+    },
+    settings: {
+      list: () => SETTING_NAMES.map((name) => ({ name, on: Settings.get(SETTING_KEYS[name][0], SETTING_KEYS[name][1]) === true })),
+      set: (name, on) => { Settings.set(SETTING_KEYS[name][0], on); setTimeout(() => location.reload(), 400); },
+    },
+    resetSettings: () => { try { localStorage.removeItem('mg.settings.v1'); } catch { /* blocked */ } setTimeout(() => location.reload(), 400); },
+    scores: {
+      all: () => { try { return JSON.parse(localStorage.getItem('mg.scores.v1')) || {}; } catch { return {}; } },
+      clear: (id) => {
+        if (id === null) { Scores.reset(); return; }
+        try { const all = JSON.parse(localStorage.getItem('mg.scores.v1')) || {}; delete all[id]; localStorage.setItem('mg.scores.v1', JSON.stringify(all)); } catch { /* blocked */ }
+      },
+    },
+    account: { name: () => Account.name(), signOut: () => Account.signOut() },
   };
   const cmds = makeCommands(env);
 
