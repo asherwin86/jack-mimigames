@@ -16,7 +16,10 @@ import { themeFor, seasonOverride } from '../engine/Seasons.js';
 import { Account } from '../engine/Account.js';
 import { openAccountDialog } from './AccountDialog.js';
 import { openAdminConsole } from './AdminConsole.js';
+import { findGames, didYouMean, surprise } from '../engine/GameFinder.js';
 import { CHANGELOG } from '../changelog.js';
+
+const esc = (t) => String(t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
 export class Menu {
   constructor(root, onPlay, input) {
@@ -64,7 +67,8 @@ export class Menu {
           </div>
 
           <div class="menu-tools">
-            <input type="search" placeholder="Search games…" autocomplete="off" />
+            <input type="search" placeholder="Search, or say what you feel like: relaxing, racing, like Tetra Drop…" autocomplete="off" aria-label="Find a game" />
+            <button class="surprise-btn" type="button" title="Open a game you might like (favours ones you have not played)">&#127922; Surprise me</button>
             <button class="settings-btn" aria-expanded="${settingsOpen}" aria-controls="settings-box">
               <span class="gear" aria-hidden="true">&#9881;</span>Settings
             </button>
@@ -150,6 +154,7 @@ export class Menu {
       if (e.target.closest('.switch-btn')) { switchToOtherArcade(); return; }
       if (e.target.closest('.pc-btn')) { openParentalPanel(); return; }
       if (e.target.closest('.ad-btn')) { openAdminConsole(); return; }
+      if (e.target.closest('.surprise-btn')) { this._surprise(); return; }
       const opener = e.target.closest('.settings-btn');
       if (opener) {
         const box = this.root.querySelector('.settings-box');
@@ -167,6 +172,8 @@ export class Menu {
     });
 
     this.$grid.onclick = (e) => {
+      const tc = e.target.closest('.try-chip');
+      if (tc) { $search.value = tc.dataset.try; this.query = tc.dataset.try.toLowerCase(); this.render(); return; }
       const t = e.target.closest('.tile');
       if (t?.dataset.link) { const entry = LINKED.find((l) => l.id === t.dataset.link); if (entry) openLinked(entry); return; }
       if (t && !t.classList.contains('soon')) this.onPlay(t.dataset.id);
@@ -231,13 +238,38 @@ export class Menu {
     else if (key === 'compact') menuEl?.classList.toggle('compact', on);
   }
 
+  /** Games and tiles that may be shown at all (not hidden by parental controls), for the finder. */
+  _findable() {
+    const inside = keepInside();
+    const hideApps = controlsOn() && isInstalledCopy();
+    return [
+      ...CATALOG.filter((e) => !isBlocked(e.id)).map((e) => ({ ...e, kind: 'game' })),
+      ...LINKED.filter((e) => !(inside && e.kind === 'arcade') && !(hideApps && e.kind === 'page') && !isBlocked(e.id)),
+    ];
+  }
+
+  /** "Surprise me": a game you may like, favouring ones you have not played. */
+  _surprise() {
+    const pick = surprise(CATALOG.filter((e) => isImplemented(e.id) && !isBlocked(e.id)), { best: (id) => Scores.best(id) });
+    if (pick) this.onPlay(pick.id);
+  }
+
   render() {
     const q = this.query;
-    const list = CATALOG.filter((e) => {
-      if (this.tag && !e.tags.includes(this.tag)) return false;
-      if (!q) return true;
-      return (e.name + ' ' + e.blurb + ' ' + e.tags.join(' ')).toLowerCase().includes(q);
-    });
+    let found = null;   // id -> why[] when the finder ranked the results
+    let list;
+    if (q.length >= 3) {
+      const ranked = findGames(q, this._findable(), { best: (id) => Scores.best(id) });
+      found = new Map(ranked.map((r) => [r.entry.id, r.why]));
+      const order = new Map(ranked.map((r, i) => [r.entry.id, i]));
+      list = CATALOG.filter((e) => found.has(e.id) && (!this.tag || e.tags.includes(this.tag))).sort((a, b) => order.get(a.id) - order.get(b.id));
+    } else {
+      list = CATALOG.filter((e) => {
+        if (this.tag && !e.tags.includes(this.tag)) return false;
+        if (!q) return true;
+        return (e.name + ' ' + e.blurb + ' ' + e.tags.join(' ')).toLowerCase().includes(q);
+      });
+    }
 
     // The sister arcade and the Unity games sit after the built-in games (see engine/LinkedGames.js).
     const inside = keepInside();
@@ -247,11 +279,16 @@ export class Menu {
       if (hideApps && e.kind === 'page') return false;
       if (this.tag && !e.tags.includes(this.tag)) return false;
       if (!q) return true;
+      if (found) return found.has(e.id);
       return (e.name + ' ' + e.blurb + ' ' + e.badge + ' ' + e.tags.join(' ')).toLowerCase().includes(q);
     });
+    if (found) links.sort((a, b) => [...found.keys()].indexOf(a.id) - [...found.keys()].indexOf(b.id));
 
     if (!list.length && !links.length) {
-      this.$grid.innerHTML = `<div class="empty" style="grid-column:1/-1">No games match “${q}”.</div>`;
+      const close = q ? didYouMean(q, this._findable()) : [];
+      const tries = ['relaxing', 'racing', 'with friends', 'quick', 'shoot', 'like Tetra Drop'];
+      this.$grid.innerHTML = `<div class="empty" style="grid-column:1/-1">No games match “${esc(q)}”.${close.length ? ` Did you mean ${close.map((e) => `<button class="try-chip" data-try="${esc(e.name)}">${esc(e.name)}</button>`).join(' ')}?` : ''}
+        <div class="try-row">Try asking for: ${tries.map((t) => `<button class="try-chip" data-try="${esc(t)}">${esc(t)}</button>`).join(' ')}</div></div>`;
       return;
     }
 
@@ -268,6 +305,7 @@ export class Menu {
           <span class="blurb">${e.blurb}</span>
           <span class="foot">
             <span class="tag">${e.tags[0]}</span>
+            ${found?.get(e.id)?.length ? `<span class="why">&#10024; ${esc(found.get(e.id).join(' · '))}</span>` : ''}
             ${blocked ? '<span class="pb">&#128274; blocked by a parent</span>' : best !== null ? `<span class="pb">best ${fmt(best)} ${e.unit || ''}</span>` : ''}
           </span>
         </button>`;
@@ -350,7 +388,7 @@ export class Menu {
    *  thing to a real `:hover` a script can drive — CSS :hover only follows
    *  the actual mouse, never something moved by JS. */
   _setHover(el) {
-    const target = el?.closest?.('.tile, .toggle, .chip, .settings-btn, .account-btn, .coins-btn, .install-btn, .host-btn, .bug-btn, .switch-btn, .pc-btn, .ad-btn') ?? null;
+    const target = el?.closest?.('.tile, .toggle, .chip, .settings-btn, .account-btn, .coins-btn, .install-btn, .host-btn, .bug-btn, .switch-btn, .pc-btn, .ad-btn, .surprise-btn, .try-chip') ?? null;
     if (target === this._hoverEl) return;
     this._hoverEl?.classList.remove('gp-hover');
     this._hoverEl = target;

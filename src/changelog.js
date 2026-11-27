@@ -2,6 +2,10 @@
  *  menu, under the trailer. Keep entries brief; this isn't a commit log. */
 export const CHANGELOG = [
   {
+    title: 'Find a game by saying what you want',
+    detail: 'The search box now understands what you feel like playing. Type relaxing, racing, with friends, a quick game, something I can think about, or like Tetra Drop, and the games come back best match first, each with the reason it matched. It copes with typos, and suggests things to try when nothing matches. There is also a Surprise me button that opens a game, favouring ones you have not played. It is free, works offline, and respects parental controls (blocked games are never found).',
+  },
+  {
     title: 'Reach this computer from anywhere',
     detail: 'The Windows app\'s Host window has a new Outside your Wi-Fi section. With the free Tailscale installed and signed in, one button gives this computer a stable web address that works from anywhere: the game, the account server and the PvP arena all go out through it. The controls that start and stop hosting are now protected by a secret only the app knows, so nobody can reach them through the tunnel.',
   },

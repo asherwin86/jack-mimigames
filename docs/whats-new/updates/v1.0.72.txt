@@ -1,0 +1,6 @@
+v1.0.72  -  28 Nov 2026
+Find a game by saying what you want
+-----------------------------------
+New: the search box on the menu is now a game finder. Instead of only matching exact words, type what you feel like playing and the games come back best match first, with a small label saying why each one matched (for example "racing"). Things to try: relaxing, racing, with friends, a quick game, something I can think about, shoot, fly a plane, music, build, like Tetra Drop (finds similar games), something new (games you have not played yet). It copes with typos (tetrs dro finds Tetra Drop) and a full sentence works too (I want something relaxing). When nothing matches, it suggests close names and things to try.
+Surprise me: a new button next to the search box opens a game for you, favouring ones you have not played yet.
+It is free, works offline and needs no account or paid service. It understands a long list of everyday words, not everything: a word it has never heard of just searches the game names and descriptions. Games blocked by parental controls are never shown or opened by it.

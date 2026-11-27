@@ -28,6 +28,7 @@
     "check:parental-server": "node scripts/check-parental-server.mjs",
     "check:admin-console": "node scripts/check-admin-console.mjs",
     "check:host": "node scripts/check-host.mjs",
+    "check:finder": "node scripts/check-finder.mjs",
     "hub:admin": "node scripts/hub-admin.mjs",
     "check:nativepad": "node scripts/check-nativepad.mjs",
     "server:hub": "node hub-server/server.js",
