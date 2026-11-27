@@ -2,6 +2,10 @@
  *  menu, under the trailer. Keep entries brief; this isn't a commit log. */
 export const CHANGELOG = [
   {
+    title: 'The finder opens the game for you',
+    detail: 'When your search leaves exactly one game, or you type a game\'s whole name, the menu now says Opening it and goes into the game after a moment. Keep typing or press Escape to stay on the menu, and press Enter to go in straight away. When several games match, nothing opens by itself: type more of the name, or press the one you want.',
+  },
+  {
     title: 'Find a game by saying what you want',
     detail: 'The search box now understands what you feel like playing. Type relaxing, racing, with friends, a quick game, something I can think about, or like Tetra Drop, and the games come back best match first, each with the reason it matched. It copes with typos, and suggests things to try when nothing matches. There is also a Surprise me button that opens a game, favouring ones you have not played. It is free, works offline, and respects parental controls (blocked games are never found).',
   },

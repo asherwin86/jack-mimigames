@@ -1,0 +1,6 @@
+v1.0.73  -  28 Nov 2026
+The finder opens the game for you
+---------------------------------
+New: when your search leaves exactly one game, or you type a game's whole name (for example Beat Lanes), the menu shows "Opening ..." and goes into the game after about a second. Keep typing, or press Escape, to stay on the menu (what you typed stays). Press Enter to go in straight away.
+When several games match, nothing opens by itself. Press Enter and it tells you how many match and to type more of the name, or just press the one you want.
+It never opens the 51 Mimi Games link by itself (that switches apps), and choosing a category chip on its own never opens anything. Games blocked by parental controls are never opened. Searches shorter than three letters never open anything.

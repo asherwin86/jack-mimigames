@@ -137,7 +137,16 @@ export class Menu {
     };
     $chips.firstElementChild.classList.add('on');
 
-    $search.oninput = () => { this.query = $search.value.trim().toLowerCase(); this.render(); };
+    this.$note = document.createElement('p');
+    this.$note.className = 'find-note';
+    this.$note.setAttribute('aria-live', 'polite');
+    this.root.querySelector('.menu-tools').after(this.$note);
+    this.$search = $search;
+    $search.oninput = () => { this.query = $search.value.trim().toLowerCase(); this.render(); this._autoOpen(); };
+    $search.onkeydown = (e) => {
+      if (e.key === 'Escape') { if (this._autoTimer) { this._cancelAuto(); e.stopPropagation(); e.preventDefault(); } return; }
+      if (e.key === 'Enter') { e.preventDefault(); this._enter(); }
+    };
 
     // One delegated handler for every display-preference toggle — each just
     // flips its own Settings key and applies the matching effect.
@@ -173,7 +182,7 @@ export class Menu {
 
     this.$grid.onclick = (e) => {
       const tc = e.target.closest('.try-chip');
-      if (tc) { $search.value = tc.dataset.try; this.query = tc.dataset.try.toLowerCase(); this.render(); return; }
+      if (tc) { $search.value = tc.dataset.try; this.query = tc.dataset.try.toLowerCase(); this.render(); this._autoOpen(); return; }
       const t = e.target.closest('.tile');
       if (t?.dataset.link) { const entry = LINKED.find((l) => l.id === t.dataset.link); if (entry) openLinked(entry); return; }
       if (t && !t.classList.contains('soon')) this.onPlay(t.dataset.id);
@@ -238,6 +247,42 @@ export class Menu {
     else if (key === 'compact') menuEl?.classList.toggle('compact', on);
   }
 
+  /** The one game left in the results: say so, and open it after a moment unless the person keeps typing or presses Escape. */
+  _autoOpen() {
+    this._cancelAuto();
+    const one = this._single;
+    if (!one || !this.query) return;
+    const q = this.query;
+    this.$note.textContent = `Opening ${one.name}… (keep typing or press Escape to stay here)`;
+    this.$note.classList.add('on');
+    this._autoTimer = setTimeout(() => {
+      this._autoTimer = 0;
+      if (this.query !== q || !this.$search?.isConnected) return;   // they typed more, or the menu is gone
+      this._openOne(one);
+    }, 900);
+  }
+
+  _cancelAuto() {
+    clearTimeout(this._autoTimer);
+    this._autoTimer = 0;
+    if (this.$note) { this.$note.textContent = ''; this.$note.classList.remove('on'); }
+  }
+
+  _openOne(one) {
+    this._cancelAuto();
+    if (one.link) { const entry = LINKED.find((l) => l.id === one.id); if (entry) openLinked(entry); } else this.onPlay(one.id);
+  }
+
+  /** Enter in the search box: open the game if only one is left or the typed text is exactly a game's name; otherwise ask for more. */
+  _enter() {
+    const q = this.query;
+    if (!q) return;
+    if (this._single) { this._openOne(this._single); return; }
+    this._cancelAuto();
+    const n = this.$grid.querySelectorAll('.tile').length;
+    if (n > 1) { this.$note.textContent = `${n} games match. Type more of the name, or press one.`; this.$note.classList.add('on'); }
+  }
+
   /** Games and tiles that may be shown at all (not hidden by parental controls), for the finder. */
   _findable() {
     const inside = keepInside();
@@ -284,6 +329,12 @@ export class Menu {
     });
     if (found) links.sort((a, b) => [...found.keys()].indexOf(a.id) - [...found.keys()].indexOf(b.id));
 
+    // Exactly one game left: the menu can open it for you (see _autoOpen). The sister arcade is never opened by itself (it switches apps).
+    const only = list.length + links.length === 1 ? (list[0] ? { id: list[0].id, name: list[0].name, ok: isImplemented(list[0].id) && !isBlocked(list[0].id), link: false } : { id: links[0].id, name: links[0].name, ok: links[0].kind === 'page' && !isBlocked(links[0].id), link: true }) : null;
+    // Typing a game's whole name means that game, even when other games also match some of the words (Beat Lanes / Bowling Lane).
+    const named = q.length >= 3 ? this._findable().find((e) => e.name.toLowerCase() === q || e.id === q) : null;
+    const namedOne = named && named.kind !== 'arcade' ? { id: named.id, name: named.name, ok: true, link: named.kind === 'page' } : null;
+    this._single = q.length >= 3 ? (namedOne || (only?.ok ? only : null)) : null;
     if (!list.length && !links.length) {
       const close = q ? didYouMean(q, this._findable()) : [];
       const tries = ['relaxing', 'racing', 'with friends', 'quick', 'shoot', 'like Tetra Drop'];
@@ -401,6 +452,7 @@ export class Menu {
   }
 
   hide() {
+    this._cancelAuto();
     this._stopGamepadNav();
     this.root.innerHTML = '';
   }

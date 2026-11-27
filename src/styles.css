@@ -672,3 +672,5 @@ html, body {
 .empty .try-row { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: center; font-size: 13px; opacity: .9; }
 .try-chip { padding: 5px 12px; border-radius: 999px; border: 1px solid rgba(255,255,255,.28); background: rgba(255,255,255,.07); color: #fff; font: 600 13px system-ui, sans-serif; cursor: pointer; }
 .try-chip:hover, .try-chip.gp-over { border-color: #6ee7ff; background: rgba(110,231,255,.16); }
+.find-note { margin: 6px 0 0; min-height: 0; text-align: center; font-size: 13px; color: #ffd166; font-weight: 700; display: none; }
+.find-note.on { display: block; }
